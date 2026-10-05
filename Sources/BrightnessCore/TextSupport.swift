@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 
 extension StringProtocol {
+    /// Finds a literal UTF-8 substring without importing a formatting or regex runtime.
+    public func containsText(_ text: String) -> Bool {
+        text.isEmpty || utf8.indices.contains { utf8[$0...].starts(with: text.utf8) }
+    }
     /// Removes surrounding Unicode whitespace without a locale database.
     public func trimmingWhitespace() -> String {
         var text = self[...]

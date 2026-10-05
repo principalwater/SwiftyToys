@@ -29,6 +29,10 @@ func runCLI(_ args: [String]) throws -> Int32 {
         Console.writeLine(settings.indicator.rawValue)
         return 0
     }
+    if command == "--trackpad-info" {
+        Console.writeLine(TrackpadStatus.current(localization: Localization()).summary)
+        return 0
+    }
     if command == "--test-input" {
         try testKeyboardInput()
         return 0
@@ -37,11 +41,10 @@ func runCLI(_ args: [String]) throws -> Int32 {
         _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT(bitPattern: -4))
         try NativeFiles.createDirectory(NativeFiles.directory())
         let preview = try SettingsWindow(
-            brightness: 75, keyboard: KeyboardConfiguration(), preview: true, command: { _, _ in "Предпросмотр" },
-            snapshot: { "Яркость и переназначения — в одном приложении." })
+            brightness: 75, keyboard: KeyboardConfiguration(), preview: true, command: { _, _ in "Preview" })
         if command == "--test-ui" {
             try preview.validateLayout()
-            Console.writeLine("PASS: all 8 native settings pages, navigation names and unclipped control bounds")
+            Console.writeLine("PASS: all 9 native settings pages, navigation, checkbox toggles and brightness synchronization")
             return 0
         }
         preview.show()

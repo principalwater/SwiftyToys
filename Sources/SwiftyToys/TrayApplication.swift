@@ -298,11 +298,6 @@ final class TrayApplication {
                 command: { [weak self] id, values in
                     guard let self else { throw WindowsError.unsupported("Application is closing.") }
                     return try self.dashboardCommand(id, values)
-                },
-                snapshot: { [weak self] in
-                    guard let self else { return "" }
-                    return
-                        "Яркость: \(self.state.level.percent)%  •  \(self.state.backend)\nПереназначения: \(self.remapper?.active == true ? "включены" : "на паузе")"
                 })
         }
         dashboard?.show()
@@ -368,10 +363,10 @@ final class TrayApplication {
             let minutes =
                 values[0].hasPrefix("30") ? 30 : values[0].hasPrefix("1") ? 60 : values[0].hasPrefix("2") ? 120 : 480
             try tools.awake(minutes: minutes, display: values[1] == "1")
-            return "Режим включён на \(minutes) минут."
+            return "Mode enabled for \(minutes) minutes."
         case 411:
             try tools.awake(minutes: 0, display: false)
-            return "Обычный режим питания восстановлен."
+            return "Normal power mode restored."
         case 430:
             var configuration = try KeyboardConfiguration()
             configuration.reverseVertical = values[0] == "1"
@@ -393,7 +388,7 @@ final class TrayApplication {
             try reloadRemapper()
         default: break
         }
-        return "Готово. Настройки применены."
+        return "Done. Settings applied."
     }
     private func flushSteps() {
         if let window { KillTimer(window, 2) }
@@ -415,13 +410,14 @@ final class TrayApplication {
     private func showMenu() {
         guard let window, let menu = CreatePopupMenu() else { return }
         defer { DestroyMenu(menu) }
+        let localization = Localization()
         for (id, label) in [
             (2500, "Open SwiftyToys"), (2501, "Pause / resume keyboard remapping"),
-            (0, "Brightness: \(state.level.percent)%"), (1, "Increase by \(settings.step)%"),
-            (2, "Decrease by \(settings.step)%"),
+            (0, localization.text("Brightness: {0}%", [String(state.level.percent)])), (1, localization.text("Increase by {0}%", [String(settings.step)])),
+            (2, localization.text("Decrease by {0}%", [String(settings.step)])),
             (100, "100%"), (75, "75%"), (50, "50%"), (25, "25%"), (10, "10%"), (3, "Reconnect display"),
         ] {
-            _ = withWideString(label) {
+            _ = withWideString(localization.text(label)) {
                 AppendMenuW(menu, UINT(MF_STRING | (id == 0 ? MF_DISABLED : 0)), UINT_PTR(id), $0)
             }
         }
@@ -429,12 +425,12 @@ final class TrayApplication {
             (2001, IndicatorMode.custom, "Indicator: SwiftyToys"),
             (2002, IndicatorMode.system, "Indicator: Windows"),
         ] {
-            _ = withWideString(label) {
+            _ = withWideString(localization.text(label)) {
                 AppendMenuW(menu, UINT(MF_STRING | (settings.indicator == mode ? MF_CHECKED : 0)), UINT_PTR(id), $0)
             }
         }
         CheckMenuRadioItem(menu, 2001, 2002, settings.indicator == .custom ? 2001 : 2002, UINT(MF_BYCOMMAND))
-        _ = withWideString("Quit") { AppendMenuW(menu, UINT(MF_STRING), 4, $0) }
+        _ = withWideString(localization.text("Quit")) { AppendMenuW(menu, UINT(MF_STRING), 4, $0) }
         var point = POINT()
         GetCursorPos(&point)
         SetForegroundWindow(window)

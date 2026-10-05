@@ -5,6 +5,7 @@ import WinSDK
 /// Exercises native file operations in a newly created temporary directory.
 /// No display controller, user settings or recovery lease is constructed.
 func testStorage() throws {
+    try Localization.selfTest()
     for value in ["Ubuntu", "space in argument", "quote \" and \\", "trailing\\", "$(curl URL)\nquoted \"shellenv\""] {
         var count: Int32 = 0
         guard let arguments = withWideString("SwiftyToys " + quoteArgument(value), { CommandLineToArgvW($0, &count) })

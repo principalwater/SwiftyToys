@@ -67,7 +67,7 @@ foreach ($name in $previousRuntimeFiles) {
 }
 Copy-Item -LiteralPath $runtimeManifest -Destination $directory -Force
 $documentationRoot = if (Test-Path -LiteralPath (Join-Path $sourceDirectory 'LICENSE')) { $sourceDirectory } else { Split-Path $PSScriptRoot -Parent }
-foreach ($name in @('README.md','CHANGELOG.md','LICENSE','THIRD_PARTY_NOTICES.md','Licenses','docs')) {
+foreach ($name in @('README.md','CHANGELOG.md','LICENSE','THIRD_PARTY_NOTICES.md','Licenses','docs','Languages')) {
     $path = Join-Path $documentationRoot $name
     if (Test-Path -LiteralPath $path) { Copy-Item -LiteralPath $path -Destination $directory -Recurse -Force }
 }
@@ -101,6 +101,8 @@ if (-not $running.Count) {
     if (Test-Path -LiteralPath $legacyExecutable) { Start-Process -FilePath $legacyExecutable -WindowStyle Hidden }
     throw "SwiftyToys did not start; previous BrightnessCtl startup retained. Inspect $directory\startup.log"
 }
+$trackpadScript = Join-Path $sourceDirectory 'install-trackpad.ps1'
+if (Test-Path -LiteralPath $trackpadScript) { Copy-Item -LiteralPath $trackpadScript -Destination $directory -Force }
 foreach ($legacy in $legacyTasks) { Disable-ScheduledTask -TaskName $legacy.TaskName -TaskPath $legacy.TaskPath | Out-Null }
 if ($legacyRun -and $legacyRun.Trim('"') -eq $legacyExecutable) { Remove-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name BrightnessCtl }
 $startMenuShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\SwiftyToys.lnk'

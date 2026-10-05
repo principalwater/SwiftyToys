@@ -9,7 +9,9 @@ The inherited BrightnessCtl experiments measured 23.62 MB ZIP with dynamic Found
 52.76 MB exe with static Foundation, 9.68 MB exe with FoundationEssentials, and about
 6.12 MB exe / 2.3 MB ZIP using Swift standard library plus Win32. Those are upstream
 measurements, not SwiftyToys results or PowerToys comparisons. The first SwiftyToys
-native UI/remapping build was 6.26 MB; record final release sizes separately.
+native UI/remapping build was about 6.29 MB. The 0.1.1 release measures 6,327,296 bytes
+for the executable and about 2.46 MB for the full ZIP with language packs, installer
+scripts, documentation and licenses. Driver downloads are separate from that archive.
 
 Build uses -Osize, -static-stdlib, -use-static-resource-dir, /OPT:REF and /OPT:ICF.
 Official dispatch.lib and BlocksRuntime.lib satisfy the static Swift concurrency

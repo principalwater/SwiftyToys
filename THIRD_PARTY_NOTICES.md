@@ -15,6 +15,23 @@ and configurable keyboard tools. SwiftyToys complements it for Mac/Boot Camp use
 No PowerToys code, branding or artwork is redistributed. This is an independent
 project, not affiliated with Microsoft or Apple.
 
+## Apple and trackpad drivers — separate upstream downloads
+
+Apple's Mac interaction conventions and “Think Different.” inspire SwiftyToys. Apple
+names are used for compatibility and attribution; Apple artwork is not bundled.
+The optional installer downloads Apple's signed Boot Camp Precision Trackpad USB and
+Bluetooth packages directly from Apple for Apple computers. Apple licenses remain
+separate; these proprietary binaries are not redistributed with SwiftyToys.
+
+The other installer source is the unmodified Microsoft-signed
+[imbushuo/mac-precision-touchpad release 2105-3979](https://github.com/imbushuo/mac-precision-touchpad/releases/tag/2105-3979).
+Its USB driver is GPLv2 (Bingxing Wang and contributors); the separate SPI MIT license
+does not apply to USB. Downloaded drivers remain distinct upstream products, with
+[source and license notices](https://github.com/imbushuo/mac-precision-touchpad/blob/master/LICENSE.md).
+No driver source or binary is linked into the MIT Swift executable or release ZIP.
+The [trackpad research notes](docs/Trackpad.md) list additional projects consulted;
+their GPL/proprietary code has not been copied into SwiftyToys.
+
 ## AMD Display Library interop
 
 The native function signatures, struct layouts and constants in

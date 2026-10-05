@@ -29,6 +29,8 @@ $sourceExecutable = Join-Path ($binPath | Select-Object -Last 1) 'SwiftyToys.exe
 & mt.exe -nologo -manifest (Join-Path $repoRoot 'resources\SwiftyToys.manifest') "-outputresource:$sourceExecutable;#1"
 if ($LASTEXITCODE -ne 0) { throw 'Could not embed the native UI manifest.' }
 Copy-Item -LiteralPath $sourceExecutable -Destination (Join-Path $OutputDirectory 'SwiftyToys.exe') -Force
+Copy-Item -LiteralPath (Join-Path $repoRoot 'Languages') -Destination $OutputDirectory -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'install-trackpad.ps1') -Destination $OutputDirectory -Force
 # A portable release must link the official Swift runtime statically.
 $dependencyOutput = & dumpbin /nologo /dependents $sourceExecutable
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect native runtime dependencies.' }

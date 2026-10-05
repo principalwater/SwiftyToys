@@ -30,26 +30,35 @@ final class SettingsWindow {
     private var distributions: [LinuxDistribution] = []
     private var displays: [DisplayOutput] = []
     private var languages: [UInt16] = []
+    private let localization = Localization()
+    private var languagePacks: [LanguagePack] = []
+    private var comboValues: [Int: [String]] = [:]
     private var level: Int
+    private var pendingBrightness: Int?
     private var selectedRule: Int?
     private let preview: Bool
     private let command: (Int, [String]) throws -> String
-    private let snapshot: () -> String
     private let background = CreateSolidBrush(0x00F8_F7F4)
     private let white = CreateSolidBrush(0x00FF_FFFF)
     private let dark = CreateSolidBrush(0x0033_2920)
     private let titles = [
-        "Обзор", "Яркость", "Клавиатура", "Языки ввода", "Рабочий стол", "Мышь", "Homebrew", "О SwiftyToys",
+        "Overview", "Brightness", "Keyboard", "Input languages", "Desktop", "Mouse", "Magic Trackpad", "Homebrew", "About SwiftyToys",
     ]
+    private let tileDetails = [
+        "Brightness, F1 / F2 keys, and indicator", "Command, Option, and your shortcuts",
+        "Ctrl + Space and smart Caps Lock", "Always-on-top windows and no-sleep mode",
+        "Natural wheel direction", "Precision Touchpad over USB and Bluetooth",
+        "Package manager inside WSL 2", "Author, source code, and inspiration",
+    ]
+    private let tileGlyphs = ["\u{E706}", "\u{E765}", "\u{E775}", "\u{E7F4}", "\u{E962}", "\u{E7C9}", "\u{E756}", "\u{E946}"]
     init(
         brightness: Int, keyboard: KeyboardConfiguration, preview: Bool = false,
-        command: @escaping (Int, [String]) throws -> String, snapshot: @escaping () -> String
+        command: @escaping (Int, [String]) throws -> String
     ) throws {
         self.level = brightness
         self.keyboard = keyboard
         self.preview = preview
         self.command = command
-        self.snapshot = snapshot
         var common = INITCOMMONCONTROLSEX()
         common.dwSize = DWORD(MemoryLayout<INITCOMMONCONTROLSEX>.size)
         common.dwICC = DWORD(ICC_BAR_CLASSES)
@@ -88,9 +97,10 @@ final class SettingsWindow {
         }
         makeFonts()
         label("SwiftyToys", 10, 25, 26, 190, 40, large: true, sidebar: true)
-        label("Привычки Mac. Возможности Windows.", 11, 25, 78, 188, 50, sidebar: true)
+        label("Mac habits. Windows power.", 11, 25, 78, 188, 50, sidebar: true)
+        control("STATIC", "ON WINDOWS", 13, 25, 117, 158, 27, style: DWORD(SS_OWNERDRAW), sidebar: true)
         for index in titles.indices { button(titles[index], 100 + index, 18, 154 + index * 49, 206, 42, sidebar: true) }
-        label("SWIFT • NATIVE • OPEN SOURCE", 12, 25, 610, 184, 40, sidebar: true)
+        label("Think Different.\nSwift. Native. Open source.", 12, 25, 642, 184, 48, sidebar: true)
         renderPage()
     }
     func show() {
@@ -103,28 +113,35 @@ final class SettingsWindow {
         guard let window, IsWindowVisible(window) else { return false }
         let handled=IsDialogMessageW(window, &message)
         if handled, let focus=GetFocus(), content.contains(focus) {
+            let previousOffset = scrollOffset
             var area=RECT(); var client=RECT(); GetWindowRect(focus,&area); GetClientRect(window,&client)
             _ = withUnsafeMutablePointer(to:&area) { $0.withMemoryRebound(to:POINT.self,capacity:2) { MapWindowPoints(nil,window,$0,2) } }
             if area.top < 0 { scrollOffset=max(0,scrollOffset+area.top) }
             else if area.bottom > client.bottom { scrollOffset += area.bottom-client.bottom+8 }
-            arrange(); InvalidateRect(window,nil,true)
+            if previousOffset != scrollOffset { arrange(); InvalidateRect(window,nil,false) }
         }
         return handled
     }
     func update(brightness: Int) {
+        guard pendingBrightness == nil else { return }
         level = brightness
         if let label = controls[210] { setText(label, "\(brightness)%") }
-        if page == 0, let label = controls[24] { setText(label, snapshot()) }
+        if let slider = controls[211] { SendMessageW(slider, UINT(TBM_SETPOS), 1, LPARAM(brightness)) }
+        if page == 0, let tile = controls[121] { setText(tile, tileText(1)); InvalidateRect(tile, nil, false) }
     }
     /// Tests this application's own native controls without sending desktop input.
     func validateLayout() throws {
         guard let window else { throw WindowsError.unsupported("Missing settings window.") }
         var client = RECT()
         GetClientRect(window, &client)
+        let initialLanguage = localization.pack
+        defer { try? localization.select(initialLanguage, persist: false) }
+        for language in localization.available() {
+        try localization.select(language, persist: false)
         for index in titles.indices {
             page = index
             renderPage()
-            for id in 100...107 {
+            for id in 100..<(100 + titles.count) {
                 guard let navigation = controls[id], IsWindow(navigation), !text(id).isEmpty else {
                     throw WindowsError.unsupported("Missing native navigation control.")
                 }
@@ -145,16 +162,37 @@ final class SettingsWindow {
                     )
                 }
             }
+            // Own-control regression: every native checkbox must toggle on a click and back.
+            for id in [219, 244, 315, 346, 405, 422, 423] {
+                guard let handle = controls[id] else { continue }
+                let before = checked(id)
+                SendMessageW(handle, UINT(BM_CLICK), 0, 0)
+                guard checked(id) != before else { throw WindowsError.unsupported("Checkbox \(id) did not toggle.") }
+                SendMessageW(handle, UINT(BM_CLICK), 0, 0)
+                guard checked(id) == before else { throw WindowsError.unsupported("Checkbox \(id) did not restore.") }
+            }
+        }
+        }
+        page = 1; renderPage(); update(brightness: 68)
+        guard let slider = controls[211], SendMessageW(slider, UINT(TBM_GETPOS), 0, 0) == 68 else {
+            throw WindowsError.unsupported("Brightness slider did not follow the resident value.")
         }
         page = 0
         renderPage()
+        if let tile = controls[121] {
+            SendMessageW(tile, UINT(BM_CLICK), 0, 0)
+            guard page == 1 else { throw WindowsError.unsupported("Feature tile did not navigate.") }
+        }
+        try localization.select(initialLanguage, persist: false)
+        page = 0; renderPage()
     }
     private var scale: Double { window.map { Double(GetDpiForWindow($0)) / 96 } ?? 1 }
     private func makeFonts() {
         for font in fonts { DeleteObject(font) }
         fonts.removeAll()
-        for (size, weight) in [(15, 400), (27, 600), (18, 600)] {
-            let font = withWideString("Segoe UI") {
+        for (index, definition) in [(15, 400), (27, 600), (18, 600), (27, 400)].enumerated() {
+            let (size, weight) = definition
+            let font = withWideString(index == 3 ? "Segoe MDL2 Assets" : "Segoe UI") {
                 CreateFontW(
                     -Int32(Double(size) * scale), 0, 0, 0, Int32(weight), 0, 0, 0, DWORD(DEFAULT_CHARSET),
                     DWORD(OUT_DEFAULT_PRECIS), DWORD(CLIP_DEFAULT_PRECIS), DWORD(CLEARTYPE_QUALITY),
@@ -169,10 +207,10 @@ final class SettingsWindow {
     ) -> HWND? {
         guard let window else { return nil }
         let handle = withWideString(type) { name in
-            withWideString(text) {
+            withWideString(type == "STATIC" || type == "BUTTON" ? localization.text(text) : text) {
                 CreateWindowExW(
                     type == "EDIT" || type == "LISTBOX" ? DWORD(WS_EX_CLIENTEDGE) : 0, name, $0,
-                    DWORD(WS_CHILD | WS_VISIBLE) | style, 0, 0, 1, 1, window, HMENU(bitPattern: id),
+                    DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS) | style, 0, 0, 1, 1, window, HMENU(bitPattern: id),
                     GetModuleHandleW(nil), nil)
             }
         }
@@ -207,14 +245,19 @@ final class SettingsWindow {
             "COMBOBOX", "", id, x, y, width, 220,
             style: DWORD(WS_TABSTOP | WS_VSCROLL) | DWORD(editable ? CBS_DROPDOWN : CBS_DROPDOWNLIST))
         {
+            if !editable { comboValues[id] = items }
             for item in items {
-                _ = withWideString(item) { SendMessageW(handle, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0))) }
+                _ = withWideString(editable ? item : localization.text(item)) { SendMessageW(handle, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0))) }
             }
             SendMessageW(handle, UINT(CB_SETCURSEL), 0, 0)
         }
     }
     private func text(_ id: Int) -> String {
         guard let handle = controls[id] else { return "" }
+        if let values = comboValues[id] {
+            let index = Int(SendMessageW(handle, UINT(CB_GETCURSEL), 0, 0))
+            if values.indices.contains(index) { return values[index] }
+        }
         let capacity=min(8192,max(0,Int(GetWindowTextLengthW(handle))))+1
         var buffer = Array(repeating: WCHAR(0), count: capacity)
         let count = GetWindowTextW(handle, &buffer, Int32(capacity))
@@ -224,71 +267,94 @@ final class SettingsWindow {
         controls[id].map { SendMessageW($0, UINT(BM_GETCHECK), 0, 0) == LRESULT(BST_CHECKED) } ?? false
     }
     private func setText(_ handle: HWND, _ text: String) { _ = withWideString(text) { SetWindowTextW(handle, $0) } }
-    private func status(_ text: String) { if let handle = controls[99] { setText(handle, text) } }
+    private func status(_ text: String) { if let handle = controls[99] { setText(handle, localization.text(text)) } }
+    private func tileState(_ page: Int) -> String {
+        switch page {
+        case 1: return "\(level)%"
+        case 2: return keyboard.enabled ? "On" : "Paused"
+        case 3: return keyboard.smartCaps ? "Caps Lock on" : "Ctrl + Space"
+        case 4: return "On demand"
+        case 5: return keyboard.reverseVertical || keyboard.reverseHorizontal ? "On" : "Off"
+        case 6: return "USB + Bluetooth"
+        case 7: return "Install in WSL 2"
+        default: return "principalwater"
+        }
+    }
+    private func tileText(_ page: Int) -> String {
+        localization.text("{0}. {1}. {2}. Open settings.", [localization.text(titles[page]), localization.text(tileDetails[page - 1]), localization.text(tileState(page))])
+    }
     private func renderPage() {
         guard let window else { return }
+        let visible = IsWindowVisible(window)
+        if visible { SendMessageW(window, UINT(WM_SETREDRAW), 0, 0) }
+        defer {
+            if visible { SendMessageW(window, UINT(WM_SETREDRAW), 1, 0) }
+            RedrawWindow(window, nil, nil, UINT(RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_ERASE))
+        }
         scrollOffset = 0
         for handle in content { DestroyWindow(handle) }
         layout.removeAll { content.contains($0.0) }
         controls = controls.filter { !content.contains($0.value) }
         content.removeAll()
+        comboValues.removeAll()
+        for index in titles.indices {
+            if let navigation = controls[100 + index] { setText(navigation, localization.text(titles[index])) }
+        }
+        if let tagline = controls[11] { setText(tagline, localization.text("Mac habits. Windows capabilities.")) }
         label(titles[page], 20, 276, 30, 720, 48, large: true)
         let subtitles = [
-            "Небольшие инструменты для удобной работы каждый день.",
-            "Точный контроль выбранного экрана — с сохранением калибровки.",
-            "Настройте клавиши, сочетания и действия под свои привычки.",
-            "Переключайте раскладки и настройте Caps Lock как на Mac.",
-            "Оставьте важное окно на виду и управляйте режимом сна.", "Привычное направление прокрутки — как на Mac.",
-            "Знакомый менеджер пакетов — в Linux внутри Windows.",
-            "Создано для пользователей Mac и тех, кто перешёл на Windows.",
+            "Small tools for comfortable everyday work.",
+            "Precise control of the selected display, preserving calibration.",
+            "Customize keys, shortcuts, and actions to fit your habits.",
+            "Switch layouts and set up Caps Lock like on Mac.",
+            "Keep an important window in view and control sleep mode.", "Familiar scroll direction, like on Mac.",
+            "Apple Magic Trackpad gestures via the native Windows engine.",
+            "The familiar package manager, on Linux inside Windows.",
+            "Made for Mac users and those who've switched to Windows.",
         ]
         label(subtitles[page], 21, 278, 88, 718, 45)
         switch page {
         case 0:
-            label("Ваш Mac-профиль", 22, 300, 170, 640, 32, large: true)
-            label(
-                "Ctrl + Space     переключение языка\n⌘ + Tab             переключение окон\n⌘ + C / V / Z     привычные команды редактирования",
-                23, 300, 222, 650, 104)
-            label(snapshot(), 24, 300, 352, 650, 60)
-            button("Настроить клавиатуру", 901, 300, 442, 248)
-            button("Настроить яркость", 902, 568, 442, 222)
-            label("Всё локально. Нативный интерфейс. Открытый исходный код.", 25, 300, 535, 650, 50)
+            for feature in 1..<titles.count {
+                let index = feature - 1
+                button(tileText(feature), 120 + feature, 278 + (index % 2) * 352, 148 + (index / 2) * 128, 334, 112)
+            }
         case 1:
-            label("Яркость экрана", 210, 300, 172, 300, 40, large: true)
+            label("Display brightness", 210, 300, 172, 300, 40, large: true)
             setText(controls[210]!, "\(level)%")
             if let slider = control(
-                "msctls_trackbar32", "Яркость", 211, 300, 229, 650, 40, style: DWORD(WS_TABSTOP | TBS_AUTOTICKS))
+                "msctls_trackbar32", "Brightness", 211, 300, 229, 650, 40, style: DWORD(WS_TABSTOP | TBS_AUTOTICKS))
             {
                 SendMessageW(slider, UINT(TBM_SETRANGEMIN), 0, 0)
                 SendMessageW(slider, UINT(TBM_SETRANGEMAX), 0, 100)
                 SendMessageW(slider, UINT(TBM_SETPOS), 1, LPARAM(level))
             }
             displays = ((try? discoverDisplays()) ?? []).filter { $0.isPhysical && !$0.isCloned && !$0.isHDR }
-            label("Экран", 212, 300, 294, 200, 25)
+            label("Display", 212, 300, 294, 200, 25)
             combo(displays.map(\.name), 213, 300, 324, 444)
-            button("Выбрать", 214, 764, 322, 170)
-            label("Индикатор яркости", 215, 300, 378, 250, 25)
+            button("Select", 214, 764, 322, 170)
+            label("Brightness indicator", 215, 300, 378, 250, 25)
             combo(["SwiftyToys", "Windows"], 216, 300, 410, 210)
-            label("Шаг, %", 217, 538, 378, 100, 25)
+            label("Step, %", 217, 538, 378, 100, 25)
             edit("5", 218, 538, 410, 90)
-            check("F1 / F2 без Fn", 219, 660, 410, 274, on: (try? Settings().grabFunctionKeys) ?? false)
+            check("F1 / F2 without Fn", 219, 660, 410, 274, on: (try? Settings().grabFunctionKeys) ?? false)
             check(
-                "Держать физическую яркость на 100% (DDC)", 244, 300, 442, 630,
+                "Keep physical brightness at 100% (DDC)", 244, 300, 442, 630,
                 on: (try? Settings().hardwareMaximum) ?? true)
             let hotkeys =
                 (try? Settings().hotkeys) ?? ["Ctrl+Alt+Up", "Ctrl+Alt+Down", "Ctrl+Alt+PageUp", "Ctrl+Alt+PageDown"]
             for index in 0..<4 {
                 label(
-                    ["Увеличить", "Уменьшить", "Максимум", "Минимум"][index], 220 + index, 300 + index * 166, 472, 156,
+                    ["Increase", "Decrease", "Maximum", "Minimum"][index], 220 + index, 300 + index * 166, 472, 156,
                     25)
                 edit(hotkeys[index], 230 + index, 300 + index * 166, 504, 156)
             }
-            button("Сохранить настройки", 240, 300, 559, 242)
-            button("Переподключить экран", 241, 566, 559, 250)
+            button("Save settings", 240, 300, 559, 242)
+            button("Reconnect display", 241, 566, 559, 250)
         case 2:
-            check("Включить переназначения", 315, 300, 152, 350, on: keyboard.enabled)
+            check("Enable remapping", 315, 300, 152, 350, on: keyboard.enabled)
             if let list = control(
-                "LISTBOX", "Правила переназначений", 301, 300, 198, 664, 207,
+                "LISTBOX", "Remapping rules", 301, 300, 198, 664, 207,
                 style: DWORD(WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT))
             {
                 for rule in keyboard.rules {
@@ -297,26 +363,26 @@ final class SettingsWindow {
                     _ = withWideString(row) { SendMessageW(list, UINT(LB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0))) }
                 }
             }
-            label("Исходные клавиши", 302, 300, 422, 210, 25)
+            label("Source keys", 302, 300, 422, 210, 25)
             edit("", 303, 300, 452, 202)
-            label("Новое сочетание или действие", 304, 520, 422, 280, 25)
+            label("New shortcut or action", 304, 520, 422, 280, 25)
             combo(
                 ["Switch language", "Pin window", "Disable key", "Ctrl+C", "Alt+Tab"], 305, 520, 452, 238,
                 editable: true)
-            label("Приложение (пусто = все)", 306, 777, 422, 220, 25)
+            label("App (empty = all)", 306, 777, 422, 220, 25)
             edit("", 307, 777, 452, 187)
-            button("Добавить / изменить", 310, 300, 502, 230)
-            button("Новое", 311, 545, 502, 112)
-            button("Удалить", 312, 672, 502, 122)
-            label("Исключить приложения (через запятую)", 316, 300, 552, 500, 25)
+            button("Add / edit", 310, 300, 502, 230)
+            button("New", 311, 545, 502, 112)
+            button("Delete", 312, 672, 502, 122)
+            label("Exclude apps (comma-separated)", 316, 300, 552, 500, 25)
             edit(keyboard.excluded.joined(separator: ","), 317, 300, 582, 390)
             if let handle=controls[317] { SendMessageW(handle,UINT(EM_SETLIMITTEXT),8192,0) }
-            button("Сохранить", 313, 710, 581, 122)
-            button("Профиль Mac", 314, 847, 581, 117)
+            button("Save", 313, 710, 581, 122)
+            button("Mac profile", 314, 847, 581, 117)
             selectedRule = nil
         case 3:
-            label("Как переключать язык", 340, 300, 170, 630, 38, large: true)
-            combo(["По кругу", "Латинская ↔ нелатинская", "Выбранная пара"], 341, 300, 226, 390)
+            label("How to switch language", 340, 300, 170, 630, 38, large: true)
+            combo(["Cycle", "Latin ↔ non-Latin", "Selected pair"], 341, 300, 226, 390)
             if let mode = controls[341] {
                 SendMessageW(
                     mode, UINT(CB_SETCURSEL),
@@ -326,9 +392,9 @@ final class SettingsWindow {
             languages = configuredLayouts().map { UInt16(truncatingIfNeeded: UInt(bitPattern: $0)) }.filter {
                 seen.insert($0).inserted
             }
-            label("Первая раскладка пары", 342, 300, 288, 290, 25)
+            label("First layout in pair", 342, 300, 288, 290, 25)
             combo(languages.map(languageName), 343, 300, 320, 290)
-            label("Вторая раскладка пары", 344, 620, 288, 320, 25)
+            label("Second layout in pair", 344, 620, 288, 320, 25)
             combo(languages.map(languageName), 345, 620, 320, 324)
             for (offset, id) in [343, 345].enumerated() {
                 let language =
@@ -338,64 +404,86 @@ final class SettingsWindow {
                     SendMessageW(combo, UINT(CB_SETCURSEL), WPARAM(index), 0)
                 }
             }
-            check("Caps Lock: короткое нажатие / удержание", 346, 300, 392, 640, on: keyboard.smartCaps)
-            label("Короткое нажатие", 347, 300, 448, 300, 25)
+            check("Caps Lock: tap / hold", 346, 300, 392, 640, on: keyboard.smartCaps)
+            label("Tap", 347, 300, 448, 300, 25)
             combo(["Switch language", "Pin window", "Disable key", "Ctrl+Space"], 348, 300, 480, 300, editable: true)
             if let combo = controls[348] { setText(combo, keyboard.capsAction) }
-            label("Удержание, мс (150–800)", 349, 636, 448, 320, 25)
+            label("Hold, ms (150–800)", 349, 636, 448, 320, 25)
             edit(String(keyboard.capsThreshold), 351, 636, 480, 130)
             label(
-                "Удержание включает Caps Lock. Когда Caps уже включён, тап выключает его.\nShift + Caps Lock сохраняет обычное поведение. CJK IME не перехватывается.\nСочетание Ctrl + Space меняется в разделе «Клавиатура».",
+                "Holding turns Caps Lock on. When Caps is already on, a tap turns it off.\nShift + Caps Lock keeps the normal behavior. CJK IMEs are not intercepted.\nThe Ctrl + Space shortcut is changed in the “Keyboard” section.",
                 352, 300, 537, 650, 82)
-            button("Сохранить переключение", 350, 300, 611, 288)
+            button("Save switching", 350, 300, 611, 288)
         case 4:
-            label("Поверх остальных", 400, 300, 172, 550, 36, large: true)
+            label("Always on top", 400, 300, 172, 550, 36, large: true)
             label(
-                "⌘ + Ctrl + T закрепляет активное окно.\nПовторное нажатие возвращает обычный порядок окон.", 401, 300,
+                "⌘ + Ctrl + T pins the active window.\nPressing again restores the normal window order.", 401, 300,
                 226, 620, 62)
-            label("Не засыпать", 402, 300, 344, 500, 36, large: true)
-            label("Временный режим: системные параметры питания сохраняются.", 403, 300, 397, 620, 48)
-            combo(["30 минут", "1 час", "2 часа", "8 часов"], 404, 300, 466, 200)
-            check("Оставить экран включённым", 405, 526, 466, 380, on: false)
-            button("Включить", 410, 300, 526, 180)
-            button("Отключить", 411, 500, 526, 180)
+            label("Stay awake", 402, 300, 344, 500, 36, large: true)
+            label("Temporary mode: system power settings are preserved.", 403, 300, 397, 620, 48)
+            combo(["30 minutes", "1 hour", "2 hours", "8 hours"], 404, 300, 466, 200)
+            check("Keep screen on", 405, 526, 466, 380, on: false)
+            button("Enable", 410, 300, 526, 180)
+            button("Disable", 411, 500, 526, 180)
         case 5:
-            label("Естественная прокрутка", 420, 300, 176, 640, 40, large: true)
+            label("Natural scrolling", 420, 300, 176, 640, 40, large: true)
             label(
-                "Измените направление колёсика обычной мыши.\nВертикальная и горизонтальная прокрутка настраиваются отдельно.",
+                "Change the wheel direction of a regular mouse.\nVertical and horizontal scrolling are set separately.",
                 421, 300, 234, 640, 64)
-            check("Инвертировать вертикальное колесо", 422, 300, 338, 640, on: keyboard.reverseVertical)
-            check("Инвертировать горизонтальное колесо", 423, 300, 392, 640, on: keyboard.reverseHorizontal)
+            check("Invert vertical wheel", 422, 300, 338, 640, on: keyboard.reverseVertical)
+            check("Invert horizontal wheel", 423, 300, 392, 640, on: keyboard.reverseHorizontal)
             label(
-                "Настройка общая для всех устройств, которые отправляют wheel-события.\nТачпад может иметь собственную настройку направления в Windows.\nCtrl / Shift / Alt / Command + колесо сохраняют поведение приложения.\nИсключения приложений общие с разделом «Клавиатура».",
+                "This setting applies to all devices that send wheel events.\nThe touchpad may have its own direction setting in Windows.\nCtrl / Shift / Alt / Command + wheel keep the app's behavior.\nApp exclusions are shared with the “Keyboard” section.",
                 424, 300, 460, 640, 112)
-            button("Сохранить направление", 430, 300, 591, 260)
-            button("Настройки мыши Windows", 431, 580, 591, 320)
+            button("Windows mouse settings", 431, 300, 591, 320)
         case 6:
+            let trackpad = TrackpadStatus.current(localization: localization)
+            label("Apple Magic Trackpad", 450, 300, 170, 650, 40, large: true)
+            label(trackpad.summary, 451, 300, 212, 650, 82)
+            label("Driver source", 458, 300, 298, 350, 24)
+            combo(["Apple Boot Camp (USB + Bluetooth)", "Open source: imbushuo (experimental Bluetooth)"], 459, 300, 326, 578)
+            button("Install Precision driver", 452, 300, 380, 350)
+            button("Refresh", 453, 678, 380, 200)
+            button("Windows gestures and scrolling", 454, 300, 436, 350)
+            button("Restore previous driver", 457, 678, 436, 268)
+            button("Connect via Bluetooth", 455, 300, 491, 350)
+            label(
+                "Two fingers: scroll, zoom, and right-click.\nThree / four: windows, desktops, and assignable shortcuts.\nSmoothness and recognition are provided by Windows Precision Touchpad.\nSet the direction in Windows: wheel inversion is for a regular mouse.\nOver Bluetooth, pairing in Windows and a free connection are required.\nForce Touch and app behavior may differ from macOS.",
+                456, 300, 539, 650, 108)
+        case 7:
             distributions = LinuxDistribution.installed()
             label(
-                distributions.isEmpty ? "Сначала установите WSL 2" : "Выберите Linux-дистрибутив", 500, 300, 170, 660,
+                distributions.isEmpty ? "Install WSL 2 first" : "Choose a Linux distribution", 500, 300, 170, 660,
                 40, large: true)
             label(
-                "Homebrew устанавливается внутри WSL 2.\nWindows-приложения устанавливаются отдельно, например через winget.",
+                "Homebrew installs inside WSL 2.\nWindows apps are installed separately, for example via winget.",
                 501, 300, 228, 650, 74)
             combo(distributions.map { "\($0.name) (WSL \($0.version))" }, 502, 300, 326, 450)
-            button("Обновить список", 503, 772, 324, 192)
-            button("Установить WSL + Ubuntu", 510, 300, 393, 282)
-            button("Установить Homebrew", 511, 604, 393, 278)
+            button("Refresh list", 503, 772, 324, 192)
+            button("Install WSL + Ubuntu", 510, 300, 393, 282)
+            button("Install Homebrew", 511, 604, 393, 278)
             label(
-                "WSL может потребовать права администратора и перезагрузку.\nПосле первого запуска Ubuntu создайте пользователя Linux.\nHomebrew откроет терминал: вы увидите шаги и сами введёте пароль sudo.\nЗатем появятся brew и настройка PATH для Bash.",
+                "WSL may require administrator rights and a restart.\nAfter the first Ubuntu launch, create a Linux user.\nHomebrew will open a terminal: you'll see the steps and enter your sudo password yourself.\nThen brew and the PATH setup for Bash will appear.",
                 504, 300, 468, 650, 120)
-            button("Официальная инструкция", 512, 300, 609, 282)
+            button("Official guide", 512, 300, 609, 282)
         default:
-            label("SwiftyToys  \(AppVersion.string)", 600, 300, 170, 650, 40, large: true)
+            label("Think Different.", 600, 300, 166, 650, 46, large: true)
+            label("On Windows.  •  SwiftyToys \(AppVersion.string)", 602, 300, 220, 650, 30)
             label(
-                "Swift + нативные Windows API. Локальные настройки, без телеметрии.\n\nУправление яркостью основано на BrightnessCtl.\nИнтерфейс и идея набора инструментов вдохновлены Microsoft PowerToys.\nSwiftyToys дополняет PowerToys функциями для привычек Mac.\n\nMIT License. Независимый проект; не связан с Microsoft или Apple.",
-                601, 300, 234, 650, 210)
-            button("Microsoft PowerToys", 610, 300, 488, 254)
-            button("BrightnessCtl", 611, 579, 488, 232)
+                "Author: principalwater. Inspired by Apple's approach to computing.\nSwift + native Windows APIs. Local settings, no telemetry.\n\nBrightnessCtl code is built into SwiftyToys. The toolset and tiled\ninterface are inspired by Microsoft PowerToys — we extend them for Mac habits.\n\nMIT License. Independent project; not affiliated with Microsoft or Apple.",
+                601, 300, 278, 650, 180)
+            button("Author on GitHub", 612, 300, 480, 252)
+            button("SwiftyToys source code", 613, 580, 480, 304)
+            button("Microsoft PowerToys", 610, 300, 538, 252)
+            button("BrightnessCtl", 611, 580, 538, 232)
+            label("Display language", 620, 300, 598, 250, 25)
+            languagePacks = localization.available()
+            combo(languagePacks.map(\.name), 621, 580, 594, 304)
+            if let control = controls[621], let selected = languagePacks.firstIndex(where: { $0.locale == localization.pack.locale }) {
+                SendMessageW(control, UINT(CB_SETCURSEL), WPARAM(selected), 0)
+            }
         }
-        label(preview ? "Предпросмотр интерфейса — изменения отключены." : "", 99, 278, 668, 700, 46)
+        label(preview ? "Interface preview — changes are disabled." : "", 99, 278, 668, 700, 46)
         arrange()
         InvalidateRect(window, nil, true)
     }
@@ -415,7 +503,7 @@ final class SettingsWindow {
         let extra = max(0, Int(Double(area.right) / scale) - 1030)
         for (handle, x, y, width, height) in layout {
             let top = Int32(Double(y) * scale) - (x >= 276 ? scrollOffset : 0)
-            let footer = handle == controls[12] ? min(top, area.bottom - Int32(50 * scale)) : top
+            let footer = handle == controls[12] ? max(Int32(598 * scale), min(top, area.bottom - Int32(54 * scale))) : top
             MoveWindow(
                 handle, Int32(Double(x) * scale), footer,
                 Int32(Double(width + (x >= 276 && width >= 600 ? extra : 0)) * scale), Int32(Double(height) * scale),
@@ -474,13 +562,24 @@ final class SettingsWindow {
         case UINT(WM_COMMAND):
             let id = Int(value & 0xFFFF)
             let notification = Int((value >> 16) & 0xFFFF)
-            if (100...107).contains(id), notification == Int(BN_CLICKED) {
+            if id == 621, notification == Int(CBN_SELCHANGE), let control = controls[621] {
+                let index = Int(SendMessageW(control, UINT(CB_GETCURSEL), 0, 0))
+                if languagePacks.indices.contains(index) {
+                    do {
+                        try localization.select(languagePacks[index], persist: !preview); renderPage()
+                        if let control = controls[621] { SetFocus(control) }
+                    }
+                    catch { status(String(describing: error)) }
+                }
+                return 0
+            }
+            if (100..<(100 + titles.count)).contains(id), notification == Int(BN_CLICKED) {
                 page = id - 100
                 renderPage()
                 return 0
             }
-            if id == 901 || id == 902 {
-                page = id == 901 ? 2 : 1
+            if (121..<(120 + titles.count)).contains(id), notification == Int(BN_CLICKED) {
+                page = id - 120
                 renderPage()
                 return 0
             }
@@ -496,6 +595,12 @@ final class SettingsWindow {
                 return 0
             }
             guard notification == Int(BN_CLICKED) else { break }
+            if [219, 244, 315, 346, 405].contains(id) {
+                status("Changed. Apply settings with the Save button.")
+                return 0
+            }
+            if id == Int(IDCANCEL) { ShowWindow(window, Int32(SW_HIDE)); return 0 }
+            if id == Int(IDOK) { return 0 }
             do {
                 if id == 311 {
                     selectedRule = nil
@@ -524,10 +629,10 @@ final class SettingsWindow {
                 if id == 314 {
                     keyboard.rules = RemapRule.macPreset
                     renderPage()
-                    status("Профиль восстановлен. Нажмите «Сохранить».")
+                    status("Profile restored. Click “Save”.")
                     return 0
                 }
-                if id == 503 {
+                if id == 503 || id == 453 {
                     renderPage()
                     return 0
                 }
@@ -535,15 +640,17 @@ final class SettingsWindow {
                     try shellOpen("https://docs.brew.sh/Installation")
                     return 0
                 }
-                if id == 610 || id == 611 {
-                    try shellOpen(
-                        id == 610
-                            ? "https://github.com/microsoft/PowerToys"
-                            : "https://github.com/principalwater/BrightnessCtl")
+                if (610...613).contains(id) {
+                    let links = ["https://github.com/microsoft/PowerToys", "https://github.com/principalwater/BrightnessCtl", "https://github.com/principalwater", "https://github.com/principalwater/SwiftyToys"]
+                    try shellOpen(links[id - 610])
+                    return 0
+                }
+                if id == 454 || id == 455 || id == 431 {
+                    try shellOpen(id == 455 ? "ms-settings:bluetooth" : id == 454 ? "ms-settings:devices-touchpad" : "ms-settings:mousetouchpad")
                     return 0
                 }
                 guard !preview else {
-                    status("Предпросмотр: запустите обычную версию для применения.")
+                    status("Preview: run the regular version to apply.")
                     return 0
                 }
                 if id == 313 {
@@ -553,14 +660,14 @@ final class SettingsWindow {
                     status(try command(id, []))
                 } else if id == 510 {
                     try shellOpen("wsl.exe", arguments: "--install -d Ubuntu", elevated: true, owner: window)
-                    status("Завершите установку и первый запуск Ubuntu, затем обновите список.")
+                    status("Finish installing and first launching Ubuntu, then refresh the list.")
                 } else if id == 511 {
                     let index = controls[502].map { Int(SendMessageW($0, UINT(CB_GETCURSEL), 0, 0)) } ?? -1
                     guard distributions.indices.contains(index) else {
                         throw WindowsError.unsupported("Install and initialize a WSL 2 distribution first.")
                     }
                     try distributions[index].openHomebrewInstaller()
-                    status("Официальный установщик открыт в терминале Linux.")
+                    status("The official installer is open in the Linux terminal.")
                 } else if id == 214 {
                     let index = controls[213].map { Int(SendMessageW($0, UINT(CB_GETCURSEL), 0, 0)) } ?? -1
                     guard displays.indices.contains(index) else {
@@ -576,13 +683,22 @@ final class SettingsWindow {
                             ]))
                 } else if id == 410 {
                     status(try command(id, [text(404), checked(405) ? "1" : "0"]))
-                } else if id == 430 {
-                    keyboard.reverseVertical = checked(422)
-                    keyboard.reverseHorizontal = checked(423)
-                    status(
-                        try command(id, [keyboard.reverseVertical ? "1" : "0", keyboard.reverseHorizontal ? "1" : "0"]))
-                } else if id == 431 {
-                    try shellOpen("ms-settings:mousetouchpad")
+                } else if id == 422 || id == 423 {
+                    let vertical = checked(422); let horizontal = checked(423)
+                    do {
+                        status(try command(430, [vertical ? "1" : "0", horizontal ? "1" : "0"]))
+                        keyboard.reverseVertical = vertical; keyboard.reverseHorizontal = horizontal
+                    } catch {
+                        if let control = controls[id] {
+                            let before = id == 422 ? keyboard.reverseVertical : keyboard.reverseHorizontal
+                            SendMessageW(control, UINT(BM_SETCHECK), before ? WPARAM(BST_CHECKED) : WPARAM(BST_UNCHECKED), 0)
+                        }
+                        throw error
+                    }
+                } else if id == 452 || id == 457 {
+                    let source = controls[459].map { SendMessageW($0, UINT(CB_GETCURSEL), 0, 0) == 1 ? "Imbushuo" : "Apple" } ?? "Apple"
+                    try TrackpadStatus.openInstaller(owner: window, source: source, rollback: id == 457)
+                    status("Installer opened. After installing, refresh the device status.")
                 } else if id == 350 {
                     let mode = controls[341].map { Int(SendMessageW($0, UINT(CB_GETCURSEL), 0, 0)) } ?? 0
                     let first = controls[343].map { Int(SendMessageW($0, UINT(CB_GETCURSEL), 0, 0)) } ?? -1
@@ -602,7 +718,7 @@ final class SettingsWindow {
                                 keyboard.smartCaps ? "1" : "0", String(keyboard.capsThreshold), keyboard.capsAction,
                                 keyboard.languageMode, pair.map(String.init).joined(separator: ","),
                             ]))
-                } else {
+                } else if id == 241 || id == 411 {
                     status(try command(id, []))
                 }
             } catch { status(String(describing: error)) }
@@ -611,14 +727,17 @@ final class SettingsWindow {
             if let slider = controls[211] {
                 level = Int(SendMessageW(slider, UINT(TBM_GETPOS), 0, 0))
                 if let label = controls[210] { setText(label, "\(level)%") }
-                SetTimer(window, 24, 120, nil)
+                if pendingBrightness == nil { SetTimer(window, 24, 120, nil) }
+                pendingBrightness = level
             }
             return 0
         case UINT(WM_TIMER):
             if value == 24 {
                 KillTimer(window, 24)
-                if !preview {
-                    do { status(try command(211, [String(level)])) } catch { status(String(describing: error)) }
+                let desired = pendingBrightness
+                pendingBrightness = nil
+                if !preview, let desired {
+                    do { status(try command(211, [String(desired)])) } catch { status(String(describing: error)) }
                 }
             }
             return 0
@@ -626,14 +745,18 @@ final class SettingsWindow {
             let dc = HDC(bitPattern: UInt(value))
             SetBkMode(dc, Int32(TRANSPARENT))
             let child = HWND(bitPattern: Int(data))
-            let sidebar = controls.filter { $0.key < 20 }.values.contains { $0 == child }
+            let id = child.map { Int(GetDlgCtrlID($0)) } ?? 0
+            let sidebar = id > 0 && id < 20
+            let outside = [20, 21, 99].contains(id)
             SetTextColor(dc, sidebar ? 0x00C9_C8C3 : 0x0036_2B24)
-            SetBkColor(dc, sidebar ? 0x0033_2920 : 0x00FF_FFFF)
-            return LRESULT(Int(bitPattern: sidebar ? dark : white))
+            SetBkColor(dc, sidebar ? 0x0033_2920 : outside ? 0x00F8_F7F4 : 0x00FF_FFFF)
+            return LRESULT(Int(bitPattern: sidebar ? dark : outside ? background : white))
         case UINT(WM_DRAWITEM):
             if let item = UnsafePointer<DRAWITEMSTRUCT>(bitPattern: Int(data))?.pointee { drawButton(item) }
             return 1
-        case UINT(WM_ERASEBKGND): return 1
+        case UINT(WM_ERASEBKGND), UINT(WM_PRINTCLIENT):
+            if let dc = HDC(bitPattern: UInt(value)) { paintBackground(dc, window) }
+            return 1
         case UINT(WM_PAINT):
             paint(window)
             return 0
@@ -645,6 +768,9 @@ final class SettingsWindow {
         var paint = PAINTSTRUCT()
         guard let dc = BeginPaint(window, &paint) else { return }
         defer { EndPaint(window, &paint) }
+        paintBackground(dc, window)
+    }
+    private func paintBackground(_ dc: HDC, _ window: HWND) {
         var area = RECT()
         GetClientRect(window, &area)
         FillRect(dc, &area, background)
@@ -653,6 +779,7 @@ final class SettingsWindow {
         var sidebar = area
         sidebar.right = Int32(242 * scale)
         FillRect(dc, &sidebar, brush)
+        guard page != 0 else { return }
         let previous = SelectObject(dc, white)
         let pen = CreatePen(Int32(PS_SOLID), 1, 0x00EA_E6E0)
         let oldPen = SelectObject(dc, pen)
@@ -666,13 +793,15 @@ final class SettingsWindow {
     private func drawButton(_ item: DRAWITEMSTRUCT) {
         guard let dc = item.hDC else { return }
         let id = Int(item.CtlID)
-        let nav = (100...107).contains(id)
+        let nav = (100..<(100 + titles.count)).contains(id)
+        let tile = (121..<(120 + titles.count)).contains(id)
+        let badge = id == 13
         let selected = nav && id == page + 100
         let pressed = item.itemState & UINT(ODS_SELECTED) != 0
-        let color: COLORREF = nav ? (selected ? 0x0056_4434 : 0x0033_2920) : (pressed ? 0x00D9_CAB9 : 0x00F0_E9E1)
+        let color: COLORREF = badge ? 0x008C_5A32 : nav ? (selected ? 0x0056_4434 : 0x0033_2920) : tile ? (pressed ? 0x00FA_F4EC : 0x00FF_FFFF) : (pressed ? 0x00D9_CAB9 : 0x00F0_E9E1)
         let brush = CreateSolidBrush(color)
         let oldBrush = SelectObject(dc, brush)
-        let pen = CreatePen(Int32(PS_SOLID), 1, color)
+        let pen = CreatePen(Int32(PS_SOLID), 1, tile ? 0x00EA_E6E0 : color)
         let oldPen = SelectObject(dc, pen)
         RoundRect(
             dc, item.rcItem.left, item.rcItem.top, item.rcItem.right, item.rcItem.bottom, Int32(10 * scale),
@@ -682,13 +811,33 @@ final class SettingsWindow {
         DeleteObject(brush)
         DeleteObject(pen)
         SetBkMode(dc, Int32(TRANSPARENT))
-        SetTextColor(dc, nav ? 0x00FF_FFFF : 0x0036_2B24)
+        SetTextColor(dc, nav || badge ? 0x00FF_FFFF : 0x0036_2B24)
         let font = fonts.first.map { SelectObject(dc, $0) }
         defer { if let font { SelectObject(dc, font) } }
         var rect = item.rcItem
+        if tile {
+            let feature = id - 120
+            rect.left += Int32(20 * scale); rect.right -= Int32(16 * scale)
+            rect.top += Int32(16 * scale); rect.bottom = rect.top + Int32(32 * scale)
+            if fonts.count > 3 { SelectObject(dc, fonts[3]) }
+            SetTextColor(dc, 0x00A0_6330)
+            _ = withWideString(tileGlyphs[feature - 1]) { DrawTextW(dc, $0, -1, &rect, UINT(DT_LEFT | DT_SINGLELINE)) }
+            rect.left += Int32(46 * scale)
+            if fonts.count > 2 { SelectObject(dc, fonts[2]) }
+            SetTextColor(dc, 0x0036_2B24)
+            _ = withWideString(localization.text(titles[feature])) { DrawTextW(dc, $0, -1, &rect, UINT(DT_LEFT | DT_SINGLELINE)) }
+            rect.top += Int32(33 * scale); rect.bottom = rect.top + Int32(36 * scale)
+            rect.left = item.rcItem.left + Int32(20 * scale)
+            if !fonts.isEmpty { SelectObject(dc, fonts[0]) }
+            _ = withWideString(localization.text(tileDetails[feature - 1])) { DrawTextW(dc, $0, -1, &rect, UINT(DT_LEFT | DT_WORDBREAK)) }
+            rect.top = item.rcItem.bottom - Int32(25 * scale); rect.bottom = item.rcItem.bottom - Int32(4 * scale)
+            SetTextColor(dc, 0x00A0_6330)
+            _ = withWideString(localization.text(tileState(feature))) { DrawTextW(dc, $0, -1, &rect, UINT(DT_LEFT | DT_SINGLELINE)) }
+        } else {
         if nav { rect.left += Int32(16 * scale) }
         _ = withWideString(text(id)) {
             DrawTextW(dc, $0, -1, &rect, UINT(DT_SINGLELINE | DT_VCENTER) | UINT(nav ? DT_LEFT : DT_CENTER))
+        }
         }
         if item.itemState & UINT(ODS_FOCUS) != 0 {
             var focus = item.rcItem

@@ -44,6 +44,8 @@ jobs:
             artifacts/SwiftyToys.exe
             artifacts/*.dll
             artifacts/runtime-files.txt
+            artifacts/install-trackpad.ps1
+            artifacts/Languages/
             Licenses/
             LICENSE
             THIRD_PARTY_NOTICES.md

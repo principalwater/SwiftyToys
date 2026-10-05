@@ -1,5 +1,16 @@
 # Changelog
 
+## SwiftyToys 0.1.1 — 2026-10-06
+
+- Use an English-first feature tile dashboard, with keyboard-accessible native buttons.
+- Fix themed checkbox background painting, false success messages and repeated layout
+  invalidation; apply wheel inversion directly when its checkbox changes.
+- Keep the brightness slider synchronized with hotkeys and throttle continuous dragging.
+- Add runtime language selection, bounded UTF-8 JSON packs and English fallback.
+- Add Magic Trackpad 2 detection, signed upstream USB/Bluetooth driver installation,
+  protected recovery backups, rollback, native gesture settings and Bluetooth pairing links.
+- Credit principalwater, Apple inspiration and Microsoft PowerToys in About.
+
 ## SwiftyToys 0.1.0 — 2026-10-05
 
 - Integrate BrightnessCtl 0.5.3 Swift display code directly, with its recovery/watchdog.

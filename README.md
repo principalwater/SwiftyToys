@@ -6,6 +6,8 @@ settings window. MIT licensed. Inspired by and complementary to
 Boot Camp and former macOS users. Independent project, not affiliated with Microsoft
 or Apple.
 
+**Think Different. On Windows.** By [principalwater](https://github.com/principalwater).
+
 ## Features
 
 - **Brightness:** BrightnessCtl 0.5.3 Swift code is integrated directly: native WDDM
@@ -26,17 +28,26 @@ or Apple.
   Devices which emit wheel events, including some touchpads, share the setting.
 - **Desktop:** Command+Ctrl+T pins the active window; temporary keep-awake with optional
   display-on. Saved power-plan settings are preserved.
+- **Magic Trackpad 2:** detect USB/Bluetooth connections, install separately downloaded
+  signed Precision Touchpad drivers, retain recovery backups, and open native Windows
+  gesture / Bluetooth controls. Apple Boot Camp is the default on Apple computers;
+  the optional open-source package has experimental Bluetooth support. See
+  [supported hardware, limitations and licenses](docs/Trackpad.md).
 - **Homebrew:** detect WSL distributions, install WSL + Ubuntu, open the official
   interactive installer inside a selected WSL 2 distribution and configure Bash shellenv.
   Homebrew runs in Linux; sudo/account setup remain in the user's terminal.
-- **Native UI:** sidebar/cards, standard accessible controls, Tab navigation,
+- **Native UI:** feature tiles/sidebar, standard accessible controls, Tab navigation,
   per-monitor DPI and embedded Common Controls v6 manifest. No web renderer.
+- **Languages:** English by default, runtime selection in About, external UTF-8 JSON
+  language packs with English fallback. Russian is included as an example translation.
+  [Add a translation](docs/Localization.md) without rebuilding the application.
 
 ## Installation
 
 Windows 10 22H2 / Windows 11 x64, Microsoft Visual C++ 2015-2022 x64 Redistributable.
 Extract the ZIP and run install.ps1 with PowerShell. Installation is per user;
-WSL separately requests elevation and may need reboot. No Swift compiler required.
+WSL and driver installation separately request Windows administrator consent and may
+need a restart. No Swift compiler required.
 The official Swift runtime is linked into one executable; additional dependencies
 are added only for required functionality or measured improvements.
 
@@ -61,6 +72,7 @@ SwiftyToys.exe 75
 SwiftyToys.exe +5
 SwiftyToys.exe get
 SwiftyToys.exe info
+SwiftyToys.exe --trackpad-info
 SwiftyToys.exe list
 SwiftyToys.exe select <output-id>
 SwiftyToys.exe osd custom
