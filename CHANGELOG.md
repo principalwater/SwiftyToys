@@ -1,5 +1,17 @@
 # Changelog
 
+## SwiftyToys 0.1.2 — 2026-10-06
+
+- Fix settings reload blocking the UI while the input worker is inside SendInput.
+  Join with a bounded sent-message wait; retain a worker that has not stopped.
+- Queue reversed-wheel injection after the low-level mouse callback returns and
+  bypass reentrant wheel callbacks during injection.
+- Reserve one input worker per process, retain its lifetime until shutdown and
+  ignore stale failure notifications from an earlier generation.
+- Add a native regression with a blocking-wait control, cross-thread sent replies,
+  queued UI commands, timeout, overlap rejection and repeated worker shutdown.
+- Add optional build LinkMap diagnostics without including maps in release ZIPs.
+
 ## SwiftyToys 0.1.1 — 2026-10-06
 
 - Use an English-first feature tile dashboard, with keyboard-accessible native buttons.

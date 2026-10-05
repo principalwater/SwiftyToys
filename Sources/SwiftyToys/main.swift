@@ -37,6 +37,7 @@ func runCLI(_ args: [String]) throws -> Int32 {
         try testKeyboardInput()
         return 0
     }
+    if command == "--test-worker-wait" { try testWorkerWait(); return 0 }
     if command == "--preview" || command == "--test-ui" {
         _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT(bitPattern: -4))
         try NativeFiles.createDirectory(NativeFiles.directory())

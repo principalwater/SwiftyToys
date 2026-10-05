@@ -33,6 +33,11 @@ jobs:
         run: |
           $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-storage' -Wait -PassThru -NoNewWindow
           if ($process.ExitCode -ne 0) { throw 'Storage check failed' }
+      - name: Check sent-message worker waits
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-worker-wait' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw 'Worker wait check failed' }
       # Native settings check creates only this app's own controls; no display or input hook.
       - name: Check native settings layout
         shell: pwsh

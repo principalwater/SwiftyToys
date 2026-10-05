@@ -1,4 +1,4 @@
-param([string]$OutputDirectory, [string]$SwiftVersion = '6.4.0')
+param([string]$OutputDirectory, [string]$SwiftVersion = '6.4.0', [string]$LinkMap)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repoRoot 'artifacts' }
@@ -10,6 +10,7 @@ $buildFlags = @('-c', 'release', '-debug-info-format', 'none',
     '-Xswiftc', '-Xfrontend', '-Xswiftc', '-disable-implicit-string-processing-module-import',
     '-Xlinker', '/SUBSYSTEM:WINDOWS', '-Xlinker', '/ENTRY:mainCRTStartup',
     '-Xlinker', '/OPT:REF', '-Xlinker', '/OPT:ICF')
+if ($LinkMap) { $buildFlags += @('-Xlinker', ('/MAP:' + [IO.Path]::GetFullPath($LinkMap))) }
 # Swift 6.4's static concurrency archive needs these explicit link inputs.
 foreach ($name in @('dispatch.lib', 'BlocksRuntime.lib')) {
     $library = Join-Path $staticRoot $name

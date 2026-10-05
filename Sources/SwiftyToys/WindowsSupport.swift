@@ -56,6 +56,21 @@ struct MessageDestination: Sendable {
         PostMessageW(window, message, WPARAM(bitPattern: Int64(value)), LPARAM(data))
     }
 }
+/// Service cross-thread sent messages while joining a worker, without dispatching queued UI commands.
+func waitForWindowEvent(_ event: HANDLE, timeout: DWORD) -> DWORD {
+    let deadline = GetTickCount64() + UInt64(timeout)
+    var handle: HANDLE? = event
+    while true {
+        let now = GetTickCount64()
+        let remaining = now < deadline ? DWORD(deadline - now) : 0
+        let result = MsgWaitForMultipleObjectsEx(1, &handle, remaining, DWORD(QS_SENDMESSAGE), DWORD(MWMO_INPUTAVAILABLE))
+        guard result == DWORD(WAIT_OBJECT_0) + 1 else { return result }
+        var message = MSG()
+        // PeekMessage dispatches sent messages; PM_QS_SENDMESSAGE leaves clicks/timers queued.
+        PeekMessageW(&message, nil, 0, 0, UINT(PM_NOREMOVE | PM_QS_SENDMESSAGE))
+        if GetTickCount64() >= deadline { return WaitForSingleObject(event, 0) }
+    }
+}
 /// Local diagnostics stay in the user installation and may contain native error details.
 enum Diagnostics {
     private static let lock = Mutex(())

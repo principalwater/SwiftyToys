@@ -1,4 +1,4 @@
-# Validation snapshot: 0.1.1
+# Validation snapshot: 0.1.2
 
 Local validation on Windows 10 x64, Boot Camp MacPro6,1, 2026-10-06:
 
@@ -31,10 +31,11 @@ Local validation on Windows 10 x64, Boot Camp MacPro6,1, 2026-10-06:
 - The signed Precision Bluetooth package was then installed on the existing
   working pair, without removing the pair or attaching USB. Windows reports
   Apple Bluetooth Precision Trackpad 6.1.8000.6 and HID-compliant touch pad,
-  both OK; the installer requested no restart. Wireless gesture / smoothness
-  and reconnect testing remain pending.
+  both OK; the installer requested no restart. The user confirmed all three
+  wireless gestures, smoothness matching USB and automatic off/on reconnect
+  with pointer and gestures restored while keeping the Bluetooth pair.
 
-Bluetooth recovery / reconnect / smoothness and the updated application's appearance
+Longer Bluetooth sleep/wake and the updated application's appearance
 still require interactive validation. USB-C and
 original Magic Trackpad are not tested. No macOS-equivalent feel or all-model
 support is claimed from these checks.
@@ -55,3 +56,23 @@ the actual update succeeds: 0.1.1 runs with dedicated input active, original out
 color recovery completes, normal startup is enabled, and the temporary update task
 is removed. Saved brightness (75%) and configuration are retained. The settings
 window opens through the normal installed executable's settings command.
+
+The user then reported 0.1.1 freezing while changing settings. A local native stack
+walk and an unmodified-build linker map locate the UI wait in reloadRemapper and
+the input worker in scrollingCallback / SendInput. The worker stayed in a nested
+SendInput callback while the UI was not servicing sent Windows messages. WCT alone
+did not report a cycle because the join event has no thread owner.
+
+0.1.2 defers wheel injection until the low-level callback returns, bypasses
+reentrant injection and joins with MsgWaitForMultipleObjectsEx / QS_SENDMESSAGE,
+without dispatching queued clicks or timers. A 5-second deadline does not permit
+replacing a still-running worker; one-worker ownership and generation checks
+preserve the shared callback-state lifetime.
+
+The native regression reproduces the missing sent reply with the old blocking
+wait, verifies sent replies with the new wait, preserves queued UI commands,
+checks the deadline, rejects overlapping workers and repeats real worker shutdown.
+ABI, storage and all nine English/Russian native pages also pass on 0.1.2.
+Its physical settings-change validation is pending: the old 0.1.1 process did not
+answer normal exit, and after stopping it Windows retained one thread inside the
+input system call. Its watchdog and output recovery lease remain intact.

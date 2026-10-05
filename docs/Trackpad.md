@@ -133,7 +133,7 @@ its Windows 11 signing does not validate Windows 10 compatibility.
 | --- | --- | --- |
 | Original Magic Trackpad | Bluetooth | Unsupported; different reports, no tested hardware |
 | Lightning Magic Trackpad 2, PID 0265 | USB | Installer supports signed Apple / imbushuo packages |
-| Lightning Magic Trackpad 2, PID 0265 | Bluetooth | Basic input confirmed after pairing recovery; signed Precision reinstalled on that pair, wireless gesture / reconnect validation pending |
+| Lightning Magic Trackpad 2, PID 0265 | Bluetooth | Pointer, two-finger scroll, pinch, three-finger windows and off/on reconnect confirmed; user reports smoothness matching USB |
 | USB-C Magic Trackpad, PID 0324 | USB / Bluetooth | Native detection; installer support and hardware validation pending |
 
 Before a model is advertised as supported, test pointer movement, scroll/zoom, taps,

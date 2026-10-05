@@ -29,6 +29,7 @@ final class TrayApplication {
     private var window: HWND?
     private var osd: HWND?
     private var remapper: KeyboardRemapper?
+    private var reloadingInput = false
     private var dashboard: SettingsWindow?
     private let tools = DesktopTools()
     private var systemIndicator: SystemIndicator?
@@ -157,13 +158,14 @@ final class TrayApplication {
                 } else if value == 2 {
                     try tools.togglePin(HWND(bitPattern: Int(data)))
                 } else if value == 3 {
-                    remapper?.stop()
-                    remapper = nil
+                    guard Int(data) == remapper?.generation else { return 0 }
+                    if remapper?.stop() != false { remapper = nil }
                     Diagnostics.write(
                         "remapping paused after failed SendInput; elevated windows require matching privileges")
                 } else if value == 4 {
                     try showDashboard()
                 } else if value == 5 {
+                    guard Int(data) == remapper?.generation else { return 0 }
                     Diagnostics.write("natural scrolling paused after failed SendInput")
                 }
             } catch { Diagnostics.write("desktop action: \(error)") }
@@ -234,8 +236,7 @@ final class TrayApplication {
         case UINT(WM_QUERYENDSESSION): return 1
         case UINT(WM_WTSSESSION_CHANGE):
             if value == WPARAM(WTS_SESSION_LOCK) {
-                remapper?.stop()
-                remapper = nil
+                if remapper?.stop() != false { remapper = nil }
             } else if value == WPARAM(WTS_SESSION_UNLOCK) {
                 do { try reloadRemapper() } catch { Diagnostics.write("unlock input: \(error)") }
             }
@@ -283,9 +284,15 @@ final class TrayApplication {
     }
 
     private func reloadRemapper() throws {
+        guard !exiting, !reloadingInput else { throw WindowsError.unsupported("Input settings are already changing.") }
+        reloadingInput = true
+        defer { reloadingInput = false }
         let configuration = try KeyboardConfiguration()
-        remapper?.stop()
+        guard remapper?.stop() != false else {
+            throw WindowsError.unsupported("Input worker did not stop within 5 seconds. Previous worker retained; try again after it finishes.")
+        }
         remapper = nil
+        guard !exiting else { throw WindowsError.unsupported("Application is closing.") }
         remapper = try KeyboardRemapper(
             destination: MessageDestination(window!), configuration: configuration,
             brightnessKeys: settings.grabFunctionKeys, allowInjectedBrightness: settings.interceptInjectedKeys)
