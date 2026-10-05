@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-/// Values used by BrightnessCtl's flat JSON status and recovery files.
+/// Values used by SwiftyToys's flat JSON status and recovery files.
 public enum StateField: Sendable, Equatable {
     case string(String)
     case unsigned(UInt64)

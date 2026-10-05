@@ -155,7 +155,7 @@ actor DisplayController {
     }
 
     private func apply(_ target: BrightnessLevel) throws {
-        guard !exiting else { throw WindowsError.unsupported("BrightnessCtl is shutting down.") }
+        guard !exiting else { throw WindowsError.unsupported("SwiftyToys is shutting down.") }
         try bind()
         if output != nil {
             let original = try lease()

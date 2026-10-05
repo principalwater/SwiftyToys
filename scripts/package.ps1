@@ -1,8 +1,8 @@
-param([string]$Version = '0.5.3', [string]$SwiftVersion = '6.4.0')
+param([string]$Version = '0.1.0', [string]$SwiftVersion = '6.4.0')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 if ($Version -notmatch '^\d+\.\d+(?:\.\d+)?(?:-[a-z0-9.-]+)?$') { throw 'Invalid package version.' }
-$packageDirectory = Join-Path $repoRoot ("artifacts\BrightnessCtl-$Version-win-x64")
+$packageDirectory = Join-Path $repoRoot ("artifacts\SwiftyToys-$Version-win-x64")
 if (Test-Path -LiteralPath $packageDirectory) { throw 'Package directory already exists; choose a fresh version.' }
 & (Join-Path $PSScriptRoot 'build.ps1') -OutputDirectory $packageDirectory -SwiftVersion $SwiftVersion
 foreach ($document in @('README.md','LICENSE','THIRD_PARTY_NOTICES.md','CHANGELOG.md')) {

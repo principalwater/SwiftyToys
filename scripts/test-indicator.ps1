@@ -1,5 +1,5 @@
-param([string]$Executable = (Join-Path $env:LOCALAPPDATA 'BrightnessCtl\BrightnessCtl.exe'))
-# Interactive regression check: briefly pauses only BrightnessCtl's tray thread.
+param([string]$Executable = (Join-Path $env:LOCALAPPDATA 'SwiftyToys\SwiftyToys.exe'))
+# Interactive regression check: briefly pauses only SwiftyToys's tray thread.
 # No hardware brightness is changed; the original indicator setting is restored.
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
@@ -67,21 +67,21 @@ function Invoke-BrightnessCLI([string[]]$CLIArguments) {
     $info.RedirectStandardError = $true
     $process = [Diagnostics.Process]::Start($info)
     try {
-        if (-not $process.WaitForExit(25000)) { throw 'BrightnessCtl CLI timed out.' }
+        if (-not $process.WaitForExit(25000)) { throw 'SwiftyToys CLI timed out.' }
         $output = $process.StandardOutput.ReadToEnd().Trim()
-        if ($process.ExitCode -ne 0) { throw ('BrightnessCtl CLI failed: ' + $process.StandardError.ReadToEnd()) }
+        if ($process.ExitCode -ne 0) { throw ('SwiftyToys CLI failed: ' + $process.StandardError.ReadToEnd()) }
         return $output
     } finally { $process.Dispose() }
 }
 function Assert-Indicator([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
 }
-$control = [BrightnessIndicatorCheck]::FindWindow('BrightnessCtl.Control', 'BrightnessCtl.Software.v2')
-$observer = [BrightnessIndicatorCheck]::FindWindow('STATIC', 'BrightnessCtl.Indicator')
-$osd = [BrightnessIndicatorCheck]::FindWindow('BrightnessCtl.OSD', 'BrightnessCtl')
+$control = [BrightnessIndicatorCheck]::FindWindow('SwiftyToys.Control', 'SwiftyToys.Software.v2')
+$observer = [BrightnessIndicatorCheck]::FindWindow('STATIC', 'SwiftyToys.Indicator')
+$osd = [BrightnessIndicatorCheck]::FindWindow('SwiftyToys.OSD', 'SwiftyToys')
 $native = [BrightnessIndicatorCheck]::FindWindow('NativeHWNDHost', '')
 if ($native -eq [IntPtr]::Zero) { $native = [BrightnessIndicatorCheck]::FindWindow('XamlExplorerHostIslandWindow', '') }
-Assert-Indicator ($control -ne [IntPtr]::Zero -and $observer -ne [IntPtr]::Zero) 'Run BrightnessCtl 0.5.3 or later first.'
+Assert-Indicator ($control -ne [IntPtr]::Zero -and $observer -ne [IntPtr]::Zero) 'Run SwiftyToys 0.5.3 or later first.'
 Assert-Indicator ($native -ne [IntPtr]::Zero) 'Press a native brightness/volume key once to create the Windows flyout, then retry.'
 [uint32]$nativePID = 0; [uint32]$shellPID = 0; [uint32]$band = 0
 [void][BrightnessIndicatorCheck]::GetWindowThreadProcessId($native, [ref]$nativePID)

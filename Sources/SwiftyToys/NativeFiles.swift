@@ -21,7 +21,8 @@ enum NativeFiles {
         return String(decoding: UnsafeBufferPointer(start: path, count: count), as: UTF16.self)
     }
 
-    static func directory() throws -> String { try appData.get() + "\\BrightnessCtl" }
+    static func directory() throws -> String { try appData.get() + "\\SwiftyToys" }
+    static func legacyDirectory() throws -> String { try appData.get() + "\\BrightnessCtl" }
     static func path(_ name: String) throws -> String { try directory() + "\\" + name }
 
     static func exists(_ path: String) throws(WindowsError) -> Bool {

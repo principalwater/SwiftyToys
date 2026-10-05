@@ -43,7 +43,7 @@ func startResident() throws {
     let taskName =
         try NativeFiles.exists(taskFile)
         ? try NativeFiles.text(taskFile).trimmingWhitespace()
-        : "BrightnessCtl"
+        : "SwiftyToys"
     guard isValidStartupTaskName(taskName) else {
         throw WindowsError.unsupported("Invalid startup task name.")
     }
@@ -87,7 +87,7 @@ func startResident() throws {
     var count: LONG = 0
     try checkCOM(actions.pointer.pointee.lpVtbl.pointee.get_Count(actions.pointer, &count), "Count startup actions")
     guard count == 1 else {
-        throw WindowsError.unsupported("Startup task must contain one BrightnessCtl action; run the installer.")
+        throw WindowsError.unsupported("Startup task must contain one SwiftyToys action; run the installer.")
     }
     var actionPointer: UnsafeMutablePointer<IAction>?
     try checkCOM(
@@ -121,7 +121,7 @@ func startResident() throws {
     }
     var runningPointer: UnsafeMutablePointer<IRunningTask>?
     try checkCOM(
-        task.pointer.pointee.lpVtbl.pointee.Run(task.pointer, empty, &runningPointer), "Start BrightnessCtl task")
+        task.pointer.pointee.lpVtbl.pointee.Run(task.pointer, empty, &runningPointer), "Start SwiftyToys task")
     let running = try COMReference(runningPointer)
     _ = running.pointer
 }

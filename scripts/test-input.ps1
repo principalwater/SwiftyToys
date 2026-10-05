@@ -2,7 +2,7 @@
 param([string]$Executable)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
-$testPath = if ($Executable) { (Resolve-Path -LiteralPath $Executable).Path } else { Join-Path $repoRoot 'artifacts\BrightnessCtl.exe' }
+$testPath = if ($Executable) { (Resolve-Path -LiteralPath $Executable).Path } else { Join-Path $repoRoot 'artifacts\SwiftyToys.exe' }
 if (-not (Test-Path -LiteralPath $testPath)) { throw 'Run scripts/build.ps1 first.' }
 # Three injected F2 taps are consumed by the test hook; no display is modified.
 $test = Start-Process -FilePath $testPath -ArgumentList '--test-input' -Wait -PassThru -NoNewWindow

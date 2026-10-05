@@ -1,68 +1,43 @@
-# Binary size and packaging
+# SwiftyToys packaging
 
-The 0.5.1 executable was about 239 KB; its complete distribution was 23.62 MB
-zipped and about 59 MB unpacked. Most bytes belonged to Foundation's transitive
-runtime dependencies, including a 38.23 MB Foundation ICU DLL.
+The default build is a single statically linked Swift executable. The Windows SDK
+and Visual C++ Redistributable remain platform prerequisites. No executable packer,
+self-extracting loader, runtime pruning or patched SDK is used. The build embeds
+Common Controls v6, per-monitor DPI and asInvoker manifest entries.
 
-## Measured experiments on Swift 6.4.0, Windows x64
+The inherited BrightnessCtl experiments measured 23.62 MB ZIP with dynamic Foundation,
+52.76 MB exe with static Foundation, 9.68 MB exe with FoundationEssentials, and about
+6.12 MB exe / 2.3 MB ZIP using Swift standard library plus Win32. Those are upstream
+measurements, not SwiftyToys results or PowerToys comparisons. The first SwiftyToys
+native UI/remapping build was 6.26 MB; record final release sizes separately.
 
-| Application imports and linking | Executable | Portable ZIP | Swift DLLs |
-|---|---:|---:|---:|
-| Foundation, dynamic runtime (0.5.1) | 0.24 MB | 23.62 MB | 15 |
-| Foundation, static runtime | 52.76 MB | not selected | 0 |
-| FoundationEssentials + Win32, static runtime | 9.68 MB | 3.59 MB | 0 |
-| Standard library + Win32, static runtime (0.5.2) | about 6.12 MB | about 2.3 MB | 0 |
+Build uses -Osize, -static-stdlib, -use-static-resource-dir, /OPT:REF and /OPT:ICF.
+Official dispatch.lib and BlocksRuntime.lib satisfy the static Swift concurrency
+archive. Native threads are CRT initialized; driver work runs on its serial Swift
+actor executor. The build rejects accidental dynamic Swift imports and has a 6.5 MB
+exe / 3 MB ZIP regression budget. These budgets can be revised when an explicit
+feature or a measured improvement justifies larger distribution; they are not a
+reason to remove requested functionality or correctness checks.
 
-Sizes use decimal MB. The ZIP includes the runtime: this is not a small executable
-that needs to download a separate Swift installation. Windows and the Microsoft
-Visual C++ x64 Redistributable remain prerequisites. The executable is larger
-than before because it now contains the runtime; the complete download and
-installed binaries are approximately ten times smaller. No executable packer,
-self-extracting loader, altered SDK, or runtime DLL pruning is used.
+## Checks
 
-## Implementation
+Run scripts/test.ps1, then build.ps1 (sequentially: SwiftBuild shares its database).
+Run --abi-check and --test-storage without a display controller. --test-input checks
+an isolated brightness hook with injected F2 taps and a blocked UI, without adjusting
+a monitor. The complete remap algorithm is covered by KeyboardCoreTests; native
+physical-key/UIPI/AltGr and application-specific integration need interactive checks.
 
-Foundation threads/conditions became CRT-initialized `_beginthreadex` threads and
-Win32 events. Blocking display work still runs on a dedicated Swift serial actor
-executor; UI and input keep their own message threads. Swift actors, Task, Mutex,
-noncopyable resource ownership and InlineArray/Span remain in use.
+Storage uses bounded strict UTF-8 reads and adjacent atomic replace with flush,
+close and MoveFileExW. Failed commits preserve the previous destination. Gamma
+recovery leases remain compatible with the upstream JSON format. Packaging preserves
+licenses and source provenance. The installer waits for the old resident/watchdog,
+never kills it to unlock files, copies settings and disables old startup after the
+new resident starts. A shared ownership mutex prevents both applications from owning
+the display at once.
 
-CreateProcessW starts the recovery watchdog with a quoted executable path, mutable
-UTF-16 command line and no inherited handles. Native files use UTF-16 Windows
-paths, bounded ReadFile, strict UTF-8 and adjacent unique temporary files. Writes
-are flushed and closed before MoveFileExW replaces the destination; a failed commit
-leaves the old file intact and removes the temporary file.
+No speed or memory superiority is claimed merely from executable size. Measurements
+must distinguish the settings process, resident, watchdog and installer/download.
 
-`StateJSON` is restricted to the application's existing flat status/recovery
-schemas: strings, integers, booleans, nulls and UInt16 gamma arrays. It does not
-implement a general JSON library. Integer parsing avoids floating point, including
-64-bit process-start timestamps. Old Foundation-generated files remain compatible;
-malformed UTF-8/escapes, duplicate keys, overflow and inputs of 32 KiB or more are
-rejected. Foundation is used only in tests as an independent compatibility oracle.
-
-The build uses `-Osize`, `-static-stdlib`, `-use-static-resource-dir`, `/OPT:REF` and
-`/OPT:ICF`. Swift 6.4's static Concurrency references require explicit SDK
-`dispatch.lib` and `BlocksRuntime.lib` link inputs. The SDK is not patched. Debug
-information is disabled to avoid embedding developer paths. The build rejects
-Swift DLL imports and executables over 6.5 MB; packaging rejects ZIPs over 3 MB.
-
-## Validation and limits
-
-Portable Swift Testing compares both recovery backends with Foundation's JSON
-encoder/decoder and covers numeric bounds, Unicode escapes, invalid UTF-8 and
-malformed state. `--test-storage` checks Unicode paths, atomic replacement,
-failed-commit preservation, temporary-file cleanup, read limits and empty files
-without touching a monitor or user settings. `--abi-check` and `--test-input`
-exercise imported layouts and the dedicated keyboard thread.
-
-Native gamma hardware support remains driver-dependent. This packaging change
-does not establish new Intel/NVIDIA hardware coverage. Static runtime integration
-is validated with the pinned 6.4.0 SDK; upgrading the compiler requires repeating
-the dependency, recovery and capture checks.
-
-References: [Swift 6.4](https://www.swift.org/blog/swift-6.4-released/),
-[Windows SDK changes](https://forums.swift.org/t/upcoming-changes-to-windows-swift-sdks/81313),
-[Foundation architecture](https://github.com/swiftlang/swift-foundation),
-[_beginthreadex](https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/beginthread-beginthreadex),
-[CreateProcessW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw),
+References: [Swift](https://www.swift.org/documentation/),
+[Common Controls manifest](https://learn.microsoft.com/en-us/windows/win32/controls/cookbook-overview),
 [MoveFileExW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw).

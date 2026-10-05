@@ -4,8 +4,9 @@ import BrightnessCore
 import Synchronization
 import WinSDK
 
+// Shared with BrightnessCtl: neither app may capture an already dimmed baseline.
 let instanceMutex = "Local\\BrightnessCtl.SingleInstance"
-let controlWindowTitle = "BrightnessCtl.Software.v2"
+let controlWindowTitle = "SwiftyToys.Software.v2"
 let brightnessMessage: UINT = 0x8001
 let keyStepMessage: UINT = 0x8002
 struct InstanceLock: ~Copyable {

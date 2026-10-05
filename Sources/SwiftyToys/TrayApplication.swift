@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 import BrightnessCore
+import KeyboardCore
 import Synchronization
 import WinSDK
 import WindowsDisplayABI
@@ -27,7 +28,9 @@ final class TrayApplication {
     private var state: DisplayState
     private var window: HWND?
     private var osd: HWND?
-    private var keyboard: KeyboardInput?
+    private var remapper: KeyboardRemapper?
+    private var dashboard: SettingsWindow?
+    private let tools = DesktopTools()
     private var systemIndicator: SystemIndicator?
     private var tray = NOTIFYICONDATAW()
     private var trayAdded = false
@@ -52,14 +55,18 @@ final class TrayApplication {
                 if let window { DestroyWindow(window) }
             }
         }
-        try registerWindowClass("BrightnessCtl.Control")
-        try registerWindowClass("BrightnessCtl.OSD")
+        try registerWindowClass("SwiftyToys.Control")
+        try registerWindowClass("SwiftyToys.OSD")
         window = try createWindow(
-            "BrightnessCtl.Control", title: controlWindowTitle, style: 0, extended: DWORD(WS_EX_TOOLWINDOW))
+            "SwiftyToys.Control", title: controlWindowTitle, style: 0, extended: DWORD(WS_EX_TOOLWINDOW))
         osd = try createWindow(
-            "BrightnessCtl.OSD", title: "BrightnessCtl", style: DWORD(WS_POPUP),
+            "SwiftyToys.OSD", title: "SwiftyToys", style: DWORD(WS_POPUP),
             extended: DWORD(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TOPMOST))
         guard let window, let osd else { throw WindowsError.api("CreateWindow", GetLastError()) }
+        WTSRegisterSessionNotification(window, DWORD(NOTIFY_FOR_THIS_SESSION))
+        remapper = try KeyboardRemapper(
+            destination: MessageDestination(window), configuration: KeyboardConfiguration(),
+            brightnessKeys: settings.grabFunctionKeys, allowInjectedBrightness: settings.interceptInjectedKeys)
         SetLayeredWindowAttributes(osd, 0, 235, DWORD(LWA_ALPHA))
         tray.cbSize = DWORD(MemoryLayout<NOTIFYICONDATAW>.size)
         tray.hWnd = window
@@ -75,16 +82,13 @@ final class TrayApplication {
                 Diagnostics.write("input: configured hotkey \(index + 1) is already registered")
             }
         }
-        keyboard = try KeyboardInput(
-            destination: MessageDestination(window), enabled: settings.grabFunctionKeys,
-            allowInjected: settings.interceptInjectedKeys)
         systemIndicator = try SystemIndicator(
             destination: MessageDestination(window), custom: settings.indicator == .custom,
             hardwareKeys: settings.grabFunctionKeys)
         SetTimer(window, 1, 3000, nil)
         queueHardwareMaximum()
         Diagnostics.write(
-            "start: \(AppVersion.implementation) \(AppVersion.string); dedicated input active=\(keyboard?.active ?? false)"
+            "start: \(AppVersion.implementation) \(AppVersion.string); dedicated input active=\(remapper?.active ?? false)"
         )
         initialized = true
     }
@@ -121,6 +125,7 @@ final class TrayApplication {
             let result = BC_GetMessageW(&message, nil, 0, 0)
             if result == 0 { break }
             if result < 0 { throw WindowsError.api("GetMessage", GetLastError()) }
+            if dashboard?.dialogMessage(&message) == true { continue }
             TranslateMessage(&message)
             DispatchMessageW(&message)
         }
@@ -145,6 +150,24 @@ final class TrayApplication {
             return 0
         }
         switch message {
+        case toyActionMessage:
+            do {
+                if value == 1 {
+                    try switchLanguage(in: HWND(bitPattern: Int(data)))
+                } else if value == 2 {
+                    try tools.togglePin(HWND(bitPattern: Int(data)))
+                } else if value == 3 {
+                    remapper?.stop()
+                    remapper = nil
+                    Diagnostics.write(
+                        "remapping paused after failed SendInput; elevated windows require matching privileges")
+                } else if value == 4 {
+                    try showDashboard()
+                } else if value == 5 {
+                    Diagnostics.write("natural scrolling paused after failed SendInput")
+                }
+            } catch { Diagnostics.write("desktop action: \(error)") }
+            return 0
         case brightnessMessage:
             guard !exiting else { return 0 }
             if value == 5 {
@@ -183,6 +206,7 @@ final class TrayApplication {
             if value == 2 {
                 flushSteps()
             } else {
+                tools.tick()
                 _ = apply(command: 0, show: false)
                 updateTray()
                 queueHardwareMaximum()
@@ -204,10 +228,18 @@ final class TrayApplication {
             if UINT(truncatingIfNeeded: data) == UINT(WM_RBUTTONUP) {
                 showMenu()
             } else if UINT(truncatingIfNeeded: data) == UINT(WM_LBUTTONUP) {
-                showOSD()
+                do { try showDashboard() } catch { Diagnostics.write("settings: \(error)") }
             }
             return 0
         case UINT(WM_QUERYENDSESSION): return 1
+        case UINT(WM_WTSSESSION_CHANGE):
+            if value == WPARAM(WTS_SESSION_LOCK) {
+                remapper?.stop()
+                remapper = nil
+            } else if value == WPARAM(WTS_SESSION_UNLOCK) {
+                do { try reloadRemapper() } catch { Diagnostics.write("unlock input: \(error)") }
+            }
+            return 0
         case UINT(WM_ENDSESSION):
             if value != 0 {
                 shutdown()
@@ -236,6 +268,7 @@ final class TrayApplication {
                 systemIndicator?.setCustom(settings.indicator == .custom)
             }
             updateTray()
+            dashboard?.update(brightness: state.level.percent)
             if show { showOSD() }
             return true
         } catch {
@@ -248,6 +281,120 @@ final class TrayApplication {
         pendingSteps = max(-20, min(20, pendingSteps + max(-20, min(20, steps))))
         if GetTickCount64() - lastApply >= 130 { flushSteps() } else if let window { SetTimer(window, 2, 130, nil) }
     }
+
+    private func reloadRemapper() throws {
+        let configuration = try KeyboardConfiguration()
+        remapper?.stop()
+        remapper = nil
+        remapper = try KeyboardRemapper(
+            destination: MessageDestination(window!), configuration: configuration,
+            brightnessKeys: settings.grabFunctionKeys, allowInjectedBrightness: settings.interceptInjectedKeys)
+    }
+
+    private func showDashboard() throws {
+        if dashboard == nil {
+            dashboard = try SettingsWindow(
+                brightness: state.level.percent, keyboard: KeyboardConfiguration(),
+                command: { [weak self] id, values in
+                    guard let self else { throw WindowsError.unsupported("Application is closing.") }
+                    return try self.dashboardCommand(id, values)
+                },
+                snapshot: { [weak self] in
+                    guard let self else { return "" }
+                    return
+                        "Яркость: \(self.state.level.percent)%  •  \(self.state.backend)\nПереназначения: \(self.remapper?.active == true ? "включены" : "на паузе")"
+                })
+        }
+        dashboard?.show()
+    }
+
+    private func dashboardCommand(_ id: Int, _ values: [String]) throws -> String {
+        switch id {
+        case 211:
+            guard let value = values.first.flatMap(Int.init), apply(command: 1, value: value, show: false) else {
+                throw WindowsError.unsupported("Could not apply brightness.")
+            }
+        case 214:
+            try settings.select(values[0])
+            guard apply(command: 3, show: false) else {
+                throw WindowsError.unsupported("Could not select this display.")
+            }
+            queueHardwareMaximum()
+        case 240:
+            guard values.count == 8, let step = Int(values[1]), (1...25).contains(step) else {
+                throw WindowsError.unsupported("Brightness step must be 1–25%.")
+            }
+            let keys = Array(values[3...6])
+            let parsed=keys.compactMap(parseHotkey)
+            guard Set(parsed.map { "\($0.modifiers):\($0.key)" }).count == parsed.count,
+                keys.allSatisfy({ $0.isEmpty || parseHotkey($0) != nil }) else {
+                throw WindowsError.unsupported("Use four valid, distinct brightness shortcuts.")
+            }
+            if let window {
+                let previous = settings.hotkeys
+                for id in 1...4 { UnregisterHotKey(window, Int32(id)) }
+                var success = true
+                for (index, key) in keys.enumerated() {
+                    guard let combo = parseHotkey(key) else { continue }
+                    if !RegisterHotKey(window, Int32(index + 1), combo.modifiers | UINT(MOD_NOREPEAT), combo.key) {
+                        success = false
+                        break
+                    }
+                }
+                if !success {
+                    for id in 1...4 { UnregisterHotKey(window, Int32(id)) }
+                    for (index, key) in previous.enumerated() {
+                        if let combo = parseHotkey(key) {
+                            RegisterHotKey(window, Int32(index + 1), combo.modifiers | UINT(MOD_NOREPEAT), combo.key)
+                        }
+                    }
+                    throw WindowsError.unsupported(
+                        "A shortcut is used by another application. Previous settings restored.")
+                }
+            }
+            for (key, value) in zip(
+                ["osd", "step", "grabF1F2", "up", "down", "max", "min", "hardwareMaximum"],
+                [values[0] == "Windows" ? "system" : "custom", String(step), values[2]] + keys + [values[7]])
+            { try settings.setValue(value, forKey: key) }
+            settings = try Settings()
+            try reloadRemapper()
+            systemIndicator = nil
+            systemIndicator = try SystemIndicator(
+                destination: MessageDestination(window!), custom: settings.indicator == .custom,
+                hardwareKeys: settings.grabFunctionKeys)
+        case 241: guard apply(command: 3, show: false) else { throw WindowsError.unsupported("Display unavailable.") }
+        case 313: try reloadRemapper()
+        case 410:
+            let minutes =
+                values[0].hasPrefix("30") ? 30 : values[0].hasPrefix("1") ? 60 : values[0].hasPrefix("2") ? 120 : 480
+            try tools.awake(minutes: minutes, display: values[1] == "1")
+            return "Режим включён на \(minutes) минут."
+        case 411:
+            try tools.awake(minutes: 0, display: false)
+            return "Обычный режим питания восстановлен."
+        case 430:
+            var configuration = try KeyboardConfiguration()
+            configuration.reverseVertical = values[0] == "1"
+            configuration.reverseHorizontal = values[1] == "1"
+            try configuration.save()
+            try reloadRemapper()
+        case 350:
+            var configuration = try KeyboardConfiguration()
+            configuration.smartCaps = values[0] == "1"
+            configuration.capsThreshold = Int(values[1]) ?? 0
+            configuration.capsAction = values[2]
+            configuration.languageMode = values[3]
+            configuration.languagePair = values[4].split(separator: ",").compactMap { UInt16($0) }
+            guard
+                configuration.languageMode != "pair"
+                    || (configuration.languagePair.count == 2 && Set(configuration.languagePair).count == 2)
+            else { throw WindowsError.unsupported("Choose two different installed languages.") }
+            try configuration.save()
+            try reloadRemapper()
+        default: break
+        }
+        return "Готово. Настройки применены."
+    }
     private func flushSteps() {
         if let window { KillTimer(window, 2) }
         let steps = pendingSteps
@@ -257,7 +404,7 @@ final class TrayApplication {
 
     private func updateTray() {
         setWideString(
-            "BrightnessCtl — \(state.level.percent)%\(state.connected ? "" : " (disconnected)")", in: &tray.szTip)
+            "SwiftyToys — \(state.level.percent)%\(state.connected ? "" : " (disconnected)")", in: &tray.szTip)
         if trayAdded {
             Shell_NotifyIconW(DWORD(NIM_MODIFY), &tray)
         } else {
@@ -269,6 +416,7 @@ final class TrayApplication {
         guard let window, let menu = CreatePopupMenu() else { return }
         defer { DestroyMenu(menu) }
         for (id, label) in [
+            (2500, "Open SwiftyToys"), (2501, "Pause / resume keyboard remapping"),
             (0, "Brightness: \(state.level.percent)%"), (1, "Increase by \(settings.step)%"),
             (2, "Decrease by \(settings.step)%"),
             (100, "100%"), (75, "75%"), (50, "50%"), (25, "25%"), (10, "10%"), (3, "Reconnect display"),
@@ -278,7 +426,7 @@ final class TrayApplication {
             }
         }
         for (id, mode, label) in [
-            (2001, IndicatorMode.custom, "Indicator: BrightnessCtl"),
+            (2001, IndicatorMode.custom, "Indicator: SwiftyToys"),
             (2002, IndicatorMode.system, "Indicator: Windows"),
         ] {
             _ = withWideString(label) {
@@ -291,7 +439,16 @@ final class TrayApplication {
         GetCursorPos(&point)
         SetForegroundWindow(window)
         let selected = BC_TrackPopupMenu(menu, UINT(TPM_RETURNCMD | TPM_RIGHTBUTTON), point.x, point.y, 0, window, nil)
-        if selected == 1 {
+        if selected == 2500 {
+            do { try showDashboard() } catch { Diagnostics.write("settings: \(error)") }
+        } else if selected == 2501 {
+            do {
+                var config = try KeyboardConfiguration()
+                config.enabled.toggle()
+                try config.save()
+                try reloadRemapper()
+            } catch { Diagnostics.write("keyboard: \(error)") }
+        } else if selected == 1 {
             queue(1)
         } else if selected == 2 {
             queue(-1)
@@ -377,7 +534,9 @@ final class TrayApplication {
     }
 
     private func queueHardwareMaximum() {
-        guard !exiting, let id = (try? Settings())?.targetID else { return }
+        guard !exiting, let configuration = try? Settings(), configuration.hardwareMaximum,
+            let id = configuration.targetID
+        else { return }
         let now = GetTickCount64()
         guard lastHardwareCheck == 0 || now - lastHardwareCheck >= 10000 else { return }
         let gate = hardwareGate
@@ -390,7 +549,7 @@ final class TrayApplication {
         else { return }
         lastHardwareCheck = now
         do {
-            _ = try NativeThread(name: "BrightnessCtl hardware brightness") {
+            _ = try NativeThread(name: "SwiftyToys hardware brightness") {
                 defer { gate.busy.withLock { $0 = false } }
                 do { _ = try ensureHardwareMaximum(displayID: id) } catch { Diagnostics.write("hardware: \(error)") }
             }
@@ -403,10 +562,13 @@ final class TrayApplication {
     func shutdown() {
         guard !exiting else { return }
         exiting = true
+        dashboard = nil
+        remapper?.stop()
+        remapper = nil
+        tools.stop()
         systemIndicator = nil
-        keyboard?.stop()
-        keyboard = nil
         if let window {
+            WTSUnRegisterSessionNotification(window)
             KillTimer(window, 1)
             KillTimer(window, 2)
             for id in 1...4 { UnregisterHotKey(window, Int32(id)) }
@@ -420,32 +582,6 @@ final class TrayApplication {
     deinit { shutdown() }
 }
 private func parseHotkey(_ text: String) -> (modifiers: UINT, key: UINT)? {
-    var modifiers: UINT = 0
-    var key: UINT = 0
-    for part in text.lowercased().split(separator: "+") {
-        let part = part.trimmingWhitespace()
-        switch part {
-        case "ctrl", "control": modifiers |= UINT(MOD_CONTROL)
-        case "alt": modifiers |= UINT(MOD_ALT)
-        case "shift": modifiers |= UINT(MOD_SHIFT)
-        case "win": modifiers |= UINT(MOD_WIN)
-        default:
-            let named: [String: UINT] = [
-                "up": 38, "down": 40, "left": 37, "right": 39, "pageup": 33, "pagedown": 34,
-                "home": 36, "end": 35, "space": 32, "oemplus": 187, "oemminus": 189,
-            ]
-            if let value = named[part] {
-                key = value
-            } else if part.hasPrefix("f"), let number = UInt32(part.dropFirst()), (1...24).contains(number) {
-                key = 111 + number
-            } else if part.count == 1, let scalar = part.uppercased().unicodeScalars.first,
-                (48...90).contains(scalar.value)
-            {
-                key = scalar.value
-            } else {
-                return nil
-            }
-        }
-    }
-    return key == 0 ? nil : (modifiers, key)
+    guard let chord=try? KeyChord(text), !chord.isReserved, KeyChord.modifier(for:chord.key) == 0 else { return nil }
+    return (UINT(chord.modifiers),UINT(chord.key))
 }

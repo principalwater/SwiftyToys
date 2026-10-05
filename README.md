@@ -1,143 +1,112 @@
-# BrightnessCtl
+# SwiftyToys
 
-A Windows tray utility written in **Swift 6.4**, for software brightness on one
-physical monitor. It scales the selected display's scanout gamma through native
-Windows WDDM APIs and keeps its DDC/CI backlight at maximum. AMD ADL RGB gain is
-available when the native driver path cannot be opened.
+Native **Swift 6.4** Windows tools with familiar Mac keyboard habits and a coherent
+settings window. MIT licensed. Inspired by and complementary to
+[Microsoft PowerToys](https://github.com/microsoft/PowerToys), especially for Mac,
+Boot Camp and former macOS users. Independent project, not affiliated with Microsoft
+or Apple.
 
-Version **0.5.3** suppresses recognized Windows brightness flyouts on an independent
-Win32 thread, including while the tray UI is busy. It retains 0.5.2's single executable
-with its Swift runtime linked in: about **2.3 MB zipped**, down from 23.6 MB in 0.5.1.
-That release added indicator selection to the Swift implementation introduced in 0.5.0. Releases 0.1 and 0.1.1
-retain their original C# implementation in their tags and release archives.
+## Features
 
-## Compatibility
+- **Brightness:** BrightnessCtl 0.5.3 Swift code is integrated directly: native WDDM
+  scanout brightness, AMD fallback, monitor selection, slider, calibrated recovery,
+  watchdog, function keys/HID, custom/system OSD, configurable shortcuts and optional
+  DDC maximum backlight. One independent physical SDR output; HDR/clones/virtual
+  outputs are excluded. Fullscreen/color-calibration tools can compete for the output.
+- **Keyboard:** editable Mac preset, key/shortcut/action remapping, per-application
+  rules/exclusions and pause. Ctrl+Space switches configured layouts; Command/Win+Tab
+  cycles windows; Command editing/search/screenshot shortcuts and Option word navigation.
+  Apple layouts use Windows/Boot Camp installation; Apple DLLs are not redistributed.
+- **Input languages:** cycle, Latin/non-Latin or a selected pair. Optional Mac-style
+  Caps Lock tap/hold, configurable tap action and 150–800 ms hold threshold. Shift+Caps
+  and CJK IME pass through; when Caps is already on, a tap turns it off.
+- **Mouse:** optional natural wheel direction, vertical/horizontal independently,
+  preserving precise wheel deltas and modified-wheel commands. This is a global
+  fallback for Windows 10; Windows 11 users can open native mouse settings first.
+  Devices which emit wheel events, including some touchpads, share the setting.
+- **Desktop:** Command+Ctrl+T pins the active window; temporary keep-awake with optional
+  display-on. Saved power-plan settings are preserved.
+- **Homebrew:** detect WSL distributions, install WSL + Ubuntu, open the official
+  interactive installer inside a selected WSL 2 distribution and configure Bash shellenv.
+  Homebrew runs in Linux; sudo/account setup remain in the user's terminal.
+- **Native UI:** sidebar/cards, standard accessible controls, Tab navigation,
+  per-monitor DPI and embedded Common Controls v6 manifest. No web renderer.
 
-- Windows 10/11 x64; one independent physical SDR display.
-- Discovery uses Windows display paths and WDDM adapter types for all GPU vendors.
-  Virtual/indirect displays, cloned sources and HDR are excluded.
-- Native gamma was physically tested on AMD FirePro D700. Intel/NVIDIA use the same
-  Windows API but have not yet been tested on hardware. Drivers can reject gamma
-  control or ownership, particularly when a fullscreen app owns the output.
-- Microsoft Visual C++ 2015–2022 x64 Redistributable is required. Release packages
-  contain one executable with the Swift runtime linked statically; neither the
-  Swift compiler nor separate Swift DLLs are required.
-- Enable DDC/CI in the monitor menu to enforce maximum backlight. Software control
-  can work without DDC; `info` reports when maximum backlight is unconfirmed.
+## Installation
 
-Percentages represent software gain, not calibrated nits. Night Light, calibration
-loaders, exclusive fullscreen apps and capture drivers can compete for output
-controls. Check those workflows on your hardware.
+Windows 10 22H2 / Windows 11 x64, Microsoft Visual C++ 2015-2022 x64 Redistributable.
+Extract the ZIP and run install.ps1 with PowerShell. Installation is per user;
+WSL separately requests elevation and may need reboot. No Swift compiler required.
+The official Swift runtime is linked into one executable; additional dependencies
+are added only for required functionality or measured improvements.
 
-## Install and build
+Click the tray icon to open settings. Closing settings leaves the utility active.
+Quit in the tray menu restores the output and stops the tools. Keep only one remapper
+for the same shortcuts. Normal-user injection cannot control elevated applications or
+secure desktop. AltGr and foreign injected events are preserved. Unlisted shortcuts
+pass through. The Mac preset replaces the listed Windows meanings (including Win+arrow
+Snap and Win+Space); edit/delete any rule to restore them. Applications can reject a
+native layout request.
 
-Extract the complete `win-x64.zip` from
-[Releases](https://github.com/principalwater/BrightnessCtl/releases) and run
-`install.ps1` in PowerShell. It preserves settings and brightness, installs into
-`%LOCALAPPDATA%\BrightnessCtl`, and registers interactive sign-in startup.
-Administrator rights are not needed. The executable is unsigned.
+Existing BrightnessCtl configuration/brightness are copied after its resident and
+watchdog finish restoration. Its startup is disabled only after SwiftyToys starts.
+The old installation is retained for rollback. Both apps share a display ownership
+mutex to prevent capturing an already dimmed baseline.
 
-For a source checkout, install the official
-[Swift Windows toolchain](https://www.swift.org/install/windows/), MSVC x64 Build
-Tools and Windows SDK, then run:
+## CLI
+
+```text
+SwiftyToys.exe settings
+SwiftyToys.exe 75
+SwiftyToys.exe +5
+SwiftyToys.exe get
+SwiftyToys.exe info
+SwiftyToys.exe list
+SwiftyToys.exe select <output-id>
+SwiftyToys.exe osd custom
+SwiftyToys.exe osd system
+SwiftyToys.exe rescan
+SwiftyToys.exe exit
+SwiftyToys.exe --preview
+```
+
+Settings: %LOCALAPPDATA%\SwiftyToys. The preview disables application actions and
+never captures a display or attaches input hooks. Keyboard rules are source,
+destination, optional executable name. Destinations also accept Switch language,
+Pin window and Disable key. Up to 64 rules and 32 application exclusions. No script
+or arbitrary process commands execute from keyboard rules.
+
+## Homebrew
+
+Use initialized WSL 2 distributions. Ubuntu/Debian prerequisites can be installed
+with apt; other distributions need their package-manager prerequisites first.
+The standard prefix is /home/linuxbrew/.linuxbrew. Bash shellenv is added once;
+other shells need their own shellenv setup. Windows applications remain managed by
+Windows tools such as winget. See [official installation](https://docs.brew.sh/Installation)
+and [Homebrew on Linux/WSL](https://docs.brew.sh/Homebrew-on-Linux).
+
+## Build and checks
 
 ```powershell
 ./scripts/build.ps1
 ./scripts/test.ps1
-./scripts/install.ps1
+./artifacts/SwiftyToys.exe --abi-check
+./artifacts/SwiftyToys.exe --test-storage
+./artifacts/SwiftyToys.exe --test-ui
+./scripts/package.ps1
 ```
 
-## Select a monitor and brightness
+Official Swift 6.4 Windows toolchain, MSVC and Windows SDK. Hardware-independent
+BrightnessCore/KeyboardCore tests use Swift Testing. Native interop is header-only,
+without a custom C/C++ application runtime. Build checks runtime DLL dependencies
+and embeds the UI manifest. See [packaging](docs/Packaging.md) and
+[interop](docs/WindowsInterop.md). No performance advantage over PowerToys is claimed
+without a reproducible benchmark. Driver and keyboard work use dedicated threads;
+the settings window currently shares the tray UI thread.
 
-The first start selects a unique eligible physical display. If there are several,
-choose an ID explicitly. Moving to a different connector can require reselection.
-A disconnected saved target never falls back to another monitor. AMD 0.1.x settings
-are migrated only when the original target can be identified.
+## Credits
 
-```powershell
-./BrightnessCtl.exe list
-./BrightnessCtl.exe select '<id-from-list>'
-./BrightnessCtl.exe 75
-./BrightnessCtl.exe +5
-./BrightnessCtl.exe -5
-./BrightnessCtl.exe get
-./BrightnessCtl.exe info
-./BrightnessCtl.exe osd system
-./BrightnessCtl.exe osd custom
-./BrightnessCtl.exe rescan
-./BrightnessCtl.exe exit
-```
-
-`Ctrl+Alt+Up/Down` changes brightness by 5 percentage points;
-`Ctrl+Alt+PageUp/PageDown` selects 100%/0%. The tray has presets and an OSD.
-Bare F1/F2 interception and HID consumer brightness keys are opt-in via `grabF1F2=1`.
-The hook has a dedicated thread. HID reports use Windows' HID parser.
-
-Choose **Indicator: BrightnessCtl** or **Indicator: Windows** in the tray menu,
-or use `osd custom` / `osd system`. The choice is saved and applied immediately;
-it does not change the monitor, input bindings or brightness. The default is
-`custom`, which shows the selected monitor's software percentage.
-
-In `custom` mode, recognized, unshaped Windows flyout hosts receive an empty
-window region before brightness is shown, preventing a first-frame flash.
-An independent observer processes brightness HID input before queueing display work.
-Volume/media events restore normal rendering; it is also restored in system mode,
-on exit, by the watchdog after a crash and on the next start. Existing window shapes
-retain the scoped hide fallback; unknown windows are left alone.
-This compatibility path uses optional internal Shell signatures
-and fails closed on unrecognized Windows versions or OEM indicators.
-
-`system` suppresses BrightnessCtl's own OSD and leaves the existing Windows or
-keyboard-driver indicator alone. Use it if hardware brightness keys already show
-a system indicator, as on Boot Camp. System indicators depend on Windows/OEM
-support; this mode does not synthesize one for CLI/tray/custom hotkey actions or
-set its percentage. Unrecognized OEM indicators can still appear in custom mode.
-
-Edit `%LOCALAPPDATA%\BrightnessCtl\config.ini` and restart for input changes.
-Options: `step`, `up`, `down`, `max`, `min`, `grabF1F2`, `interceptInjectedKeys`,
-`restoreOnResume`, `backend=auto|native|amd`, `targetDisplay`, `osd=custom|system`. Empty hotkeys disable
-bindings. Injected F1/F2 are ignored unless `interceptInjectedKeys=1`. `rescan`
-reloads display/backend/indicator settings and preserves the current brightness.
-
-## Recovery and capture
-
-Original calibration is stored atomically before dimming. A hidden watchdog
-restores it if the tray exits unexpectedly; two processes are normal. Exit restores
-output colors while physical backlight stays at maximum. Pending recovery for an
-unavailable monitor is retained and cannot be overwritten by selecting another.
-If both processes are killed, the next start recovers the available output.
-
-The app controls scanout below desktop composition, with no desktop overlay,
-global Magnification matrix or color-profile assignment. Native ownership permits
-output duplication. Independent DXGI captures of a white surface retained identical
-RGB values at 100%, 45% and 10% on the tested driver. A persistent duplication session
-continued delivering changing frames through brightness switches. A complete
-Sunshine/Moonlight session still needs checking with the native backend; the AMD
-backend was tested with Sunshine/Moonlight.
-
-## Development, privacy and license
-
-All application implementation is Swift. Header-only Clang modules declare native
-Windows/AMD ABI; there is no C/C++ helper or C# runtime dependency.
-`Sources/BrightnessCore` contains portable gain/selection logic;
-`Sources/BrightnessCtl` owns Win32 UI, input, WDDM/DDC/AMD, recovery and native
-Task Scheduler COM startup. See [Windows interop notes](docs/WindowsInterop.md).
-
-Swift Testing runs without modifying a monitor. On an interactive desktop,
-`scripts/test-input.ps1` injects three F2 taps into its own hook and checks a
-2.4-second UI stall without changing brightness. The core also supports
-`swift test` with Swift 6.4 on macOS 26 or later.
-`BrightnessCtl.exe --test-storage` exercises native atomic file operations in
-a temporary directory without reading user settings or controlling a monitor.
-
-There is no telemetry, networking, account integration or updater. Local settings,
-recovery files, status and logs are excluded from Git and packages. Review logs
-before sharing: IDs and error messages can identify devices or local paths.
-Release builds omit debug information that could contain developer source paths.
-The size reduction removes Foundation/ICU dependencies, using Win32 threads,
-processes and file I/O and a bounded Swift codec for the existing state files.
-See [binary size and packaging](docs/Packaging.md) for measurements and tradeoffs.
-
-MIT licensed. BetterDisplay and MonitorControl were conceptual references; their
-application code was not copied. AMD declarations and bundled Swift runtimes retain
-their licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [Licenses](Licenses).
+[BrightnessCtl](https://github.com/principalwater/BrightnessCtl) supplies the display
+control/recovery source; its Git history and MIT copyright are retained.
+[PowerToys](https://github.com/microsoft/PowerToys) inspired the settings/tool model.
+See [third-party notices](THIRD_PARTY_NOTICES.md).

@@ -23,19 +23,25 @@ jobs:
       - name: Check native ABI
         shell: pwsh
         run: |
-          $process = Start-Process ./artifacts/BrightnessCtl.exe -ArgumentList '--abi-check' -Wait -PassThru -NoNewWindow
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--abi-check' -Wait -PassThru -NoNewWindow
           if ($process.ExitCode -ne 0) { throw 'ABI check failed' }
       - name: Check native storage
         shell: pwsh
         run: |
-          $process = Start-Process ./artifacts/BrightnessCtl.exe -ArgumentList '--test-storage' -Wait -PassThru -NoNewWindow
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-storage' -Wait -PassThru -NoNewWindow
           if ($process.ExitCode -ne 0) { throw 'Storage check failed' }
+      # Native settings check creates only this app's own controls; no display or input hook.
+      - name: Check native settings layout
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-ui' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw 'Native settings check failed' }
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: BrightnessCtl-win-x64
+          name: SwiftyToys-win-x64
           path: |
-            artifacts/BrightnessCtl.exe
+            artifacts/SwiftyToys.exe
             artifacts/*.dll
             artifacts/runtime-files.txt
             Licenses/

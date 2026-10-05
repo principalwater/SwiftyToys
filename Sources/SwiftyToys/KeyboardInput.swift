@@ -68,7 +68,7 @@ final class KeyboardInput: @unchecked Sendable {
         self.allowInjected = allowInjected
         ready = try OwnedHandle(CreateEventW(nil, true, false, nil))
         finished = try OwnedHandle(CreateEventW(nil, true, false, nil))
-        thread = try NativeThread(name: "BrightnessCtl keyboard input") { [weak self] in self?.run() }
+        thread = try NativeThread(name: "SwiftyToys keyboard input") { [weak self] in self?.run() }
         guard WaitForSingleObject(ready.raw, 5000) == DWORD(WAIT_OBJECT_0) else {
             stop()
             throw WindowsError.unsupported("Keyboard thread did not start.")

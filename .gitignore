@@ -1,6 +1,6 @@
 # Local legacy files, intentionally kept outside the public history
-/BrightnessCtl.cs
-/BrightnessCtl.exe
+/SwiftyToys.cs
+/SwiftyToys.exe
 /installbrightnessctl.ps1
 /backup-*/
 

@@ -1,9 +1,24 @@
 # Third-party notices and provenance
 
+## BrightnessCtl — integrated source
+
+SwiftyToys incorporates the MIT-licensed Swift source of
+[BrightnessCtl 0.5.3](https://github.com/principalwater/BrightnessCtl).
+The original copyright in LICENSE and the repository history are preserved.
+Display control, recovery, watchdog, HID, OSD, native files and CLI derive directly
+from that project; no external BrightnessCtl process is required during normal use.
+
+## Microsoft PowerToys — inspiration
+
+[PowerToys](https://github.com/microsoft/PowerToys) inspired the settings/module model
+and configurable keyboard tools. SwiftyToys complements it for Mac/Boot Camp users.
+No PowerToys code, branding or artwork is redistributed. This is an independent
+project, not affiliated with Microsoft or Apple.
+
 ## AMD Display Library interop
 
 The native function signatures, struct layouts and constants in
-`Sources/WindowsDisplayABI/AMDABI.h` and `Sources/BrightnessCtl/AMDColor.swift`
+`Sources/WindowsDisplayABI/AMDABI.h` and `Sources/SwiftyToys/AMDColor.swift`
 are adapted from AMD's public ADL SDK headers:
 [adl_sdk.h](https://github.com/GPUOpen-LibrariesAndSDKs/display-library/blob/master/include/adl_sdk.h),
 [adl_structures.h](https://github.com/GPUOpen-LibrariesAndSDKs/display-library/blob/master/include/adl_structures.h).
@@ -36,7 +51,7 @@ SOFTWARE.
 [MonitorControl](https://github.com/MonitorControl/MonitorControl) and its
 [`Display.setSwBrightness`](https://github.com/MonitorControl/MonitorControl/blob/main/MonitorControl/Model/Display.swift)
 were consulted to understand per-display RGB output scaling and baseline restoration.
-No Swift source was copied or translated into BrightnessCtl. The Windows/AMD backend,
+No Swift source was copied or translated into SwiftyToys. The Windows/AMD backend,
 hotkeys, tray, persistence and recovery helper are independently implemented.
 For transparency, MonitorControl's MIT license is reproduced below as published
 in [License.txt](https://github.com/MonitorControl/MonitorControl/blob/main/License.txt).
@@ -70,7 +85,7 @@ software brightness affecting one local monitor. Its current public landing
 branch contains documentation and releases, not the current application sources.
 The historical `opensource` branch (BetterDummy) has an MIT license, but none of
 its code or assets is included here. Reading that branch does not license the
-current proprietary application. BrightnessCtl does not claim to be an exact
+current proprietary application. SwiftyToys does not claim to be an exact
 port, fork, or endorsed version of either project.
 
 ## Swift runtime
@@ -98,7 +113,7 @@ Sources: [Swift](https://github.com/swiftlang/swift/tree/swift-6.4.0-RELEASE),
 Shell flyout class/band signatures in `SystemIndicator.swift` are adapted from
 [ModernFlyouts' NativeFlyoutHandler](https://github.com/ModernFlyouts-Community/ModernFlyouts/blob/main/ModernFlyouts.Core/Interop/NativeFlyoutHandler.cs).
 The event gate, Swift implementation and brightness-only suppression are written
-for BrightnessCtl. No ModernFlyouts binary or UI assets are distributed.
+for SwiftyToys. No ModernFlyouts binary or UI assets are distributed.
 The upstream MIT license is retained in `Licenses/ModernFlyouts.txt`.
 
 ## Windows system dependencies

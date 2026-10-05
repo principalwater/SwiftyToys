@@ -10,6 +10,7 @@ struct Settings: Sendable {
     var grabFunctionKeys = false
     var interceptInjectedKeys = false
     var restoreOnResume = true
+    var hardwareMaximum = true
     var hotkeys = ["Ctrl+Alt+Up", "Ctrl+Alt+Down", "Ctrl+Alt+PageUp", "Ctrl+Alt+PageDown"]
     var backend = "auto"
     var indicator = IndicatorMode.custom
@@ -20,7 +21,7 @@ struct Settings: Sendable {
         let configuration = try NativeFiles.path("config.ini")
         if try !NativeFiles.exists(configuration) {
             let defaults = [
-                "# BrightnessCtl: one physical SDR display. Use CLI list/select.",
+                "# SwiftyToys: one physical SDR display. Use CLI list/select.",
                 "step=5",
                 "up=Ctrl+Alt+Up",
                 "down=Ctrl+Alt+Down",
@@ -29,6 +30,7 @@ struct Settings: Sendable {
                 "grabF1F2=0",
                 "interceptInjectedKeys=0",
                 "restoreOnResume=1",
+                "hardwareMaximum=1",
                 "backend=auto",
                 "osd=custom",
                 "targetDisplay=",
@@ -55,6 +57,7 @@ struct Settings: Sendable {
             case "grabf1f2": grabFunctionKeys = value == "1" || value.lowercased() == "true"
             case "interceptinjectedkeys": interceptInjectedKeys = value == "1" || value.lowercased() == "true"
             case "restoreonresume": restoreOnResume = value == "1" || value.lowercased() == "true"
+            case "hardwaremaximum": hardwareMaximum = value == "1" || value.lowercased() == "true"
             case "up": hotkeys[0] = value
             case "down": hotkeys[1] = value
             case "max": hotkeys[2] = value
@@ -82,7 +85,10 @@ struct Settings: Sendable {
         indicator = mode
     }
 
-    private func setValue(_ value: String, forKey key: String) throws {
+    func setValue(_ value: String, forKey key: String) throws {
+        guard !value.contains(where: { $0.isNewline || $0 == "\0" }) else {
+            throw WindowsError.unsupported("Invalid setting value.")
+        }
         var content = try NativeFiles.text(NativeFiles.path("config.ini"))
         content = content.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
             .filter { line in

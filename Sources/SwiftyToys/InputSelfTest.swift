@@ -37,7 +37,7 @@ func testKeyboardInput() throws {
     let completion = try OwnedHandle(CreateEventW(nil, true, false, nil))
     let completionAddress = UInt(bitPattern: completion.raw)
     let sendResult = Mutex(false)
-    _ = try NativeThread(name: "BrightnessCtl input test") {
+    _ = try NativeThread(name: "SwiftyToys input test") {
         Sleep(300)
         var events = [INPUT(), INPUT()]
         events[0].type = DWORD(INPUT_KEYBOARD)

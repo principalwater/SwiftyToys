@@ -1,6 +1,6 @@
 # Windows interop in Swift 6.4
 
-BrightnessCtl uses official WinSDK and Clang imports for native layouts. Its
+SwiftyToys uses official WinSDK and Clang imports for native layouts. Its
 header-only module adds declarations for WDDM, HID, AMD and COM; no C implementation.
 
 References:
@@ -26,7 +26,10 @@ stay within scoped closures. Release `--abi-check` verifies native SDK layouts.
 
 Gamma storage uses `InlineArray` and scoped `Span` access. A dedicated serial actor
 executor owns blocking driver calls. Win32 UI and low-level input own separate
-message threads. Hook callbacks have no allocation, I/O or driver calls. Mutexes
+message threads. The original brightness hook avoids allocation. The general remap
+engine uses bounded Swift collections (64 rules) and emits small input batches;
+no file/process-path queries, actor hops or driver calls occur inside its hook.
+Foreground executable lookup runs in a WinEvent callback on the input thread. Mutexes
 protect shared completion state; unchecked Sendable declarations explain their
 ownership invariant.
 

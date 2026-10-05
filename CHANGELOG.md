@@ -1,5 +1,22 @@
 # Changelog
 
+## SwiftyToys 0.1.0 — 2026-10-05
+
+- Integrate BrightnessCtl 0.5.3 Swift display code directly, with its recovery/watchdog.
+- Add a native settings window: brightness slider/output/settings, editable Mac keyboard
+  mappings, per-application rules/exclusions, pause, desktop tools and Homebrew in WSL 2.
+- Add direct Ctrl+Space layout requests and retained-modifier Command+Tab remapping.
+- Add Mac editing/navigation/search/screenshot presets, with individual customization.
+- Add configurable language cycles/pairs, optional Caps Lock tap/hold and natural wheel
+  direction (vertical/horizontal, precise deltas, modifier and application exceptions).
+- Preserve BrightnessCtl configuration during migration and share its ownership mutex.
+- Embed Common Controls v6/DPI manifest; keep the official Swift runtime static.
+
+## BrightnessCtl history (upstream baseline)
+
+The following entries describe the inherited BrightnessCtl releases and their
+measurements, not SwiftyToys benchmark results.
+
 ## 0.5.3 — 2026-10-05
 
 - Prevent the Windows brightness flyout from slipping through while the tray UI
@@ -32,8 +49,8 @@
 ## 0.5.1 — 2026-10-05
 
 - Add an immediately applied, persistent indicator choice in the tray menu and
-  CLI (`osd custom|system`). The default remains BrightnessCtl's custom indicator.
-- System mode removes the duplicate BrightnessCtl OSD when hardware keys already
+  CLI (`osd custom|system`). The default remains SwiftyToys's custom indicator.
+- System mode removes the duplicate SwiftyToys OSD when hardware keys already
   trigger a Windows/OEM indicator. Existing input, software brightness and DDC
   behavior are preserved. This mode does not synthesize or set a system indicator.
 - Custom mode suppresses recognized Windows Shell brightness flyouts after a

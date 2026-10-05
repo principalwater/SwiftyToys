@@ -12,8 +12,8 @@ extension StringProtocol {
 
 /// Accepts only the application's fixed name or its per-user ASCII SID suffix.
 public func isValidStartupTaskName(_ name: String) -> Bool {
-    if name == "BrightnessCtl" { return true }
-    let prefix = "BrightnessCtl-S-"
+    if name == "SwiftyToys" { return true }
+    let prefix = "SwiftyToys-S-"
     let suffix = name.dropFirst(prefix.count)
     return name.hasPrefix(prefix) && !suffix.isEmpty
         && suffix.utf8.allSatisfy { $0 == 45 || (48...57).contains($0) }

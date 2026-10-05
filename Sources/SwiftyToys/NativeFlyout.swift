@@ -4,8 +4,8 @@ import WinSDK
 
 /// Recognized Shell hosts only. Existing nonempty window regions are preserved.
 enum NativeFlyout {
-    private static let ownerProperty = "BrightnessCtl.Indicator.Owner"
-    private static let startedProperty = "BrightnessCtl.Indicator.Started"
+    private static let ownerProperty = "SwiftyToys.Indicator.Owner"
+    private static let startedProperty = "SwiftyToys.Indicator.Started"
     private typealias WindowBand = @convention(c) (HWND?, UnsafeMutablePointer<DWORD>?) -> Int32
 
     static func isKnown(_ window: HWND) -> Bool {

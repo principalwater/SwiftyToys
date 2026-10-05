@@ -81,11 +81,11 @@ struct StateJSONTests {
         #expect(throws: Never.self) { try StateJSON.decode(Array("{}".utf8) + Array(repeating: 32, count: 32765)) }
     }
 
-    @Test(arguments: ["BrightnessCtl", "BrightnessCtl-S-1-5-1", "BrightnessCtl-S-1-2-3-1000"])
+    @Test(arguments: ["SwiftyToys", "SwiftyToys-S-1-5-1", "SwiftyToys-S-1-2-3-1000"])
     func acceptsFixedTaskNames(_ name: String) { #expect(isValidStartupTaskName(name)) }
 
     @Test(arguments: [
-        "", "BrightnessCtl-S-", "BrightnessCtl-S-١", "BrightnessCtl-other", "BrightnessCtl\n", "BrightnessCtl-S-1/2",
+        "", "SwiftyToys-S-", "SwiftyToys-S-١", "SwiftyToys-other", "SwiftyToys\n", "SwiftyToys-S-1/2",
     ])
     func rejectsOtherTaskNames(_ name: String) { #expect(isValidStartupTaskName(name) == false) }
 

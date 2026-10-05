@@ -5,13 +5,27 @@ import WinSDK
 /// Exercises native file operations in a newly created temporary directory.
 /// No display controller, user settings or recovery lease is constructed.
 func testStorage() throws {
+    for value in ["Ubuntu", "space in argument", "quote \" and \\", "trailing\\", "$(curl URL)\nquoted \"shellenv\""] {
+        var count: Int32 = 0
+        guard let arguments = withWideString("SwiftyToys " + quoteArgument(value), { CommandLineToArgvW($0, &count) })
+        else { throw WindowsError.api("Parse test argument", GetLastError()) }
+        defer { LocalFree(arguments) }
+        guard count == 2, let argument = arguments[1] else {
+            throw WindowsError.unsupported("Invalid argument round trip.")
+        }
+        var length = 0
+        while argument[length] != 0 { length += 1 }
+        guard String(decoding: UnsafeBufferPointer(start: argument, count: length), as: UTF16.self) == value else {
+            throw WindowsError.unsupported("Windows argument escaping failed.")
+        }
+    }
     try testRecoveryStateMapping()
     var buffer = Array(repeating: WCHAR(0), count: 32768)
     let length = GetTempPathW(DWORD(buffer.count), &buffer)
     guard length > 0, length < buffer.count else { throw WindowsError.api("Get temp path", GetLastError()) }
     let directory =
         String(decoding: buffer.prefix(Int(length)), as: UTF16.self)
-        + "BrightnessCtl-test-\(GetCurrentProcessId())-\(GetTickCount64())"
+        + "SwiftyToys-test-\(GetCurrentProcessId())-\(GetTickCount64())"
     guard withWideString(directory, { CreateDirectoryW($0, nil) }) else {
         throw WindowsError.api("Create test directory", GetLastError())
     }
@@ -62,5 +76,7 @@ func testStorage() throws {
     guard invalid else { throw WindowsError.unsupported("Storage test: invalid UTF-8 was accepted.") }
     try NativeFiles.write([], to: path)
     guard try NativeFiles.read(path).isEmpty else { throw WindowsError.unsupported("Storage test: empty file failed.") }
-    Console.writeLine("PASS: Unicode, atomic replacement, failed-commit recovery, temp cleanup, bounds and UTF-8")
+    Console.writeLine(
+        "PASS: Windows argument escaping, Unicode, atomic replacement, failed-commit recovery, temp cleanup, bounds and UTF-8"
+    )
 }

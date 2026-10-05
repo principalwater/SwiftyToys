@@ -9,7 +9,7 @@ func runCLI(_ args: [String]) throws -> Int32 {
     Console.attach()
     let command = args[0].lowercased()
     if command == "--version" {
-        Console.writeLine("BrightnessCtl \(AppVersion.string) (\(AppVersion.implementation))")
+        Console.writeLine("SwiftyToys \(AppVersion.string) (\(AppVersion.implementation))")
         return 0
     }
     if command == "osd" {
@@ -31,6 +31,39 @@ func runCLI(_ args: [String]) throws -> Int32 {
     }
     if command == "--test-input" {
         try testKeyboardInput()
+        return 0
+    }
+    if command == "--preview" || command == "--test-ui" {
+        _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT(bitPattern: -4))
+        try NativeFiles.createDirectory(NativeFiles.directory())
+        let preview = try SettingsWindow(
+            brightness: 75, keyboard: KeyboardConfiguration(), preview: true, command: { _, _ in "Предпросмотр" },
+            snapshot: { "Яркость и переназначения — в одном приложении." })
+        if command == "--test-ui" {
+            try preview.validateLayout()
+            Console.writeLine("PASS: all 8 native settings pages, navigation names and unclipped control bounds")
+            return 0
+        }
+        preview.show()
+        var message = MSG()
+        while BC_GetMessageW(&message, nil, 0, 0) > 0 {
+            if !preview.dialogMessage(&message) {
+                TranslateMessage(&message)
+                DispatchMessageW(&message)
+            }
+        }
+        return 0
+    }
+    if command == "settings" {
+        if let window = withWideString(controlWindowTitle, { FindWindowW(nil, $0) }) {
+            PostMessageW(window, toyActionMessage, 4, 0)
+        } else {
+            try startResident()
+            Sleep(1000)
+            if let window = withWideString(controlWindowTitle, { FindWindowW(nil, $0) }) {
+                PostMessageW(window, toyActionMessage, 4, 0)
+            }
+        }
         return 0
     }
     if command == "--test-storage" {
@@ -121,7 +154,7 @@ func runCLI(_ args: [String]) throws -> Int32 {
             if window != nil { break }
         }
     }
-    guard let window else { throw WindowsError.unsupported("BrightnessCtl resident is not running.") }
+    guard let window else { throw WindowsError.unsupported("SwiftyToys resident is not running.") }
     let current = try sendResident(window, command: operation, value: value)
     if command == "info" {
         let data = try NativeFiles.read(NativeFiles.path("display-status.json"))
@@ -133,7 +166,11 @@ func runCLI(_ args: [String]) throws -> Int32 {
         Console.writeLine("Target  : \(state.connected ? state.device : "disconnected; level saved")")
         Console.writeLine("Step    : \(settings.step)%")
         Console.writeLine("OSD     : \(settings.indicator.rawValue)")
-        if let id = settings.targetID { Console.writeLine("Hardware: \(try ensureHardwareMaximum(displayID: id))") }
+        if settings.hardwareMaximum, let id = settings.targetID {
+            Console.writeLine("Hardware: \(try ensureHardwareMaximum(displayID: id))")
+        } else {
+            Console.writeLine("Hardware: maximum enforcement disabled")
+        }
     } else if operation != 4 {
         Console.writeLine(String(current))
     }
@@ -153,6 +190,12 @@ do {
     if !args.isEmpty { exit(try runCLI(args)) }
     let lock = try InstanceLock(timeout: 2000)
     if !lock.acquired { exit(0) }
+    for name in ["scanout-lease.json", "output-color-lease.txt"] {
+        if try NativeFiles.exists(NativeFiles.legacyDirectory() + "\\" + name) {
+            throw WindowsError.unsupported(
+                "BrightnessCtl recovery is pending. Run the migration installer after restoring the old resident.")
+        }
+    }
     _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT(bitPattern: -4))
     NativeFlyout.restore()
     do { try recoverOutput() } catch { Diagnostics.write("recovery pending: \(error)") }
@@ -161,6 +204,6 @@ do {
     try app.run()
 } catch {
     Diagnostics.write("error: \(error)")
-    Console.writeLine("BrightnessCtl: \(error)")
+    Console.writeLine("SwiftyToys: \(error)")
     exit(1)
 }

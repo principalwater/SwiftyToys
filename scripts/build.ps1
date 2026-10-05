@@ -25,8 +25,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not locate Swift build products.' }
 } finally { Pop-Location }
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
-$sourceExecutable = Join-Path ($binPath | Select-Object -Last 1) 'BrightnessCtl.exe'
-Copy-Item -LiteralPath $sourceExecutable -Destination (Join-Path $OutputDirectory 'BrightnessCtl.exe') -Force
+$sourceExecutable = Join-Path ($binPath | Select-Object -Last 1) 'SwiftyToys.exe'
+& mt.exe -nologo -manifest (Join-Path $repoRoot 'resources\SwiftyToys.manifest') "-outputresource:$sourceExecutable;#1"
+if ($LASTEXITCODE -ne 0) { throw 'Could not embed the native UI manifest.' }
+Copy-Item -LiteralPath $sourceExecutable -Destination (Join-Path $OutputDirectory 'SwiftyToys.exe') -Force
 # A portable release must link the official Swift runtime statically.
 $dependencyOutput = & dumpbin /nologo /dependents $sourceExecutable
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect native runtime dependencies.' }
@@ -45,6 +47,6 @@ if (Test-Path -LiteralPath $manifest) {
     }
 }
 [IO.File]::WriteAllText($manifest, '', [Text.UTF8Encoding]::new($false))
-$size = (Get-Item -LiteralPath (Join-Path $OutputDirectory 'BrightnessCtl.exe')).Length
+$size = (Get-Item -LiteralPath (Join-Path $OutputDirectory 'SwiftyToys.exe')).Length
 if ($size -gt 6500000) { throw "Executable exceeds the 6.5 MB size budget: $size bytes." }
 Write-Host "Built one executable: $size bytes; no Swift DLLs."

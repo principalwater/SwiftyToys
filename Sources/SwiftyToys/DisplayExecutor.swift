@@ -15,7 +15,7 @@ final class DisplayExecutor: SerialExecutor, @unchecked Sendable {
 
     init() throws {
         wake = try OwnedHandle(CreateEventW(nil, false, false, nil))
-        thread = try NativeThread(name: "BrightnessCtl display APIs") { [weak self] in self?.run() }
+        thread = try NativeThread(name: "SwiftyToys display APIs") { [weak self] in self?.run() }
     }
 
     func enqueue(_ job: consuming ExecutorJob) {

@@ -31,7 +31,7 @@ if (-not $env:INCLUDE -or -not $env:LIB) {
     $vsInstallation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
     if (-not $vsInstallation) { throw 'MSVC x64 Build Tools not found.' }
     $developerCommand = Join-Path $vsInstallation 'Common7\Tools\VsDevCmd.bat'
-    $batchPath = Join-Path ([IO.Path]::GetTempPath()) ('BrightnessCtl-SDK-' + [Guid]::NewGuid().ToString('N') + '.cmd')
+    $batchPath = Join-Path ([IO.Path]::GetTempPath()) ('SwiftyToys-SDK-' + [Guid]::NewGuid().ToString('N') + '.cmd')
     try {
         if ($developerCommand -match '["\r\n]') { throw 'Invalid SDK path.' }
         [IO.File]::WriteAllLines($batchPath, @('@echo off', ('call "' + $developerCommand + '" -arch=x64 -host_arch=x64 >nul'), 'if errorlevel 1 exit /b 1', 'set'), [Text.Encoding]::Default)

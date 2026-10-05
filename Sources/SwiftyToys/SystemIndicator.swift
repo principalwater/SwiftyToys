@@ -50,7 +50,7 @@ final class SystemIndicator {
     init(destination: MessageDestination, custom: Bool, hardwareKeys: Bool) throws {
         let state = try IndicatorState(destination: destination, custom: custom, hardwareKeys: hardwareKeys)
         self.state = state
-        thread = try NativeThread(name: "BrightnessCtl system indicator") {
+        thread = try NativeThread(name: "SwiftyToys system indicator") {
             defer {
                 state.values.withLock { $0.threadID = 0 }
                 SetEvent(state.ready.raw)
@@ -139,7 +139,7 @@ private final class IndicatorWatcher {
         // Establish crash recovery before changing another process's window.
         try startWatchdog()
         let handle = withWideString("STATIC") { className in
-            withWideString("BrightnessCtl.Indicator") {
+            withWideString("SwiftyToys.Indicator") {
                 CreateWindowExW(
                     DWORD(WS_EX_TOOLWINDOW), className, $0, 0, 0, 0, 1, 1,
                     nil, nil, GetModuleHandleW(nil), nil)
