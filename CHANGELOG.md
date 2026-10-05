@@ -12,6 +12,7 @@
 - Add scoped Apple Bluetooth pairing recovery: export the exact pinned Bluetooth package,
   preserve other Apple devices, and guide restart / pairing before driver installation.
 - Credit principalwater, Apple inspiration and Microsoft PowerToys in About.
+- Fix migration when the retained BrightnessCtl executable has no startup registry value.
 
 ## SwiftyToys 0.1.0 — 2026-10-05
 

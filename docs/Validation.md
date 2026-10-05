@@ -25,8 +25,14 @@ Local validation on Windows 10 x64, Boot Camp MacPro6,1, 2026-10-06:
   On this machine the selector chooses only oem2.inf. After the user approved
   Windows UAC, that package was exported and removed successfully. oem6.inf
   (working USB) and oem0.inf (radio) remain. The protected result is
-  PairingRepairPrepared with RestartRequired true. Restart / pair-before-driver
-  input validation is still pending.
+  PairingRepairPrepared with RestartRequired true. After Windows Restart, the
+  user paired it again and confirmed basic Bluetooth pointer / click input.
+  Windows selected the original Apple Multi-Touch Pro 6.1.7800.2 for that test.
+- The signed Precision Bluetooth package was then installed on the existing
+  working pair, without removing the pair or attaching USB. Windows reports
+  Apple Bluetooth Precision Trackpad 6.1.8000.6 and HID-compliant touch pad,
+  both OK; the installer requested no restart. Wireless gesture / smoothness
+  and reconnect testing remain pending.
 
 Bluetooth recovery / reconnect / smoothness and the updated application's appearance
 still require interactive validation. USB-C and
@@ -40,8 +46,12 @@ timed out; stopping the resident left one terminating Windows thread, while its
 watchdog remained waiting for process exit. The upgrade correctly refused to
 overwrite a running executable. The watchdog and recovery lease were retained.
 This snapshot does not identify the cause of that system wait or claim that the
-new UI changes fix it. A Windows session restart may be needed before the local
-0.1.1 upgrade can finish. The user tried Windows+Ctrl+Shift+B; the pending thread
-remained. A per-user temporary task has been prepared to install the complete 0.1.1
-package at the next sign-in, restore normal SwiftyToys startup and remove its own
-update task after success. Saved brightness (75%) and configuration are retained.
+new UI changes fix it. The user tried Windows+Ctrl+Shift+B; the pending thread
+remained. Windows Restart released the old processes. The prepared per-user update
+then exposed an installer bug: Windows PowerShell 5.1 terminated when the optional
+BrightnessCtl Run value was absent, despite Get-ItemPropertyValue's error preference.
+The installer now reads that optional property from Get-ItemProperty. Replaying
+the actual update succeeds: 0.1.1 runs with dedicated input active, original output
+color recovery completes, normal startup is enabled, and the temporary update task
+is removed. Saved brightness (75%) and configuration are retained. The settings
+window opens through the normal installed executable's settings command.

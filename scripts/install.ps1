@@ -37,7 +37,7 @@ if (Test-Path -LiteralPath $legacyExecutable) {
     $migrationBackup = Join-Path $directory 'migration-backup'
     New-Item -ItemType Directory -Path $migrationBackup -Force | Out-Null
     foreach ($legacy in $legacyTasks) { Export-ScheduledTask -TaskName $legacy.TaskName -TaskPath $legacy.TaskPath | Set-Content -LiteralPath (Join-Path $migrationBackup ($legacy.TaskName + '.xml')) -Encoding UTF8 }
-    $legacyRun = Get-ItemPropertyValue -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name BrightnessCtl -ErrorAction SilentlyContinue
+    $legacyRun = (Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue).BrightnessCtl
     if ($legacyRun) { $legacyRun | Set-Content -LiteralPath (Join-Path $migrationBackup 'BrightnessCtl-run.txt') -Encoding UTF8 }
     $oldStop = Start-Process -FilePath $legacyExecutable -ArgumentList 'exit' -WindowStyle Hidden -Wait -PassThru
     for ($attempt = 0; $attempt -lt 150; $attempt++) {
