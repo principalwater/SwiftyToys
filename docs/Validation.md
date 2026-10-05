@@ -73,6 +73,16 @@ The native regression reproduces the missing sent reply with the old blocking
 wait, verifies sent replies with the new wait, preserves queued UI commands,
 checks the deadline, rejects overlapping workers and repeats real worker shutdown.
 ABI, storage and all nine English/Russian native pages also pass on 0.1.2.
-Its physical settings-change validation is pending: the old 0.1.1 process did not
-answer normal exit, and after stopping it Windows retained one thread inside the
-input system call. Its watchdog and output recovery lease remain intact.
+The old 0.1.1 process did not answer normal exit, and after stopping it Windows
+retained one thread inside the input system call. The watchdog and recovery lease
+were preserved until Windows Restart. The prepared update then installed 0.1.2,
+restored output color, enabled normal startup, opened settings and removed its
+temporary update task. The installed executable matches the tested release hash.
+
+After that restart the user confirmed automatic startup and that everything works,
+in response to the request to toggle wheel inversion and save keyboard / language
+settings without freezing. The resident responds to CLI queries, and its log also
+records a normal shutdown with output restoration. There is one resident and its
+watchdog. The user's current saved brightness is 55%; configuration remains intact.
+This validates the reported settings freeze fix on this hardware; it does not
+prove that every possible configuration or Windows system has been tested.
