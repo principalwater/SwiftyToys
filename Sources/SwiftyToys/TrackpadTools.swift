@@ -72,12 +72,12 @@ struct TrackpadStatus {
         guard read else { return "" }
         return String(decoding: buffer.prefix(while: { $0 != 0 }), as: UTF16.self)
     }
-    static func openInstaller(owner: HWND, source: String = "Apple", rollback: Bool = false) throws {
+    static func openInstaller(owner: HWND, source: String = "Apple", rollback: Bool = false, repairBluetooth: Bool = false) throws {
         let path = executablePath().split(separator: "\\").dropLast().joined(separator: "\\") + "\\install-trackpad.ps1"
         guard try NativeFiles.exists(path) else {
             throw WindowsError.unsupported("Install from the complete release ZIP to use the trackpad installer.")
         }
         guard source == "Apple" || source == "Imbushuo" else { throw WindowsError.unsupported("Unknown driver source.") }
-        try shellOpen("powershell.exe", arguments: "-NoProfile -ExecutionPolicy Bypass -File " + quoteArgument(path) + " -Source " + source + (rollback ? " -Rollback" : ""), elevated: true, owner: owner)
+        try shellOpen("powershell.exe", arguments: "-NoProfile -ExecutionPolicy Bypass -File " + quoteArgument(path) + " -Source " + source + (rollback ? " -Rollback" : "") + (repairBluetooth ? " -RepairBluetooth" : ""), elevated: true, owner: owner)
     }
 }

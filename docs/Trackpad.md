@@ -52,6 +52,39 @@ The presence of a Bluetooth node does not prove wireless report delivery. Use
 Keep wheel inversion for an ordinary mouse; configure touchpad direction in Windows.
 The global wheel hook cannot distinguish devices that produce ordinary wheel events.
 
+### Apple Bluetooth pairing recovery
+
+Apple's Precision Bluetooth filter can fail initial HID connection and cause Windows
+to forget the pair. The [upstream package discussion](https://github.com/lc700x/MagicTrackPad2_Windows_Precision_Drivers/issues/1#issuecomment-1888567442)
+describes pairing before installing the Precision packages as a workaround. This is
+a reported workaround, not a guaranteed fix or proof of a particular root cause.
+
+If Windows pairs and then deletes the trackpad, use **Repair Bluetooth pairing**:
+
+1. Disconnect its USB cable. The action requires confirmation and Windows UAC.
+2. SwiftyToys verifies the pinned Apple archive and signed catalogs, finds installed
+   OEM packages by exact Bluetooth INF hash, and exports them before removing them.
+   Only the inspected Apple Precision Bluetooth package qualifies; USB support,
+   other Apple drivers,
+   the Bluetooth adapter and pairing keys are not manually removed. Another connected
+   Apple device using this package blocks repair. Windows may refuse removal;
+   SwiftyToys does not force it. On removal failure, it tries to stage the BT package
+   again and reports any restoration failure.
+3. Restart Windows yourself, then pair the trackpad over Bluetooth **without USB**.
+   First check basic pointer movement; its failure indicates that pairing / basic
+   HID input also needs diagnosis before Precision gesture tuning.
+4. Install the Apple Precision driver from SwiftyToys while the pair is present.
+   Test pointer movement and gestures. Avoid removing that working pair afterward.
+
+The CLI equivalent is `install-trackpad.ps1 -RepairBluetooth` in elevated 64-bit
+Windows PowerShell. The action downloads and checks the packages even when no
+trackpad node is present; no restart or new pairing is automatic. Backups and
+`pairing-repair.json` remain in protected driver storage. If pairing still fails,
+inspect System / HidBth and SetupAPI logs before changing the radio driver.
+The published workaround removes both Precision packages. SwiftyToys starts with
+Bluetooth only to preserve the physically validated USB path; the effectiveness
+of this narrower recovery remains to be tested on the connected hardware.
+
 Windows gestures and application behavior differ from macOS. Force Click, three-finger
 drag, rotation, lookup, Launchpad and identical application-independent momentum are
 not promised. Driver binding / signature checks are not a physical gesture test.
@@ -100,7 +133,7 @@ its Windows 11 signing does not validate Windows 10 compatibility.
 | --- | --- | --- |
 | Original Magic Trackpad | Bluetooth | Unsupported; different reports, no tested hardware |
 | Lightning Magic Trackpad 2, PID 0265 | USB | Installer supports signed Apple / imbushuo packages |
-| Lightning Magic Trackpad 2, PID 0265 | Bluetooth | Signed Apple package available; pairing and physical validation required |
+| Lightning Magic Trackpad 2, PID 0265 | Bluetooth | Signed Apple package; local initial pairing fails and Windows forgets the device; recovery validation pending |
 | USB-C Magic Trackpad, PID 0324 | USB / Bluetooth | Native detection; installer support and hardware validation pending |
 
 Before a model is advertised as supported, test pointer movement, scroll/zoom, taps,

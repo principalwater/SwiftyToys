@@ -9,6 +9,8 @@
 - Add runtime language selection, bounded UTF-8 JSON packs and English fallback.
 - Add Magic Trackpad 2 detection, signed upstream USB/Bluetooth driver installation,
   protected recovery backups, rollback, native gesture settings and Bluetooth pairing links.
+- Add scoped Apple Bluetooth pairing recovery: export the exact pinned Bluetooth package,
+  preserve other Apple devices, and guide restart / pairing before driver installation.
 - Credit principalwater, Apple inspiration and Microsoft PowerToys in About.
 
 ## SwiftyToys 0.1.0 — 2026-10-05

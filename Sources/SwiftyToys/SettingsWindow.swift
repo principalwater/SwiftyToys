@@ -447,6 +447,7 @@ final class SettingsWindow {
             button("Windows gestures and scrolling", 454, 300, 436, 350)
             button("Restore previous driver", 457, 678, 436, 268)
             button("Connect via Bluetooth", 455, 300, 491, 350)
+            button("Repair Bluetooth pairing", 460, 678, 491, 268)
             label(
                 "Two fingers: scroll, zoom, and right-click.\nThree / four: windows, desktops, and assignable shortcuts.\nSmoothness and recognition are provided by Windows Precision Touchpad.\nSet the direction in Windows: wheel inversion is for a regular mouse.\nOver Bluetooth, pairing in Windows and a free connection are required.\nForce Touch and app behavior may differ from macOS.",
                 456, 300, 539, 650, 108)
@@ -695,9 +696,15 @@ final class SettingsWindow {
                         }
                         throw error
                     }
-                } else if id == 452 || id == 457 {
-                    let source = controls[459].map { SendMessageW($0, UINT(CB_GETCURSEL), 0, 0) == 1 ? "Imbushuo" : "Apple" } ?? "Apple"
-                    try TrackpadStatus.openInstaller(owner: window, source: source, rollback: id == 457)
+                } else if id == 452 || id == 457 || id == 460 {
+                    if id == 460 {
+                        let choice = withWideString(localization.text("Disconnect the trackpad USB cable first. This exports and removes only the pinned Apple Precision Bluetooth package. USB support is retained. Other connected Apple devices using the package block the action. Then restart Windows, pair Bluetooth without USB, verify pointer input, and install the Apple driver again. Continue?")) { message in
+                            withWideString(localization.text("Repair Bluetooth pairing")) { MessageBoxW(window, message, $0, UINT(MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2)) }
+                        }
+                        guard choice == IDYES else { return 0 }
+                    }
+                    let source = id == 460 ? "Apple" : controls[459].map { SendMessageW($0, UINT(CB_GETCURSEL), 0, 0) == 1 ? "Imbushuo" : "Apple" } ?? "Apple"
+                    try TrackpadStatus.openInstaller(owner: window, source: source, rollback: id == 457, repairBluetooth: id == 460)
                     status("Installer opened. After installing, refresh the device status.")
                 } else if id == 350 {
                     let mode = controls[341].map { Int(SendMessageW($0, UINT(CB_GETCURSEL), 0, 0)) } ?? 0

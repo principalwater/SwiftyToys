@@ -20,6 +20,9 @@ jobs:
       - name: Run hardware-independent tests
         shell: powershell
         run: ./scripts/test.ps1
+      - name: Check trackpad repair selection
+        shell: powershell
+        run: ./scripts/test-trackpad.ps1
       - name: Check native ABI
         shell: pwsh
         run: |

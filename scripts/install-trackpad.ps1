@@ -1,6 +1,7 @@
 param(
     [ValidateSet('Apple','Imbushuo')][string]$Source = 'Apple',
     [switch]$Rollback,
+    [switch]$RepairBluetooth,
     [switch]$PrepareOnly,
     [switch]$NonInteractive
 )
@@ -74,6 +75,22 @@ public static class SwiftyTrackpadPnP {
     $appleBluetoothID = 'BTHENUM\{00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0265'
     $openBluetoothIDs = @('HID\{00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0265&Col01', 'HID\{00001124-0000-1000-8000-00805f9b34fb}_VID&0001004c_PID&0265&Col02')
     $allowedIDs = @($usbID, $appleBluetoothID) + $openBluetoothIDs
+    function Get-ApplePairingPackages($Infs, $Devices) {
+        $bluetoothInf = @($Infs | Where-Object { $_.Name -ieq 'ApplePrecisionTrackpadBluetooth.inf' })
+        if ($bluetoothInf.Count -ne 1) { throw 'A unique verified Apple Bluetooth Precision INF is required.' }
+        $hashes = @((Get-FileHash -LiteralPath $bluetoothInf[0].FullName -Algorithm SHA256).Hash)
+        $packages = @(Get-ChildItem -LiteralPath (Join-Path $env:WINDIR 'INF') -Filter 'oem*.inf' -File | Where-Object {
+            $_.Name -match '^oem\d+\.inf$' -and (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash -in $hashes
+        })
+        if (-not $packages.Count) { throw 'The Apple Bluetooth Precision package is not installed. Pair Bluetooth before installing the driver.' }
+        foreach ($device in $Devices | Where-Object { $_.InstanceId -match '^(USB|HID)\\VID_05AC|^BTHENUM\\.*_VID&0001004C' }) {
+            $bound = (Get-PnpDeviceProperty -InstanceId $device.InstanceId -KeyName 'DEVPKEY_Device_DriverInfPath' -ErrorAction Stop).Data
+            if ($bound -in $packages.Name -and -not @($allowedIDs | Where-Object { $device.InstanceId.StartsWith($_ + '\', [StringComparison]::OrdinalIgnoreCase) }).Count) {
+                throw 'Another connected Apple device uses these packages. Bluetooth repair stopped to preserve its driver.'
+            }
+        }
+        return $packages
+    }
     function Bind-Driver([string]$HardwareID, [string]$Inf) {
         if ($HardwareID -notin $allowedIDs -or -not (Test-Path -LiteralPath $Inf)) { throw 'Invalid target hardware or missing signed INF.' }
         $reboot = $false
@@ -93,6 +110,7 @@ public static class SwiftyTrackpadPnP {
         }
         if ($failures.Count) { throw ('Recovery failed: ' + ($failures -join '; ')) }
     }
+    if ($RepairBluetooth -and ($Rollback -or $PrepareOnly -or $Source -ne 'Apple')) { throw 'Bluetooth repair is a separate Apple-only action.' }
     if ($Rollback) {
         # Keep the first pre-install binding even when installation is repeated.
         $recoveries = @(Get-ChildItem -LiteralPath $taskRoot -Filter 'recovery.json' -Recurse -File | Sort-Object LastWriteTimeUtc)
@@ -113,7 +131,8 @@ public static class SwiftyTrackpadPnP {
     }
     $targets = if ($Source -eq 'Apple') { @($usbID, $appleBluetoothID) } else { @($usbID) + $openBluetoothIDs }
     $connected = @()
-    foreach ($device in Get-PnpDevice -PresentOnly | Where-Object {
+    $presentDevices = @(Get-PnpDevice -PresentOnly)
+    foreach ($device in $presentDevices | Where-Object {
         $instance = $_.InstanceId
         @($targets | Where-Object { $instance.StartsWith($_ + '\', [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
     }) {
@@ -121,7 +140,8 @@ public static class SwiftyTrackpadPnP {
         $match = $ids | Where-Object { $_ -in $targets } | Select-Object -First 1
         if ($match) { $connected += [pscustomobject]@{ Device=$device; HardwareID=$match } }
     }
-    if (-not $connected.Count) { throw 'Connect a Lightning Magic Trackpad 2 (PID 0265) over USB, or pair it over Bluetooth first. Other models are not supported by this installer.' }
+    if ($RepairBluetooth -and @($connected | Where-Object { $_.HardwareID -eq $usbID }).Count) { throw 'Disconnect the trackpad USB cable before repairing Bluetooth pairing.' }
+    if (-not $RepairBluetooth -and -not $connected.Count) { throw 'Connect a Lightning Magic Trackpad 2 (PID 0265) over USB, or pair it over Bluetooth first. Other models are not supported by this installer.' }
     $taskStage = Join-Path $taskRoot ([DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss') + '-' + [Guid]::NewGuid().ToString('N'))
     Protect-Directory $taskStage
     $archive = Join-Path $taskStage $(if ($Source -eq 'Apple') { 'AppleBcUpdate.exe' } else { 'upstream-package.zip' })
@@ -164,6 +184,36 @@ public static class SwiftyTrackpadPnP {
         if ($cats.Count -ne 1) { throw 'Driver catalog is missing or ambiguous.' }
         $signature = Get-AuthenticodeSignature -LiteralPath $cats[0].FullName
         if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notlike 'CN=Microsoft Windows Hardware Compatibility Publisher,*') { throw 'Driver catalog is not signed by Microsoft.' }
+    }
+    if ($RepairBluetooth) {
+        # Match only pinned Bluetooth INF bytes; preserve the working USB driver.
+        $packages = @(Get-ApplePairingPackages $infs $presentDevices)
+        foreach ($package in $packages) {
+            $backup = Join-Path $taskStage $package.Name
+            New-Item -ItemType Directory -Path $backup | Out-Null
+            & pnputil.exe /export-driver $package.Name $backup
+            if ($LASTEXITCODE -ne 0) { throw 'Precision driver backup failed; Bluetooth repair stopped.' }
+        }
+        @{ Packages=@($packages.Name); NextStep='Restart Windows, pair Bluetooth without USB, then install the Apple Precision driver.' } |
+            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskStage 'pairing-repair.json') -Encoding UTF8
+        try {
+            foreach ($package in $packages) {
+                & pnputil.exe /delete-driver $package.Name /uninstall
+                if ($LASTEXITCODE -notin @(0,3010)) { throw "Windows refused to remove $($package.Name). Backup retained: $taskStage" }
+            }
+        } catch {
+            $failure = $_.Exception.Message
+            foreach ($inf in $infs | Where-Object { $_.Name -ieq 'ApplePrecisionTrackpadBluetooth.inf' }) {
+                & pnputil.exe /add-driver $inf.FullName
+                if ($LASTEXITCODE -notin @(0,3010)) { $failure += '; Restoring the staged Precision package failed.' }
+            }
+            throw $failure
+        }
+        $script:restartRequired = $true
+        $nextStep = 'Restart Windows, pair the trackpad over Bluetooth WITHOUT USB, verify basic pointer input, then install the Apple Precision driver. Do not remove the pair afterward. USB support is retained. No restart is automatic.'
+        Write-Host $nextStep
+        Save-Result 'PairingRepairPrepared' $nextStep
+        exit 0
     }
     $bindings = @()
     if ($PrepareOnly) {

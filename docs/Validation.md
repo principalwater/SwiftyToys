@@ -11,11 +11,29 @@ Local validation on Windows 10 x64, Boot Camp MacPro6,1, 2026-10-06:
   Lightning PID 0265, replacing Apple Multi-Touch Pro 6.1.7800.2. Windows reports
   problem code 0. Both USB and Bluetooth packages are staged; the original USB
   driver was exported before rebinding. No restart was requested by the installer.
+- The user confirmed two-finger scrolling, pinch-to-zoom and three-finger window
+  switching on that USB connection after the driver installation.
+- Two Bluetooth pairing attempts succeeded initially but delivered no input. The
+  user confirmed the device disappeared without manual removal. System events
+  show BTHUSB 8 (paired), HidBth 4 (initial HID connection failed) and BTHUSB 10
+  (pairing key removed). SetupAPI selected Apple Bluetooth Precision 6.1.8000.6
+  and DeviceAssociationService subsequently removed the device nodes. This
+  identifies the failing connection phase, not the underlying driver/radio cause.
+- The repair selector passes a read-only regression: exact pinned Bluetooth INF
+  matching, exclusion of working USB and unrelated Apple radio packages, protection of another Apple
+  trackpad using a Precision package, and rejection of missing verified packages.
+  On this machine the selector chooses only oem2.inf. After the user approved
+  Windows UAC, that package was exported and removed successfully. oem6.inf
+  (working USB) and oem0.inf (radio) remain. The protected result is
+  PairingRepairPrepared with RestartRequired true. Restart / pair-before-driver
+  input validation is still pending.
 
-Physical gestures over USB, Bluetooth pairing / reconnect / smoothness, and the
-updated application's appearance still require interactive validation. USB-C and
+Bluetooth recovery / reconnect / smoothness and the updated application's appearance
+still require interactive validation. USB-C and
 original Magic Trackpad are not tested. No macOS-equivalent feel or all-model
 support is claimed from these checks.
+The 0.1.1 preview exposes the dashboard and its feature buttons in UI Automation.
+Windows.Graphics.Capture times out, so a visual screenshot review is not claimed.
 
 The local 0.1.0 resident became unresponsive before its upgrade. Its normal exit
 timed out; stopping the resident left one terminating Windows thread, while its
@@ -23,4 +41,7 @@ watchdog remained waiting for process exit. The upgrade correctly refused to
 overwrite a running executable. The watchdog and recovery lease were retained.
 This snapshot does not identify the cause of that system wait or claim that the
 new UI changes fix it. A Windows session restart may be needed before the local
-0.1.1 upgrade can finish. Saved brightness and configuration are retained.
+0.1.1 upgrade can finish. The user tried Windows+Ctrl+Shift+B; the pending thread
+remained. A per-user temporary task has been prepared to install the complete 0.1.1
+package at the next sign-in, restore normal SwiftyToys startup and remove its own
+update task after success. Saved brightness (75%) and configuration are retained.
