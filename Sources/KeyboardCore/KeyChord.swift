@@ -143,7 +143,7 @@ public struct RemapRule: Equatable, Sendable {
     public init(from: String, to: String, application: String = "") throws {
         source = try KeyChord(from)
         let actionName = to.lowercased().trimmingWhitespace()
-        if ["switch language", "pin window", "disable key"].contains(actionName) {
+        if ["switch language", "pin window", "minimize window", "disable key"].contains(actionName) {
             action = actionName
             target = nil
         } else {
@@ -170,6 +170,8 @@ public struct RemapRule: Equatable, Sendable {
         var pairs = [
             ("Ctrl+Space", "Switch language"), ("Win+Tab", "Alt+Tab"),
             ("Win+Shift+Tab", "Alt+Shift+Tab"), ("Win+Ctrl+T", "Pin window"),
+            ("Win+H", "Minimize window"),
+            ("Win+Alt+Left", "Ctrl+PageUp"), ("Win+Alt+Right", "Ctrl+PageDown"),
         ]
         for key in ["C", "V", "X", "Z", "A", "F", "S", "W", "T"] { pairs.append(("Win+\(key)", "Ctrl+\(key)")) }
         pairs += [("Win+Shift+Z", "Ctrl+Shift+Z"), ("Win+Shift+T", "Ctrl+Shift+T")]

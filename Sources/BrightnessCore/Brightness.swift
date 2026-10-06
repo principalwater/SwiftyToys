@@ -2,7 +2,7 @@
 
 // Copyright (c) 2026 principalwater
 
-/// A validated software brightness percentage, independent of monitor backlight.
+/// A validated brightness percentage, independent of the selected display backend.
 public struct BrightnessLevel: Sendable, Equatable, Codable {
     public let percent: Int
 
@@ -10,6 +10,10 @@ public struct BrightnessLevel: Sendable, Equatable, Codable {
     public init(_ percent: Int) throws(BrightnessError) {
         guard (0...100).contains(percent) else { throw .invalidPercentage(percent) }
         self.percent = percent
+    }
+    /// Maps a percentage to the native hardware range without overflowing UInt32.
+    public func hardwareValue(in range: ClosedRange<UInt32>) -> UInt32 {
+        range.lowerBound + UInt32((UInt64(range.upperBound - range.lowerBound) * UInt64(percent) + 50) / 100)
     }
 
     /// Clamps a relative change at the endpoints of the supported range.

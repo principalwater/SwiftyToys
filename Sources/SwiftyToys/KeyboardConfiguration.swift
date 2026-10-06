@@ -54,6 +54,11 @@ struct KeyboardConfiguration: Sendable {
                 rules.append(try RemapRule(from: String(parts[0]), to: String(parts[1]), application: String(parts[2])))
             }
         }
+        let preset = RemapRule.macPreset
+        let additions: Set<String> = ["Win+H", "Win+Alt+Left", "Win+Alt+Right"]
+        if rules.filter({ !additions.contains($0.source.description) }) == preset.filter({ !additions.contains($0.source.description) }) {
+            rules += preset.filter { candidate in additions.contains(candidate.source.description) && !rules.contains(where: { $0.source == candidate.source }) }
+        }
     }
     func save() throws {
         _ = try RemapRule(from: "CapsLock", to: capsAction)

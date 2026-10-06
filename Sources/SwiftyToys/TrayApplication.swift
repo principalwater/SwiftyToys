@@ -30,11 +30,13 @@ final class TrayApplication {
     private var osd: HWND?
     private var remapper: KeyboardRemapper?
     private var reloadingInput = false
+    private var applyingMouseScroll = false
     private var dashboard: SettingsWindow?
     private let tools = DesktopTools()
     private var systemIndicator: SystemIndicator?
     private var tray = NOTIFYICONDATAW()
     private var trayAdded = false
+    private var trayText = ""
     private var exiting = false
     private var pendingSteps = 0
     private var lastApply: UInt64 = 0
@@ -151,6 +153,23 @@ final class TrayApplication {
             return 0
         }
         switch message {
+        case mouseScrollResultMessage:
+            applyingMouseScroll = value == 4
+            do {
+                var configuration = try KeyboardConfiguration()
+                let actual = try NativeMouseScrolling.current()
+                if value == 0 || value == 2 {
+                    configuration.reverseVertical = actual.vertical ?? (data & 1 != 0)
+                    configuration.reverseHorizontal = actual.horizontal ?? (data & 2 != 0)
+                    try configuration.save()
+                }
+                dashboard?.updateScrolling(vertical: actual.vertical ?? configuration.reverseVertical, horizontal: actual.horizontal ?? configuration.reverseHorizontal,
+                    result: value == 0 ? "Native scrolling applied." : value == 2 ? "Direction saved. Reconnect the mouse to apply it." : value == 4 ? "Windows is still configuring the mouse. Waiting without blocking settings." : value == 1223 ? "Native scrolling was cancelled." : "Mouse configuration failed. Current device values are shown; verify the direction.")
+            } catch {
+                Diagnostics.write("native mouse preferences: \(error)")
+                dashboard?.updateScrolling(vertical: data & 1 != 0, horizontal: data & 2 != 0, result: "Could not read or save the mouse state. Verify Windows mouse direction.")
+            }
+            return 0
         case toyActionMessage:
             do {
                 if value == 1 {
@@ -165,13 +184,24 @@ final class TrayApplication {
                 } else if value == 4 {
                     try showDashboard()
                 } else if value == 5 {
-                    guard Int(data) == remapper?.generation else { return 0 }
-                    Diagnostics.write("natural scrolling paused after failed SendInput")
+                    try tools.minimize(HWND(bitPattern: Int(data)))
+                } else if value == 6 {
+                    guard data >= 0, data <= 3 else { throw WindowsError.unsupported("Invalid mouse direction request.") }
+                    _ = try dashboardCommand(430, [data & 1 == 0 ? "0" : "1", data & 2 == 0 ? "0" : "1"])
+                } else if value == 7 {
+                    try reloadRemapper()
+                    dashboard?.refreshLanguages(result: data == 1 ? "Apple input profiles updated." : "Windows could not update input profiles. Verify language settings.")
                 }
             } catch { Diagnostics.write("desktop action: \(error)") }
             return 0
         case brightnessMessage:
             guard !exiting else { return 0 }
+            if value == 6 {
+                let modes = ["auto", "native", "amd", "hardware"]
+                guard modes.indices.contains(Int(data)) else { return 0 }
+                do { _ = try dashboardCommand(245, [modes[Int(data)]]); return LRESULT(state.level.percent + 1) }
+                catch { Diagnostics.write("brightness mode: \(error)"); return 0 }
+            }
             if value == 5 {
                 do {
                     settings.indicator = try Settings().indicator
@@ -210,7 +240,6 @@ final class TrayApplication {
             } else {
                 tools.tick()
                 _ = apply(command: 0, show: false)
-                updateTray()
                 queueHardwareMaximum()
             }
             return 0
@@ -365,6 +394,18 @@ final class TrayApplication {
                 destination: MessageDestination(window!), custom: settings.indicator == .custom,
                 hardwareKeys: settings.grabFunctionKeys)
         case 241: guard apply(command: 3, show: false) else { throw WindowsError.unsupported("Display unavailable.") }
+        case 245:
+            guard values.count == 1, ["auto", "native", "amd", "hardware"].contains(values[0]) else { throw WindowsError.unsupported("Invalid brightness mode.") }
+            let previous = settings.backend
+            try settings.setValue(values[0], forKey: "backend")
+            settings.backend = values[0]
+            guard apply(command: 3, show: false) else {
+                try settings.setValue(previous, forKey: "backend")
+                settings.backend = previous
+                _ = apply(command: 3, show: false)
+                throw WindowsError.unsupported("Brightness mode is unavailable. Previous mode restored.")
+            }
+            return "Brightness mode applied. Hardware mode dims the cursor with the display."
         case 313: try reloadRemapper()
         case 410:
             let minutes =
@@ -375,11 +416,13 @@ final class TrayApplication {
             try tools.awake(minutes: 0, display: false)
             return "Normal power mode restored."
         case 430:
-            var configuration = try KeyboardConfiguration()
-            configuration.reverseVertical = values[0] == "1"
-            configuration.reverseHorizontal = values[1] == "1"
-            try configuration.save()
-            try reloadRemapper()
+            guard !applyingMouseScroll else { throw WindowsError.unsupported("Native mouse configuration is already running.") }
+            guard values.count == 2, values.allSatisfy({ $0 == "0" || $0 == "1" }) else { throw WindowsError.unsupported("Invalid mouse direction request.") }
+            if try NativeMouseScrolling.current().matches(vertical: values[0] == "1", horizontal: values[1] == "1") { return "Native scrolling is already applied." }
+            applyingMouseScroll = true
+            do { try NativeMouseScrolling.apply(owner: window!, vertical: values[0] == "1", horizontal: values[1] == "1") }
+            catch { applyingMouseScroll = false; throw error }
+            return "Applying native scrolling. Confirm the Windows administrator prompt."
         case 350:
             var configuration = try KeyboardConfiguration()
             configuration.smartCaps = values[0] == "1"
@@ -405,12 +448,14 @@ final class TrayApplication {
     }
 
     private func updateTray() {
-        setWideString(
-            "SwiftyToys — \(state.level.percent)%\(state.connected ? "" : " (disconnected)")", in: &tray.szTip)
+        let text = "SwiftyToys — \(state.level.percent)%\(state.connected ? "" : " (disconnected)")"
+        guard !trayAdded || text != trayText else { return }
+        setWideString(text, in: &tray.szTip)
         if trayAdded {
-            Shell_NotifyIconW(DWORD(NIM_MODIFY), &tray)
+            if Shell_NotifyIconW(DWORD(NIM_MODIFY), &tray) { trayText = text }
         } else {
             trayAdded = Shell_NotifyIconW(DWORD(NIM_ADD), &tray)
+            if trayAdded { trayText = text }
         }
     }
 
@@ -537,11 +582,13 @@ final class TrayApplication {
     }
 
     private func queueHardwareMaximum() {
-        guard !exiting, let configuration = try? Settings(), configuration.hardwareMaximum,
-            let id = configuration.targetID
-        else { return }
         let now = GetTickCount64()
         guard lastHardwareCheck == 0 || now - lastHardwareCheck >= 10000 else { return }
+        guard !exiting else { return }
+        lastHardwareCheck = now
+        guard let configuration = try? Settings(), configuration.hardwareMaximum, configuration.backend != "hardware",
+            let id = configuration.targetID
+        else { return }
         let gate = hardwareGate
         guard
             gate.busy.withLock({
@@ -550,7 +597,6 @@ final class TrayApplication {
                 return true
             })
         else { return }
-        lastHardwareCheck = now
         do {
             _ = try NativeThread(name: "SwiftyToys hardware brightness") {
                 defer { gate.busy.withLock { $0 = false } }

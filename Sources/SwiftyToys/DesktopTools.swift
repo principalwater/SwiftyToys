@@ -5,6 +5,17 @@ final class DesktopTools {
     private let pinProperty = "SwiftyToys.Pinned"
     private var pinned: [UInt: DWORD] = [:]
     private(set) var awakeUntil: UInt64 = 0
+    /// Minimizes the selected top-level application window through Windows.
+    func minimize(_ window: HWND?) throws {
+        guard let window, IsWindow(window), let root = GetAncestor(window, UINT(GA_ROOTOWNER)),
+            root != GetShellWindow(), root != GetDesktopWindow() else { throw WindowsError.unsupported("Choose an application window to minimize.") }
+        var name = Array(repeating: WCHAR(0), count: 256)
+        let count = GetClassNameW(root, &name, Int32(name.count))
+        guard !["WorkerW", "Progman", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"].contains(String(decoding: name.prefix(Int(max(0, count))), as: UTF16.self)) else {
+            throw WindowsError.unsupported("Choose an application window to minimize.")
+        }
+        guard ShowWindowAsync(root, Int32(SW_MINIMIZE)) else { throw WindowsError.api("Minimize window", GetLastError()) }
+    }
     func togglePin(_ window: HWND?) throws {
         guard let window, IsWindow(window), !IsHungAppWindow(window) else {
             throw WindowsError.unsupported("Select an application window first.")

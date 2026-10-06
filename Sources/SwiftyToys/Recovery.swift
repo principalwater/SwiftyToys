@@ -66,13 +66,15 @@ struct ColorLease: Sendable, Equatable {
             owner: owner, started: started, displayID: id, backend: backend,
             amdID: try optional("amdID", { $0.string }), brightness: try optional("brightness", { $0.integer }),
             contrast: try optional("contrast", { $0.integer }), gamma: try optional("gamma", { $0.words }))
-        guard lease.version == 1, lease.displayID.count < 4096, ["amd", "native"].contains(lease.backend) else {
+        guard lease.version == 1, lease.displayID.count < 4096, ["amd", "native", "hardware"].contains(lease.backend),
+            lease.backend != "hardware" || lease.brightness.flatMap(DWORD.init(exactly:)) != nil else {
             throw WindowsError.unsupported("Unsupported output recovery state.")
         }
         return lease
     }
     func encoded() throws -> [UInt8] {
-        guard version == 1, displayID.count < 4096, ["amd", "native"].contains(backend) else {
+        guard version == 1, displayID.count < 4096, ["amd", "native", "hardware"].contains(backend),
+            backend != "hardware" || brightness.flatMap(DWORD.init(exactly:)) != nil else {
             throw WindowsError.unsupported("Unsupported output recovery state.")
         }
         var fields: [String: StateField] = [
@@ -109,6 +111,10 @@ func recoverOutput(owner: UInt32? = nil, started: UInt64? = nil) throws -> Bool 
                 let brightness = lease.brightness, let contrast = lease.contrast
             else { throw WindowsError.unsupported("Invalid AMD recovery state.") }
             try control.set(amd, brightness: brightness, contrast: contrast)
+        } else if lease.backend == "hardware" {
+            guard let saved = lease.brightness.flatMap(DWORD.init(exactly:)) else { throw WindowsError.unsupported("Invalid hardware recovery state.") }
+            let session = try HardwareBrightnessSession(output: output)
+            try session.restoreSaved(saved)
         } else {
             guard let gamma = lease.gamma else { throw WindowsError.unsupported("Missing native recovery ramp.") }
             let ramp = try GammaRamp(samples: gamma)

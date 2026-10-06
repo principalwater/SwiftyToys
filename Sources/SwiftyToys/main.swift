@@ -8,6 +8,50 @@ import WindowsDisplayABI
 func runCLI(_ args: [String]) throws -> Int32 {
     Console.attach()
     let command = args[0].lowercased()
+    if command == "--test-native-mouse" { try NativeMouseScrolling.selfCheck(); return 0 }
+    if command == "--mouse-info" { Console.writeLine(try NativeMouseScrolling.current().summary); return 0 }
+    if command == "--driver-info" { Console.writeLine(try BootCampInventory.current().summary); return 0 }
+    if command == "--test-driver-info" { BootCampInventory.selfCheck(); return 0 }
+    if command == "--test-apple-layouts" { try AppleKeyboardLayouts.selfCheck(); return 0 }
+    if command == "--apple-layouts" || command == "--restore-apple-layouts" {
+        let initialized = CoInitializeEx(nil, DWORD(COINIT_APARTMENTTHREADED.rawValue))
+        guard initialized >= 0 else { throw WindowsError.status("Initialize input-profile COM", initialized) }
+        defer { CoUninitialize() }
+        do {
+            if command == "--restore-apple-layouts" { try AppleKeyboardLayouts.restore() }
+            else { guard args.count == 2 else { throw WindowsError.unsupported("Use --apple-layouts us|uk.") }; try AppleKeyboardLayouts.use(english: args[1]) }
+            if let window = withWideString(controlWindowTitle, { FindWindowW(nil, $0) }) { PostMessageW(window, toyActionMessage, 7, 1) }
+        } catch {
+            if let window = withWideString(controlWindowTitle, { FindWindowW(nil, $0) }) { PostMessageW(window, toyActionMessage, 7, 0) }
+            throw error
+        }
+        return 0
+    }
+    if command == "--hardware-info" {
+        guard let id = try Settings().targetID else { throw WindowsError.unsupported("Select a physical display first.") }
+        Console.writeLine(try hardwareBrightnessInfo(displayID: id)); return 0
+    }
+    if command == "backend" {
+        let modes = ["auto", "native", "amd", "hardware"]
+        guard args.count == 2, let index = modes.firstIndex(of: args[1]),
+            let window = withWideString(controlWindowTitle, { FindWindowW(nil, $0) }) else {
+            throw WindowsError.unsupported("Use backend auto|native|amd|hardware with SwiftyToys running.")
+        }
+        _ = try sendResident(window, command: 6, value: index); Console.writeLine("Brightness mode: " + args[1]); return 0
+    }
+    if command == "--configure-mouse" || command == "--apply-native-mouse" {
+        guard args.count == 3, ["0","1"].contains(args[1]), ["0","1"].contains(args[2]) else {
+            throw WindowsError.unsupported("Use --configure-mouse / --apply-native-mouse <vertical 0|1> <horizontal 0|1>.")
+        }
+        if command == "--configure-mouse" {
+            do { return try NativeMouseScrolling.configure(vertical: args[1] == "1", horizontal: args[2] == "1") ? 2 : 0 }
+            catch WindowsError.api(_, 3) { return 3 }
+        }
+        guard let window = withWideString(controlWindowTitle, { FindWindowW(nil, $0) }) else { throw WindowsError.unsupported("SwiftyToys resident is not running.") }
+        let flags = (args[1] == "1" ? 1 : 0) | (args[2] == "1" ? 2 : 0)
+        guard PostMessageW(window, toyActionMessage, 6, LPARAM(flags)) else { throw WindowsError.api("Request native mouse direction", GetLastError()) }
+        return 0
+    }
     if command == "--version" {
         Console.writeLine("SwiftyToys \(AppVersion.string) (\(AppVersion.implementation))")
         return 0
@@ -45,7 +89,7 @@ func runCLI(_ args: [String]) throws -> Int32 {
             brightness: 75, keyboard: KeyboardConfiguration(), preview: true, command: { _, _ in "Preview" })
         if command == "--test-ui" {
             try preview.validateLayout()
-            Console.writeLine("PASS: all 9 native settings pages, navigation, checkbox toggles and brightness synchronization")
+            Console.writeLine("PASS: all 10 native settings pages, navigation, checkbox toggles and brightness synchronization")
             return 0
         }
         preview.show()
@@ -165,13 +209,13 @@ func runCLI(_ args: [String]) throws -> Int32 {
         let state = try DisplayState.decode(data)
         let settings = try Settings()
         Console.writeLine("Version : \(AppVersion.string) (\(AppVersion.implementation))")
-        Console.writeLine("Software: \(current)%")
+        Console.writeLine("Level   : \(current)%")
         Console.writeLine("Backend : \(state.backend)")
         Console.writeLine("Target  : \(state.connected ? state.device : "disconnected; level saved")")
         Console.writeLine("Step    : \(settings.step)%")
         Console.writeLine("OSD     : \(settings.indicator.rawValue)")
-        if settings.hardwareMaximum, let id = settings.targetID {
-            Console.writeLine("Hardware: \(try ensureHardwareMaximum(displayID: id))")
+        if let id = settings.targetID {
+            Console.writeLine("Hardware: \(try hardwareBrightnessInfo(displayID: id))")
         } else {
             Console.writeLine("Hardware: maximum enforcement disabled")
         }

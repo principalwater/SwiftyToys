@@ -3,13 +3,46 @@ import KeyboardCore
 import Testing
 
 struct RemappingTests {
+    @Test func applicationRuleTakesPriorityWithoutChangingFirstMatchOrder() throws {
+        var engine = RemapEngine(rules: [
+            try RemapRule(from: "Win+C", to: "Ctrl+C"),
+            try RemapRule(from: "Win+C", to: "Ctrl+X", application: "notepad.exe"),
+        ])
+        _ = engine.process(key: 91, down: true)
+        let result = engine.process(key: 67, down: true, application: "notepad.exe")
+        #expect(result.events.contains(KeyTransition(88, down: true)))
+        #expect(!result.events.contains(KeyTransition(67, down: true)))
+    }
+    @Test func commandHRequestsNativeMinimize() throws {
+        var engine = RemapEngine(rules: RemapRule.macPreset)
+        _ = engine.process(key: 91, down: true)
+        let result = engine.process(key: 72, down: true)
+        #expect(result.action == "minimize window")
+        #expect(result.suppress)
+        #expect(result.events == [KeyTransition(162, down: true), KeyTransition(162, down: false)])
+        #expect(engine.process(key: 72, down: false).suppress)
+    }
+    @Test func bareCommandPassesThroughAndOptionArrowsChangeTabs() throws {
+        var engine = RemapEngine(rules: RemapRule.macPreset)
+        #expect(engine.process(key: 91, down: true).suppress == false)
+        #expect(engine.process(key: 91, down: false).suppress == false)
+        _ = engine.process(key: 91, down: true)
+        _ = engine.process(key: 164, down: true)
+        let left = engine.process(key: 37, down: true)
+        #expect(left.suppress)
+        #expect(left.events.contains(KeyTransition(33, down: true)))
+        _ = engine.process(key: 37, down: false)
+        let right = engine.process(key: 39, down: true)
+        #expect(right.suppress)
+        #expect(right.events.contains(KeyTransition(34, down: true)))
+    }
     @Test func parsesNamesAndRejectsMalformedInput() throws {
         #expect(try KeyChord("Cmd+Shift+Tab") == KeyChord("Win+Shift+Tab"))
         #expect(throws: KeyboardError.self) { try KeyChord("Ctrl++Space") }
         #expect(throws: KeyboardError.self) { try KeyChord("Ctrl+Ctrl+C") }
         #expect(throws: KeyboardError.self) { try RemapRule(from: "Win+L", to: "Ctrl+C") }
         #expect(throws: KeyboardError.self) { try RemapRule(from: "A", to: "B", application: "../app.exe") }
-        #expect(RemapRule.macPreset.count == 26)
+        #expect(RemapRule.macPreset.contains { $0.source.description == "Ctrl+Space" && $0.action == "switch language" })
     }
 
     @Test func heldCommandCyclesUntilReleased() throws {
@@ -125,12 +158,5 @@ struct RemappingTests {
         #expect(caps.process(key: 20, down: true, time: 4000, modifiers: 0, capsOn: true, enabled: true).toggleCaps)
         caps.cancel()
         #expect(!caps.tick(time: 5000, enabled: true).toggleCaps)
-    }
-    @Test func wheelReversalKeepsPreciseDeltaAndSignedBounds() {
-        for delta: Int16 in [0, 1, -1, 120, -120, 32767, -32768] {
-            let reversed = reversedWheelDeltas(UInt16(bitPattern: delta))
-            #expect(reversed.reduce(0, +) == -Int32(delta))
-            #expect(reversed.allSatisfy { (-32768...32767).contains($0) })
-        }
     }
 }

@@ -50,7 +50,9 @@ and Windows problem codes; installed packages alone do not count as a detected d
 The presence of a Bluetooth node does not prove wireless report delivery. Use
 `SwiftyToys.exe --trackpad-info` for the same read-only native SetupAPI diagnostics.
 Keep wheel inversion for an ordinary mouse; configure touchpad direction in Windows.
-The global wheel hook cannot distinguish devices that produce ordinary wheel events.
+SwiftyToys 0.1.3 uses native mouhid device parameters and has no mouse hook. Known
+Magic Trackpad hardware is excluded; its Precision driver and gesture pipeline remain
+unchanged. Wheel direction controls apply to ordinary supported HID mice.
 
 ### Apple Bluetooth pairing recovery
 

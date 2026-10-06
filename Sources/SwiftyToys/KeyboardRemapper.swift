@@ -6,7 +6,6 @@ import WindowsDisplayABI
 
 let toyActionMessage: UINT = 0x8020
 private let injectionTag: ULONG_PTR = 0x5357_5459
-private let wheelInjectionMessage: UINT = 0x8021
 private let remappingWorker = Mutex((owned: false, generation: 0))
 private struct RemappingState {
     var engine: RemapEngine
@@ -22,9 +21,6 @@ private struct RemappingState {
     let brightnessKeys: Bool
     let allowInjectedBrightness: Bool
     var brightnessSwallowed: UInt8 = 0
-    var mouseHook: HHOOK?
-    var mouseFailed = false
-    var injectingWheel = false
     var capsTimer: UINT_PTR = 0
     var lastForeground: HWND?
 }
@@ -83,8 +79,9 @@ private func deliverAction(_ action: String, context: UnsafeMutablePointer<Remap
             return true
         } catch { return false }
     }
+    guard action == "pin window" || action == "minimize window" else { return false }
     return context.pointee.destination.post(
-        toyActionMessage, value: 2, data: foreground.map { Int(bitPattern: $0) } ?? 0)
+        toyActionMessage, value: action == "minimize window" ? 5 : 2, data: foreground.map { Int(bitPattern: $0) } ?? 0)
 }
 private func deliverCaps(_ decision: CapsDecision, context: UnsafeMutablePointer<RemappingState>) -> Bool {
     if decision.toggleCaps { return emitTransitions([KeyTransition(20, down: true), KeyTransition(20, down: false)]) }
@@ -103,40 +100,6 @@ private func syncCapsTimer(_ context: UnsafeMutablePointer<RemappingState>) {
         KillTimer(nil, context.pointee.capsTimer)
         context.pointee.capsTimer = 0
     }
-}
-private func scrollingCallback(_ code: Int32, _ message: WPARAM, _ data: LPARAM) -> LRESULT {
-    guard code >= 0, let context = remappingState, !context.pointee.mouseFailed, !context.pointee.injectingWheel,
-        let event = UnsafePointer<MSLLHOOKSTRUCT>(bitPattern: Int(data))?.pointee,
-        event.dwExtraInfo != injectionTag, event.flags & DWORD(LLMHF_INJECTED) == 0,
-        (message == WPARAM(WM_MOUSEWHEEL) && context.pointee.configuration.reverseVertical)
-            || (message == WPARAM(WM_MOUSEHWHEEL) && context.pointee.configuration.reverseHorizontal),
-        !context.pointee.configuration.excluded.contains(context.pointee.application),
-        ![17, 18, 16, 91, 92].contains(where: { GetAsyncKeyState(Int32($0)) < 0 })
-    else { return CallNextHookEx(nil, code, message, data) }
-    var pid: DWORD = 0
-    GetWindowThreadProcessId(GetForegroundWindow(), &pid)
-    guard pid == context.pointee.lastPID else { return CallNextHookEx(nil, code, message, data) }
-    // Defer injection until this low-level hook has returned to Windows.
-    if PostThreadMessageW(GetCurrentThreadId(), wheelInjectionMessage, WPARAM(event.mouseData >> 16), message == WPARAM(WM_MOUSEHWHEEL) ? 1 : 0) { return 1 }
-    context.pointee.mouseFailed = true
-    _ = context.pointee.destination.post(toyActionMessage, value: 5, data: context.pointee.generation)
-    return CallNextHookEx(nil, code, message, data)
-}
-private func injectWheel(_ message: MSG, context: UnsafeMutablePointer<RemappingState>) {
-    guard !context.pointee.mouseFailed else { return }
-    context.pointee.injectingWheel = true
-    defer { context.pointee.injectingWheel = false }
-    var inputs = reversedWheelDeltas(UInt16(truncatingIfNeeded: message.wParam)).map { delta -> INPUT in
-        var input = INPUT()
-        input.type = DWORD(INPUT_MOUSE)
-        input.mi.dwExtraInfo = injectionTag
-        input.mi.dwFlags = message.lParam == 0 ? DWORD(MOUSEEVENTF_WHEEL) : DWORD(MOUSEEVENTF_HWHEEL)
-        input.mi.mouseData = DWORD(bitPattern: delta)
-        return input
-    }
-    if SendInput(UINT(inputs.count), &inputs, Int32(MemoryLayout<INPUT>.size)) == inputs.count { return }
-    context.pointee.mouseFailed = true
-    _ = context.pointee.destination.post(toyActionMessage, value: 5, data: context.pointee.generation)
 }
 private func remappingCallback(_ code: Int32, _ message: WPARAM, _ data: LPARAM) -> LRESULT {
     guard code >= 0, let context = remappingState,
@@ -208,7 +171,6 @@ final class KeyboardRemapper: @unchecked Sendable {
     private struct Status {
         var threadID: DWORD = 0
         var active = false
-        var mouseActive = false
         var stopped = false
         var error: DWORD = 0
     }
@@ -248,10 +210,6 @@ final class KeyboardRemapper: @unchecked Sendable {
         else {
             stop()
             throw WindowsError.unsupported("Keyboard remapping could not start.")
-        }
-        if configuration.reverseVertical || configuration.reverseHorizontal, !status.withLock({ $0.mouseActive }) {
-            stop()
-            throw WindowsError.unsupported("Natural scrolling could not start.")
         }
     }
     private func run() {
@@ -294,19 +252,10 @@ final class KeyboardRemapper: @unchecked Sendable {
             defer {
                 if let focusHook { UnhookWinEvent(focusHook) }
                 if let hook = pointer.pointee.hook { UnhookWindowsHookEx(hook) }
-                if let hook = pointer.pointee.mouseHook { UnhookWindowsHookEx(hook) }
                 remappingState = nil
                 _ = emitTransitions(pointer.pointee.engine.release())
             }
             func rearm() {
-                if configuration.reverseVertical || configuration.reverseHorizontal, !pointer.pointee.mouseFailed,
-                    let replacement = SetWindowsHookExW(Int32(WH_MOUSE_LL), scrollingCallback, GetModuleHandleW(nil), 0)
-                {
-                    let old = pointer.pointee.mouseHook
-                    pointer.pointee.mouseHook = replacement
-                    if let old { UnhookWindowsHookEx(old) }
-                    status.withLock { $0.mouseActive = true }
-                }
                 guard configuration.enabled || brightnessKeys, !pointer.pointee.failed, status.withLock({ !$0.stopped })
                 else { return }
                 if let replacement = SetWindowsHookExW(
@@ -328,9 +277,7 @@ final class KeyboardRemapper: @unchecked Sendable {
             }
             SetEvent(ready.raw)
             while BC_GetMessageW(&message, nil, 0, 0) > 0 {
-                if message.message == wheelInjectionMessage {
-                    injectWheel(message, context: pointer)
-                } else if message.message == UINT(WM_TIMER) {
+                if message.message == UINT(WM_TIMER) {
                     if message.wParam == pointer.pointee.capsTimer {
                         var pid: DWORD = 0
                         GetWindowThreadProcessId(GetForegroundWindow(), &pid)

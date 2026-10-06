@@ -10,6 +10,13 @@ func testRecoveryStateMapping() throws {
     guard try ColorLease.decode(native.encoded()) == native else {
         throw WindowsError.unsupported("Native lease mapping changed its baseline or timestamp.")
     }
+    let hardware = ColorLease(owner: 1, started: 1, displayID: "physical", backend: "hardware", amdID: nil, brightness: 73, contrast: nil, gamma: nil)
+    guard try ColorLease.decode(hardware.encoded()) == hardware else { throw WindowsError.unsupported("Hardware brightness recovery mapping failed.") }
+    var invalidHardware = try StateJSON.decode(hardware.encoded())
+    invalidHardware["brightness"] = .signed(-1)
+    var hardwareRejected = false
+    do { _ = try ColorLease.decode(StateJSON.encode(invalidHardware)) } catch is WindowsError { hardwareRejected = true }
+    guard hardwareRejected else { throw WindowsError.unsupported("Invalid hardware recovery level accepted.") }
     let amd = ColorLease(
         owner: 1, started: 638_952_000_000_000_001, displayID: "display", backend: "amd",
         amdID: "adapter/display", brightness: -50, contrast: 100, gamma: nil)

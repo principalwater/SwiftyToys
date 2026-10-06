@@ -42,15 +42,15 @@ final class SettingsWindow {
     private let white = CreateSolidBrush(0x00FF_FFFF)
     private let dark = CreateSolidBrush(0x0033_2920)
     private let titles = [
-        "Overview", "Brightness", "Keyboard", "Input languages", "Desktop", "Mouse", "Magic Trackpad", "Homebrew", "About SwiftyToys",
+        "Overview", "Brightness", "Keyboard", "Input languages", "Desktop", "Mouse", "Magic Trackpad", "Homebrew", "Boot Camp", "About SwiftyToys",
     ]
     private let tileDetails = [
         "Brightness, F1 / F2 keys, and indicator", "Command, Option, and your shortcuts",
         "Ctrl + Space and smart Caps Lock", "Always-on-top windows and no-sleep mode",
         "Natural wheel direction", "Precision Touchpad over USB and Bluetooth",
-        "Package manager inside WSL 2", "Author, source code, and inspiration",
+        "Package manager inside WSL 2", "Installed drivers and native Windows updates", "Author, source code, and inspiration",
     ]
-    private let tileGlyphs = ["\u{E706}", "\u{E765}", "\u{E775}", "\u{E7F4}", "\u{E962}", "\u{E7C9}", "\u{E756}", "\u{E946}"]
+    private let tileGlyphs = ["\u{E706}", "\u{E765}", "\u{E775}", "\u{E7F4}", "\u{E962}", "\u{E7C9}", "\u{E756}", "\u{E713}", "\u{E946}"]
     init(
         brightness: Int, keyboard: KeyboardConfiguration, preview: Bool = false,
         command: @escaping (Int, [String]) throws -> String
@@ -58,6 +58,10 @@ final class SettingsWindow {
         self.level = brightness
         self.keyboard = keyboard
         self.preview = preview
+        if !preview, let actual = try? NativeMouseScrolling.current() {
+            self.keyboard.reverseVertical = actual.vertical ?? keyboard.reverseVertical
+            self.keyboard.reverseHorizontal = actual.horizontal ?? keyboard.reverseHorizontal
+        }
         self.command = command
         var common = INITCOMMONCONTROLSEX()
         common.dwSize = DWORD(MemoryLayout<INITCOMMONCONTROLSEX>.size)
@@ -123,12 +127,22 @@ final class SettingsWindow {
         return handled
     }
     func update(brightness: Int) {
-        guard pendingBrightness == nil else { return }
+        guard pendingBrightness == nil, brightness != level else { return }
         level = brightness
         if let label = controls[210] { setText(label, "\(brightness)%") }
         if let slider = controls[211] { SendMessageW(slider, UINT(TBM_SETPOS), 1, LPARAM(brightness)) }
         if page == 0, let tile = controls[121] { setText(tile, tileText(1)); InvalidateRect(tile, nil, false) }
     }
+    func updateScrolling(vertical: Bool, horizontal: Bool, result: String) {
+        keyboard.reverseVertical = vertical; keyboard.reverseHorizontal = horizontal
+        if page == 5 {
+            for (id, enabled) in [(422, vertical), (423, horizontal)] {
+                if let control = controls[id] { SendMessageW(control, UINT(BM_SETCHECK), enabled ? WPARAM(BST_CHECKED) : WPARAM(BST_UNCHECKED), 0) }
+            }
+        }
+        status(result)
+    }
+    func refreshLanguages(result: String) { renderPage(); status(result) }
     /// Tests this application's own native controls without sending desktop input.
     func validateLayout() throws {
         guard let window else { throw WindowsError.unsupported("Missing settings window.") }
@@ -141,6 +155,8 @@ final class SettingsWindow {
         for index in titles.indices {
             page = index
             renderPage()
+            var extent = SCROLLINFO(); extent.cbSize = UINT(MemoryLayout<SCROLLINFO>.size); extent.fMask = UINT(SIF_RANGE)
+            GetScrollInfo(window, Int32(SB_VERT), &extent)
             for id in 100..<(100 + titles.count) {
                 guard let navigation = controls[id], IsWindow(navigation), !text(id).isEmpty else {
                     throw WindowsError.unsupported("Missing native navigation control.")
@@ -155,7 +171,7 @@ final class SettingsWindow {
                     $0.withMemoryRebound(to: POINT.self, capacity: 2) { MapWindowPoints(nil, window, $0, 2) }
                 }
                 guard area.left >= 0, area.top >= 0, area.right <= client.right,
-                    area.bottom <= max(client.bottom, Int32(720 * scale))
+                    area.bottom <= max(client.bottom, extent.nMax)
                 else {
                     throw WindowsError.unsupported(
                         "Settings control clipped on page \(page): \(area.left),\(area.top),\(area.right),\(area.bottom); client \(client.right)×\(client.bottom), scale \(scale)."
@@ -277,6 +293,7 @@ final class SettingsWindow {
         case 5: return keyboard.reverseVertical || keyboard.reverseHorizontal ? "On" : "Off"
         case 6: return "USB + Bluetooth"
         case 7: return "Install in WSL 2"
+        case 8: return "On demand"
         default: return "principalwater"
         }
     }
@@ -310,6 +327,7 @@ final class SettingsWindow {
             "Keep an important window in view and control sleep mode.", "Familiar scroll direction, like on Mac.",
             "Apple Magic Trackpad gestures via the native Windows engine.",
             "The familiar package manager, on Linux inside Windows.",
+            "Native driver diagnostics for Apple hardware running Windows.",
             "Made for Mac users and those who've switched to Windows.",
         ]
         label(subtitles[page], 21, 278, 88, 718, 45)
@@ -351,6 +369,11 @@ final class SettingsWindow {
             }
             button("Save settings", 240, 300, 559, 242)
             button("Reconnect display", 241, 566, 559, 250)
+            label("Brightness mode", 247, 300, 603, 620, 26)
+            combo(["Software (automatic)", "Software (WDDM gamma)", "Software (AMD)", "Hardware (DDC/CI, includes cursor)"], 246, 300, 633, 450)
+            let modes = ["auto", "native", "amd", "hardware"]
+            if let control = controls[246], let selected = modes.firstIndex(of: (try? Settings().backend) ?? "auto") { SendMessageW(control, UINT(CB_SETCURSEL), WPARAM(selected), 0) }
+            button("Apply mode", 245, 770, 632, 180)
         case 2:
             check("Enable remapping", 315, 300, 152, 350, on: keyboard.enabled)
             if let list = control(
@@ -367,7 +390,7 @@ final class SettingsWindow {
             edit("", 303, 300, 452, 202)
             label("New shortcut or action", 304, 520, 422, 280, 25)
             combo(
-                ["Switch language", "Pin window", "Disable key", "Ctrl+C", "Alt+Tab"], 305, 520, 452, 238,
+                ["Switch language", "Pin window", "Minimize window", "Disable key", "Ctrl+C", "Alt+Tab"], 305, 520, 452, 238,
                 editable: true)
             label("App (empty = all)", 306, 777, 422, 220, 25)
             edit("", 307, 777, 452, 187)
@@ -414,6 +437,9 @@ final class SettingsWindow {
                 "Holding turns Caps Lock on. When Caps is already on, a tap turns it off.\nShift + Caps Lock keeps the normal behavior. CJK IMEs are not intercepted.\nThe Ctrl + Space shortcut is changed in the “Keyboard” section.",
                 352, 300, 537, 650, 82)
             button("Save switching", 350, 300, 611, 288)
+            combo(["US (Apple)", "UK (Apple)"], 355, 608, 612, 112)
+            if languages.contains(0x0809), let control = controls[355] { SendMessageW(control, UINT(CB_SETCURSEL), 1, 0) }
+            button("Use Apple RU + EN", 356, 742, 611, 220)
         case 4:
             label("Always on top", 400, 300, 172, 550, 36, large: true)
             label(
@@ -426,6 +452,11 @@ final class SettingsWindow {
             button("Enable", 410, 300, 526, 180)
             button("Disable", 411, 500, 526, 180)
         case 5:
+            let actual = preview ? nil : try? NativeMouseScrolling.current()
+            if let actual {
+                keyboard.reverseVertical = actual.vertical ?? false
+                keyboard.reverseHorizontal = actual.horizontal ?? false
+            }
             label("Natural scrolling", 420, 300, 176, 640, 40, large: true)
             label(
                 "Change the wheel direction of a regular mouse.\nVertical and horizontal scrolling are set separately.",
@@ -433,9 +464,16 @@ final class SettingsWindow {
             check("Invert vertical wheel", 422, 300, 338, 640, on: keyboard.reverseVertical)
             check("Invert horizontal wheel", 423, 300, 392, 640, on: keyboard.reverseHorizontal)
             label(
-                "This setting applies to all devices that send wheel events.\nThe touchpad may have its own direction setting in Windows.\nCtrl / Shift / Alt / Command + wheel keep the app's behavior.\nApp exclusions are shared with the “Keyboard” section.",
+                "Windows changes physical wheel direction for connected HID mice.\nThis includes Ctrl / Shift + wheel in all apps and games.\nAdministrator approval is required; mice briefly reconnect.\nPrecision Touchpads keep their Windows scrolling settings.",
                 424, 300, 460, 640, 112)
-            button("Windows mouse settings", 431, 300, 591, 320)
+            button("Apply native scrolling", 430, 300, 591, 320)
+            button("Windows mouse settings", 431, 642, 591, 300)
+            label(actual?.summary ?? "", 428, 300, 630, 640, 36)
+            if let actual {
+                for (id, mixed) in [(422, actual.vertical == nil), (423, actual.horizontal == nil)] where mixed && !actual.devices.isEmpty {
+                    if let control = controls[id] { SendMessageW(control, UINT(BM_SETCHECK), WPARAM(BST_INDETERMINATE), 0) }
+                }
+            }
         case 6:
             let trackpad = TrackpadStatus.current(localization: localization)
             label("Apple Magic Trackpad", 450, 300, 170, 650, 40, large: true)
@@ -467,6 +505,16 @@ final class SettingsWindow {
                 "WSL may require administrator rights and a restart.\nAfter the first Ubuntu launch, create a Linux user.\nHomebrew will open a terminal: you'll see the steps and enter your sudo password yourself.\nThen brew and the PATH setup for Bash will appear.",
                 504, 300, 468, 650, 120)
             button("Official guide", 512, 300, 609, 282)
+        case 8:
+            label("Boot Camp drivers", 700, 300, 166, 650, 40, large: true)
+            label("Installed versions are shown below. Update through Windows Update or Apple Software Update; compatibility must match your Mac model.", 704, 300, 218, 650, 64)
+            if let report = control("EDIT", "", 701, 300, 294, 650, 282, style: DWORD(WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)) {
+                SendMessageW(report, UINT(EM_SETLIMITTEXT), 65536, 0)
+                setText(report, (try? BootCampInventory.current().summary) ?? "Driver inventory unavailable.")
+            }
+            button("Windows Update", 702, 300, 594, 214)
+            button("Device Manager", 703, 534, 594, 214)
+            button("Refresh drivers", 705, 768, 594, 182)
         default:
             label("Think Different.", 600, 300, 166, 650, 46, large: true)
             label("On Windows.  •  SwiftyToys \(AppVersion.string)", 602, 300, 220, 650, 30)
@@ -484,7 +532,7 @@ final class SettingsWindow {
                 SendMessageW(control, UINT(CB_SETCURSEL), WPARAM(selected), 0)
             }
         }
-        label(preview ? "Interface preview — changes are disabled." : "", 99, 278, 668, 700, 46)
+        label(preview ? "Interface preview — changes are disabled." : "", 99, 278, page == 0 ? 148 + ((titles.count - 2) / 2) * 128 + 124 : 676, 700, 46)
         arrange()
         InvalidateRect(window, nil, true)
     }
@@ -496,7 +544,7 @@ final class SettingsWindow {
         scroll.cbSize = UINT(MemoryLayout<SCROLLINFO>.size)
         scroll.fMask = UINT(SIF_RANGE | SIF_PAGE | SIF_POS)
         scroll.nMin = 0
-        scroll.nMax = Int32(720 * scale)
+        scroll.nMax = Int32(Double(max(730, layout.filter { $0.1 >= 276 }.map { $0.2 + $0.4 }.max() ?? 730)) * scale)
         scroll.nPage = UINT(max(0, area.bottom))
         scroll.nPos = scrollOffset
         SetScrollInfo(window, Int32(SB_VERT), &scroll, true)
@@ -600,6 +648,7 @@ final class SettingsWindow {
                 status("Changed. Apply settings with the Save button.")
                 return 0
             }
+            if id == 422 || id == 423 { status("Changed. Click Apply native scrolling."); return 0 }
             if id == Int(IDCANCEL) { ShowWindow(window, Int32(SW_HIDE)); return 0 }
             if id == Int(IDOK) { return 0 }
             do {
@@ -633,12 +682,16 @@ final class SettingsWindow {
                     status("Profile restored. Click “Save”.")
                     return 0
                 }
-                if id == 503 || id == 453 {
+                if id == 503 || id == 453 || id == 705 {
                     renderPage()
                     return 0
                 }
                 if id == 512 {
                     try shellOpen("https://docs.brew.sh/Installation")
+                    return 0
+                }
+                if id == 702 || id == 703 {
+                    try shellOpen(id == 702 ? "ms-settings:windowsupdate" : "devmgmt.msc")
                     return 0
                 }
                 if (610...613).contains(id) {
@@ -659,6 +712,10 @@ final class SettingsWindow {
                     keyboard.excluded = text(317).split(separator: ",").map { $0.trimmingWhitespace().lowercased() }
                     try keyboard.save()
                     status(try command(id, []))
+                } else if id == 356 {
+                    let english = controls[355].map { SendMessageW($0, UINT(CB_GETCURSEL), 0, 0) == 1 ? "uk" : "us" } ?? "us"
+                    try shellOpen(executablePath(), arguments: "--apple-layouts " + english, owner: window)
+                    status("Applying Apple input profiles.")
                 } else if id == 510 {
                     try shellOpen("wsl.exe", arguments: "--install -d Ubuntu", elevated: true, owner: window)
                     status("Finish installing and first launching Ubuntu, then refresh the list.")
@@ -684,18 +741,9 @@ final class SettingsWindow {
                             ]))
                 } else if id == 410 {
                     status(try command(id, [text(404), checked(405) ? "1" : "0"]))
-                } else if id == 422 || id == 423 {
+                } else if id == 430 {
                     let vertical = checked(422); let horizontal = checked(423)
-                    do {
-                        status(try command(430, [vertical ? "1" : "0", horizontal ? "1" : "0"]))
-                        keyboard.reverseVertical = vertical; keyboard.reverseHorizontal = horizontal
-                    } catch {
-                        if let control = controls[id] {
-                            let before = id == 422 ? keyboard.reverseVertical : keyboard.reverseHorizontal
-                            SendMessageW(control, UINT(BM_SETCHECK), before ? WPARAM(BST_CHECKED) : WPARAM(BST_UNCHECKED), 0)
-                        }
-                        throw error
-                    }
+                    status(try command(430, [vertical ? "1" : "0", horizontal ? "1" : "0"]))
                 } else if id == 452 || id == 457 || id == 460 {
                     if id == 460 {
                         let choice = withWideString(localization.text("Disconnect the trackpad USB cable first. This exports and removes only the pinned Apple Precision Bluetooth package. USB support is retained. Other connected Apple devices using the package block the action. Then restart Windows, pair Bluetooth without USB, verify pointer input, and install the Apple driver again. Continue?")) { message in
@@ -727,6 +775,11 @@ final class SettingsWindow {
                             ]))
                 } else if id == 241 || id == 411 {
                     status(try command(id, []))
+                } else if id == 245 {
+                    let modes = ["auto", "native", "amd", "hardware"]
+                    let selected = controls[246].map { Int(SendMessageW($0, UINT(CB_GETCURSEL), 0, 0)) } ?? -1
+                    guard modes.indices.contains(selected) else { throw WindowsError.unsupported("Invalid brightness mode.") }
+                    status(try command(id, [modes[selected]]))
                 }
             } catch { status(String(describing: error)) }
             return 0

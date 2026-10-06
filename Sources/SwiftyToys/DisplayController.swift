@@ -35,6 +35,7 @@ actor DisplayController {
     private var amd: AMDControl?
     private var amdOutput: AMDOutput?
     private var native: NativeBackend?
+    private var hardware: HardwareBrightnessSession?
     private var baselineBrightness = 0
     private var baselineContrast = 100
     private var level: BrightnessLevel
@@ -55,9 +56,9 @@ actor DisplayController {
         guard let output else { throw WindowsError.unsupported("Output is disconnected.") }
         return ColorLease(
             owner: GetCurrentProcessId(), started: try processStartTicks(GetCurrentProcess()), displayID: output.id,
-            backend: native == nil ? "amd" : "native", amdID: amdOutput?.legacyID,
-            brightness: native == nil ? baselineBrightness : nil,
-            contrast: native == nil ? baselineContrast : nil, gamma: native?.session.original.array)
+            backend: hardware != nil ? "hardware" : native == nil ? "amd" : "native", amdID: amdOutput?.legacyID,
+            brightness: hardware.map { Int($0.original) } ?? (native == nil ? baselineBrightness : nil),
+            contrast: hardware == nil && native == nil ? baselineContrast : nil, gamma: native?.session.original.array)
     }
 
     /// Restore through the device that already owns the source before releasing
@@ -65,8 +66,10 @@ actor DisplayController {
     @discardableResult
     private func restoreAndRelease() throws -> Bool {
         do {
-            let hadBackend = native != nil || (amd != nil && amdOutput != nil)
-            if let native {
+            let hadBackend = hardware != nil || native != nil || (amd != nil && amdOutput != nil)
+            if let hardware {
+                try hardware.restore()
+            } else if let native {
                 try native.session.restore()
             } else if let amd, let amdOutput {
                 try amd.set(amdOutput, brightness: baselineBrightness, contrast: baselineContrast)
@@ -78,6 +81,7 @@ actor DisplayController {
             }
         } catch { Diagnostics.write("restore through current device: \(error)") }
         native = nil
+        hardware = nil
         amdOutput = nil
         amd = nil
         output = nil
@@ -113,7 +117,7 @@ actor DisplayController {
         if let output, output.id == selected.id, output.adapterLow == selected.adapterLow,
             output.adapterHigh == selected.adapterHigh, output.source == selected.source
         {
-            if native != nil {
+            if hardware != nil || native != nil {
                 self.output = selected
                 return
             }
@@ -130,12 +134,14 @@ actor DisplayController {
         }
         // A reconnected target must first recover its original calibration.
         guard try restoreAndRelease() else { return }  // Never overwrite a pending lease for another target.
-        if settings.backend != "amd" {
+        if settings.backend == "hardware" {
+            hardware = try HardwareBrightnessSession(output: selected)
+        } else if settings.backend != "amd" {
             do { native = try NativeBackend(selected) } catch {
                 Diagnostics.write("native backend unavailable: \(error)")
             }
         }
-        if native == nil, settings.backend != "native", let driver = try? AMDControl(),
+        if hardware == nil, native == nil, settings.backend != "native", let driver = try? AMDControl(),
             let match = try driver.enumerate().first(where: {
                 equalWindowsNames($0.device, selected.device)
             })
@@ -145,13 +151,13 @@ actor DisplayController {
             amd = driver
             amdOutput = match
         }
-        guard native != nil || (amd != nil && amdOutput != nil) else {
+        guard hardware != nil || native != nil || (amd != nil && amdOutput != nil) else {
             throw WindowsError.unsupported(
                 "Driver supports neither native WDDM gamma nor the AMD fallback on this output.")
         }
         output = selected
         if settings.targetID == nil { try settings.select(id) }
-        Diagnostics.write("software backend: \(native == nil ? "AMD RGB gain" : "native WDDM gamma")")
+        Diagnostics.write("brightness backend: \(hardware != nil ? "native DDC/CI" : native == nil ? "AMD RGB gain" : "native WDDM gamma")")
     }
 
     private func apply(_ target: BrightnessLevel) throws {
@@ -172,7 +178,9 @@ actor DisplayController {
                 watchdog = true
             }
             do {
-                if let native {
+                if let hardware {
+                    try hardware.apply(target)
+                } else if let native {
                     try native.session.apply(target)
                 } else if let amd, let amdOutput {
                     let gain = AMDColorGain(brightness: Int32(baselineBrightness), contrast: Int32(baselineContrast))
@@ -186,7 +194,9 @@ actor DisplayController {
                 }
             } catch {
                 // Both halves of an AMD update and native ramps are transactional.
-                if let native {
+                if let hardware {
+                    try? hardware.apply(level)
+                } else if let native {
                     try? native.session.apply(level)
                 } else if let amd, let amdOutput {
                     let previous = AMDColorGain(
@@ -215,7 +225,7 @@ actor DisplayController {
         }
         let state = DisplayState(
             level: level, device: output?.device ?? "",
-            backend: output == nil ? "unavailable" : native == nil ? "AMD RGB gain" : "native WDDM gamma",
+            backend: output == nil ? "unavailable" : hardware != nil ? "native DDC/CI" : native == nil ? "AMD RGB gain" : "native WDDM gamma",
             connected: output != nil)
         if state != lastState {
             try NativeFiles.write(state.encoded(), to: NativeFiles.path("display-status.json"))
@@ -228,6 +238,7 @@ actor DisplayController {
         exiting = true
         do { try restoreAndRelease() } catch { Diagnostics.write("restore: \(error)") }
         native = nil
+        hardware = nil
         amdOutput = nil
         amd = nil
     }

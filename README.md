@@ -15,18 +15,35 @@ or Apple.
   watchdog, function keys/HID, custom/system OSD, configurable shortcuts and optional
   DDC maximum backlight. One independent physical SDR output; HDR/clones/virtual
   outputs are excluded. Fullscreen/color-calibration tools can compete for the output.
+  Optional native DDC/CI hardware mode dims the entire physical monitor, including
+  hardware/app-defined cursors, without changing cursor themes or animation. It
+  requires a compatible monitor, verifies readback and retains watchdog recovery.
 - **Keyboard:** editable Mac preset, key/shortcut/action remapping, per-application
   rules/exclusions and pause. Ctrl+Space switches configured layouts; Command/Win+Tab
   cycles windows; Command editing/search/screenshot shortcuts and Option word navigation.
+  Command/Win+H minimizes the active application window with the native Windows API.
+  Command+Option+Left/Right maps to Ctrl+PageUp/PageDown for browser tabs. A shared
+  Ctrl menu-mask pulse keeps mapped Command chords from opening Start; bare Command
+  retains the Windows Start action.
   Apple layouts use Windows/Boot Camp installation; Apple DLLs are not redistributed.
+- **Apple layout selection:** Input languages → Use Apple RU + EN enables installed
+  signed Boot Camp Russian and US/UK Apple layout DLLs through Windows
+  InstallLayoutOrTip. Only the standard RU/US/UK profiles are replaced; other
+  layouts/IMEs remain. The original profiles have a local recovery backup.
 - **Input languages:** cycle, Latin/non-Latin or a selected pair. Optional Mac-style
   Caps Lock tap/hold, configurable tap action and 150–800 ms hold threshold. Shift+Caps
   and CJK IME pass through; when Caps is already on, a tap turns it off.
-- **Mouse:** optional natural wheel direction, vertical/horizontal independently,
-  preserving precise wheel deltas and modified-wheel commands. This is a global
-  fallback for Windows 10; Windows 11 users can open native mouse settings first.
-  Devices which emit wheel events, including some touchpads, share the setting.
-- **Desktop:** Command+Ctrl+T pins the active window; temporary keep-awake with optional
+- **Mouse:** native physical wheel direction for connected Windows mouhid mice,
+  vertical/horizontal independently. Swift calls SetupAPI and device registry APIs;
+  the mouse wheel is never intercepted or recreated with SendInput. Applying requires
+  Windows UAC and may briefly reconnect the mouse. Direction applies to all apps,
+  games and modifier-wheel commands; keyboard app exclusions do not change it.
+  Precision Touchpads retain their own Windows gesture/scroll settings. Native input
+  delta magnitude/resolution are preserved; direction changes their sign. Application
+  rendering and inertia remain application-owned. Settings persist for the physical
+  device and all Windows users after SwiftyToys exits; apply again for a new mouse.
+  Virtual/injected wheels and vendor-specific drivers retain their own behavior.
+- **Desktop:** Command+H minimizes, Command+Ctrl+T pins the active window; temporary keep-awake with optional
   display-on. Saved power-plan settings are preserved.
 - **Magic Trackpad 2:** detect USB/Bluetooth connections, install separately downloaded
   signed Precision Touchpad drivers, retain recovery backups, and open native Windows
@@ -41,6 +58,9 @@ or Apple.
 - **Languages:** English by default, runtime selection in About, external UTF-8 JSON
   language packs with English fallback. Russian is included as an example translation.
   [Add a translation](docs/Localization.md) without rebuilding the application.
+- **Boot Camp:** native read-only model/driver inventory with hardware IDs, installed
+  versions/INF and Windows device problems, plus Windows Update / Device Manager.
+  Installed metadata is not proof of signatures or the latest compatible package.
 
 ## Installation
 
@@ -73,6 +93,13 @@ SwiftyToys.exe +5
 SwiftyToys.exe get
 SwiftyToys.exe info
 SwiftyToys.exe --trackpad-info
+SwiftyToys.exe --driver-info
+SwiftyToys.exe --mouse-info
+SwiftyToys.exe --hardware-info
+SwiftyToys.exe --apple-layouts uk
+SwiftyToys.exe --restore-apple-layouts
+SwiftyToys.exe backend hardware
+SwiftyToys.exe backend auto
 SwiftyToys.exe list
 SwiftyToys.exe select <output-id>
 SwiftyToys.exe osd custom
@@ -111,10 +138,15 @@ and [Homebrew on Linux/WSL](https://docs.brew.sh/Homebrew-on-Linux).
 Official Swift 6.4 Windows toolchain, MSVC and Windows SDK. Hardware-independent
 BrightnessCore/KeyboardCore tests use Swift Testing. Native interop is header-only,
 without a custom C/C++ application runtime. Build checks runtime DLL dependencies
+and System32-only static DLL import resolution
 and embeds the UI manifest. See [packaging](docs/Packaging.md) and
 [interop](docs/WindowsInterop.md). No performance advantage over PowerToys is claimed
 without a reproducible benchmark. Driver and keyboard work use dedicated threads;
 the settings window currently shares the tray UI thread.
+See [requirements and remaining acceptance checks](docs/Requirements.md) and
+[measurement protocol](docs/Performance.md). Performance skills are maintained
+through Axiom / Xcode Build Skills marketplaces on the Windows and Mac Studio
+development hosts; Apple-specific tools stay scoped to macOS.
 
 ## Credits
 

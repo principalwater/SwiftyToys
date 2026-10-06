@@ -9,7 +9,8 @@ $buildFlags = @('-c', 'release', '-debug-info-format', 'none',
     '-Xswiftc', '-Xfrontend', '-Xswiftc', '-use-static-resource-dir',
     '-Xswiftc', '-Xfrontend', '-Xswiftc', '-disable-implicit-string-processing-module-import',
     '-Xlinker', '/SUBSYSTEM:WINDOWS', '-Xlinker', '/ENTRY:mainCRTStartup',
-    '-Xlinker', '/OPT:REF', '-Xlinker', '/OPT:ICF')
+    '-Xlinker', '/OPT:REF', '-Xlinker', '/OPT:ICF',
+    '-Xlinker', '/DEPENDENTLOADFLAG:0x800')
 if ($LinkMap) { $buildFlags += @('-Xlinker', ('/MAP:' + [IO.Path]::GetFullPath($LinkMap))) }
 # Swift 6.4's static concurrency archive needs these explicit link inputs.
 foreach ($name in @('dispatch.lib', 'BlocksRuntime.lib')) {
@@ -41,6 +42,10 @@ foreach ($line in $dependencyOutput) {
     }
 }
 $manifest = Join-Path $OutputDirectory 'runtime-files.txt'
+$loadConfig = & dumpbin /nologo /loadconfig $sourceExecutable
+if ($LASTEXITCODE -ne 0 -or ($loadConfig -join "`n") -notmatch '(?im)^\s*0*800\s+Dependent Load Flags?') {
+    throw 'Static DLL imports must load from System32 (/DEPENDENTLOADFLAG:0x800).'
+}
 if (Test-Path -LiteralPath $manifest) {
     foreach ($name in Get-Content -LiteralPath $manifest) {
         if ($name -match '^(swift|Foundation|_Foundation|BlocksRuntime|dispatch)[\w.-]*\.dll$') {

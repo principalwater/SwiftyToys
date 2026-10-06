@@ -1,5 +1,30 @@
 # Changelog
 
+## SwiftyToys 0.1.3 — 2026-10-06
+
+- Replace synthetic mouse-wheel inversion with native Windows physical HID direction.
+  Remove WH_MOUSE_LL, mouse SendInput and the wheel injection queue entirely.
+- Apply through Swift SetupAPI / registry calls with native device restart, bounded
+  DWORD validation, previous-value rollback and background UAC completion. No mouse
+  configuration scripts, extra drivers or per-game compatibility exceptions.
+- Add Apply native scrolling; the setting includes modifier-wheel commands and persists
+  per device. New mice need another Apply; unsupported vendor drivers keep their settings.
+- Preserve Magic Trackpad's verified Precision scrolling / gesture implementation.
+- Add Command/Win+H → native minimize window, editable in the Mac keyboard profile;
+  extend the unchanged previous Mac preset while preserving custom profiles.
+- Mask the Windows menu for mapped Command chords while preserving bare Win; add
+  Command+Option+Left/Right → Ctrl+PageUp/PageDown.
+- Add optional native DDC/CI hardware brightness including the hardware cursor,
+  readback, recovery lease/watchdog and transactional mode switching.
+- Add native Boot Camp model/driver inventory, Windows Update and Device Manager.
+- Show actual device direction values; skip unchanged writes/restarts, retain an
+  in-progress native operation after timeout, and report ambiguous failure honestly.
+- Restrict static DLL imports to System32; remove duplicate/unchanged tray updates,
+  gate DDC reads and avoid eager keyboard-rule match allocations.
+- Record the full conversation requirement ledger and reproducible process counters.
+- Enable already installed Apple RU and US/UK layout profiles with native Windows
+  input APIs, scoped standard-profile replacement and a recovery backup.
+
 ## SwiftyToys 0.1.2 — 2026-10-06
 
 - Fix settings reload blocking the UI while the input worker is inside SendInput.

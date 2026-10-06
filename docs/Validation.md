@@ -1,4 +1,51 @@
-# Validation snapshot: 0.1.2
+# Validation snapshot: 0.1.3
+
+2026-10-06 update on the same MacPro6,1 / Windows 10 build 19045:
+
+- 14 KeyboardCore and 15 BrightnessCore tests pass. Native ABI, storage/recovery,
+  mouse registry scope, input-profile API resolution, Boot Camp ID matching,
+  bounded sent-message worker waits and all 10 English/Russian settings pages pass.
+- The current prepared executable is 6,407,680 bytes, SHA-256
+  `9AF60E54173C3BD3B9018AAD5C54BBEA12F16278528260E36D8EC01A77B0F151`.
+  It links Swift statically and verifies System32-only static DLL import resolution.
+  Its Apple-layout GUI integration is prepared; the resident's preceding build is
+  retained while the native mouse UAC prompt is pending.
+- Software wheel interception/injection is absent. The user previously confirmed
+  LoL zoom returned after disabling it. Native direction is not yet applied:
+  current mouhid device values are vertical=0/horizontal=0; the UAC prompt awaits
+  user consent. No per-game exception or game process modification was added.
+- Command+H minimizes with the native API; the user previously confirmed minimize.
+  The shared Win-menu mask and Command+Option+arrow mapping pass portable checks;
+  physical Start/menu/browser verification is pending.
+- Native DDC/CI mode successfully reads back the current 70% on the selected
+  physical iiyama output. The driver returns a zero opaque physical-monitor token;
+  successful enumeration and valid native query establish usability. Original
+  physical brightness 100 is stored in a hardware recovery lease. Normal software
+  mode rollback was also observed when the initial nonzero-token guard rejected
+  that token. Cursor appearance/slider feel, sleep/wake and hardware-watchdog
+  recovery still need physical validation; no cursor bitmap/theme substitution occurs.
+- Apple's RussianA.dll, BritishA.dll and USA.dll are installed in System32 and
+  Authenticode reports valid signatures. Native InstallLayoutOrTip successfully
+  enables `0419:A0000419` and `0809:A0000809`, confirmed through the Windows language
+  profile API (Windows PowerShell 5.1). Preload keeps standard IDs and Substitutes
+  maps them to Apple layouts; a Preload-only check does not establish actual layout.
+  The scoped recorded standard profiles are backed up in apple-layouts-backup.json.
+  Physical punctuation and Ctrl+Space with those profiles remain to be checked.
+- Native Boot Camp inventory reports Apple Inc. MacPro6,1, physical AMD FirePro D700
+  driver 27.20.14540.15002, Broadcom/Apple devices and Windows problem codes.
+  Virtual display devices are excluded. No driver was updated from this inventory,
+  and no "latest compatible" claim is made.
+- Axiom 27.3.0 and Xcode Build Skills 1.0.1 are verified enabled through marketplaces
+  in local Codex and Claude on Windows and Mac Studio. Newly copied Xcode skill
+  duplicates were backed up and removed from loose skill discovery. Existing
+  instructions/plugins are retained; shared/host optimization preferences are saved.
+- Short counter samples and their limits are recorded in Performance.md. CPU/RSS
+  timing improvements, universal macOS feel and weakest-hardware support are not
+  inferred from compilation or uncontrolled short samples.
+
+The requirement-by-requirement audit and remaining work are in Requirements.md.
+
+## Previously verified 0.1.2 behavior
 
 Local validation on Windows 10 x64, Boot Camp MacPro6,1, 2026-10-06:
 

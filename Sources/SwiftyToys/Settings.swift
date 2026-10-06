@@ -63,7 +63,7 @@ struct Settings: Sendable {
             case "max": hotkeys[2] = value
             case "min": hotkeys[3] = value
             case "backend":
-                backend = ["auto", "amd", "native"].contains(value.lowercased()) ? value.lowercased() : "auto"
+                backend = ["auto", "amd", "native", "hardware"].contains(value.lowercased()) ? value.lowercased() : "auto"
             case "osd": indicator = IndicatorMode(rawValue: value.lowercased()) ?? .custom
             default: break
             }

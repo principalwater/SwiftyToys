@@ -151,6 +151,7 @@ public struct RemapEngine {
                 emitKey(target.key, down: true, into: &result.events)
                 invocation = Invocation(physicalKey: key, source: rule.source, target: target, keyIsDown: true)
             } else if previous == nil {
+                if rule.source.modifiers & 8 != 0 { dummy(controlHeld: deliveredModifiers.contains(162) || deliveredModifiers.contains(163), into: &result.events) }
                 result.action = rule.action == "disable key" ? nil : rule.action
             }
         } else if logical != key {
@@ -181,7 +182,7 @@ public struct RemapEngine {
     }
     private func matchingSingle(_ key: UInt16, application: String) -> RemapRule? {
         // ponytail: bounded scan of 64 rules; index by key only if profiling requires it.
-        let matches = rules.filter {
+        let matches = rules.lazy.filter {
             $0.source.modifiers == 0 && KeyChord.matches($0.source.key, key)
                 && ($0.target?.modifiers == 0 || $0.action == "disable key")
                 && ($0.application.isEmpty || $0.application == application)
@@ -189,7 +190,7 @@ public struct RemapEngine {
         return matches.first { !$0.application.isEmpty } ?? matches.first
     }
     private func matchingShortcut(_ key: UInt16, modifiers: UInt8, application: String) -> RemapRule? {
-        let matches = rules.filter {
+        let matches = rules.lazy.filter {
             $0.source.modifiers == modifiers && KeyChord.matches($0.source.key, key)
                 && ($0.application.isEmpty || $0.application == application)
                 && !($0.source.modifiers == 0 && $0.target?.modifiers == 0)
@@ -201,12 +202,12 @@ public struct RemapEngine {
     }
     private mutating func reconcileModifiers(_ desired: Set<UInt16>, into events: inout [KeyTransition]) {
         let released = deliveredModifiers.subtracting(desired).sorted()
-        if released.contains(91) || released.contains(92) { dummy(into: &events) }
+        if released.contains(91) || released.contains(92) { dummy(controlHeld: deliveredModifiers.contains(162) || deliveredModifiers.contains(163), into: &events) }
         for key in released { events.append(KeyTransition(key, down: false)) }
         let added = desired.subtracting(deliveredModifiers).sorted()
         for key in added { events.append(KeyTransition(key, down: true)) }
         // A restored Win key must not open Start when the physical key is released.
-        if added.contains(91) || added.contains(92) { dummy(into: &events) }
+        if added.contains(91) || added.contains(92) { dummy(controlHeld: desired.contains(162) || desired.contains(163), into: &events) }
         deliveredModifiers = desired
     }
     private mutating func emitKey(
@@ -229,7 +230,8 @@ public struct RemapEngine {
         if active.keyIsDown { emitKey(active.target.key, down: false, excluding: active.physicalKey, into: &events) }
         reconcileModifiers(heldModifiers, into: &events)
     }
-    private func dummy(into events: inout [KeyTransition]) {
-        events += [KeyTransition(255, down: true), KeyTransition(255, down: false)]
+    private func dummy(controlHeld: Bool, into events: inout [KeyTransition]) {
+        // A real Ctrl pulse disarms the Windows menu; VK 255 is ignored by Windows.
+        if !controlHeld { events += [KeyTransition(162, down: true), KeyTransition(162, down: false)] }
     }
 }

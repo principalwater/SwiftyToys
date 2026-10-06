@@ -5,6 +5,16 @@ import Testing
 @testable import BrightnessCore
 
 struct BrightnessTests {
+    @Test func mapsHardwareRangeWithoutOverflow() throws {
+        for range: ClosedRange<UInt32> in [0...100, 30...150, 0...UInt32.max, 7...7] {
+            #expect(try BrightnessLevel(0).hardwareValue(in: range) == range.lowerBound)
+            #expect(try BrightnessLevel(100).hardwareValue(in: range) == range.upperBound)
+            let middle = try BrightnessLevel(50).hardwareValue(in: range)
+            #expect(range.contains(middle))
+        }
+        #expect(try BrightnessLevel(55).hardwareValue(in: 0...100) == 55)
+        #expect(try BrightnessLevel(50).hardwareValue(in: 0...UInt32.max) == 2_147_483_648)
+    }
     @Test(arguments: [0, 5, 25, 45, 60, 75, 100])
     func scalesEveryGammaChannelFromItsOriginalCalibration(_ percent: Int) throws {
         let level = try BrightnessLevel(percent)

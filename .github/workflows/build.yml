@@ -23,6 +23,21 @@ jobs:
       - name: Check trackpad repair selection
         shell: powershell
         run: ./scripts/test-trackpad.ps1
+      - name: Check native mouse registry operations
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-native-mouse' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw 'Native mouse registry check failed' }
+      - name: Check Boot Camp device matching
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-driver-info' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw 'Boot Camp device matching failed' }
+      - name: Check native input-profile API without changing profiles
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-apple-layouts' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw 'Native input-profile check failed' }
       - name: Check native ABI
         shell: pwsh
         run: |
