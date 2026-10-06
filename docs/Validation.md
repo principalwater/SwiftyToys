@@ -8,29 +8,25 @@
 - The current prepared executable is 6,411,264 bytes, SHA-256
   `65729E124718E38B309AF4EDD97AC04086A41F5351E7E8354C8BE18AA45342E8`.
   It links Swift statically and verifies System32-only static DLL import resolution.
-  Its Apple-layout GUI integration is prepared; the resident's preceding build is
-  retained while the native mouse UAC prompt is pending.
+  The installed resident matches that hash and includes the Apple-layout GUI integration.
 - Software wheel interception/injection is absent. The user previously confirmed
-  LoL zoom returned after disabling it. Native direction is not yet applied:
-  current mouhid device values are vertical=0/horizontal=0; the UAC prompt awaits
-  user consent. No per-game exception or game process modification was added.
+  LoL zoom returned after disabling it. After user-approved UAC, both mouhid mice read vertical=1/horizontal=0. The user confirms natural direction in Windows and working LoL camera zoom. No per-game exception or game process modification was added.
 - Command+H minimizes with the native API; the user previously confirmed minimize.
   The shared Win-menu mask and Command+Option+arrow mapping pass portable checks;
-  physical Start/menu/browser verification is pending.
+  the user confirms minimize without Start, bare Command opening Start and browser tab switching.
 - Native DDC/CI mode successfully reads back the current 70% on the selected
   physical iiyama output. The driver returns a zero opaque physical-monitor token;
   successful enumeration and valid native query establish usability. Original
   physical brightness 100 is stored in a hardware recovery lease. Normal software
   mode rollback was also observed when the initial nonzero-token guard rejected
-  that token. Cursor appearance/slider feel, sleep/wake and hardware-watchdog
-  recovery still need physical validation; no cursor bitmap/theme substitution occurs.
+  that token. The user confirms cursor dimming and responsive slider/function keys. Normal update restoration to original backlight and restart at the saved 55% also pass; sleep/wake and abrupt-crash watchdog checks remain. no cursor bitmap/theme substitution occurs.
 - Apple's RussianA.dll, BritishA.dll and USA.dll are installed in System32 and
   Authenticode reports valid signatures. Native InstallLayoutOrTip successfully
   enables `0419:A0000419` and `0809:A0000809`, confirmed through the Windows language
   profile API (Windows PowerShell 5.1). Preload keeps standard IDs and Substitutes
   maps them to Apple layouts; a Preload-only check does not establish actual layout.
   The scoped recorded standard profiles are backed up in apple-layouts-backup.json.
-  Physical punctuation and Ctrl+Space with those profiles remain to be checked.
+  The user physically confirms expected punctuation and Ctrl+Space with those profiles.
 - Native Boot Camp inventory reports Apple Inc. MacPro6,1, physical AMD FirePro D700
   driver 27.20.14540.15002, Broadcom/Apple devices and Windows problem codes.
   Virtual display devices are excluded. No driver was updated from this inventory,
