@@ -11,19 +11,20 @@ struct WSLSetup {
 
     var title: String {
         if !distributions.isEmpty { return "Choose a Linux distribution" }
-        if restartPending && (runtimeInstalled || ubuntuInstalled) { return "Windows restart pending" }
+        if restartPending { return "Windows restart pending" }
         if ubuntuInstalled { return "Ubuntu first launch required" }
         if runtimeInstalled { return "WSL installed; add Linux" }
-        return "Install WSL + Ubuntu"
+        return "Set up WSL + Ubuntu"
     }
     var detail: String {
         if !distributions.isEmpty {
             return
                 "Linux distributions are registered for this Windows user.\nHomebrew needs WSL 2 and a non-root Linux user."
         }
-        if restartPending && (runtimeInstalled || ubuntuInstalled) {
-            return
-                "WSL setup packages are installed. Windows has a restart pending.\nRestart Windows, then open Ubuntu to finish Linux setup and refresh this page."
+        if restartPending {
+            return ubuntuInstalled
+                ? "Windows has a restart pending. If WSL setup requested it, restart first.\nThen open Ubuntu, finish Linux setup and refresh this page."
+                : "Windows has a restart pending. If WSL setup requested it, restart first.\nThen install Ubuntu for this Windows user and refresh this page."
         }
         if ubuntuInstalled {
             return
@@ -34,7 +35,7 @@ struct WSLSetup {
                 "The WSL package is installed; no Linux distribution is registered yet.\nInstall Ubuntu, complete its first launch, then refresh this page."
         }
         return
-            "Install WSL and Ubuntu, then follow the terminal instructions.\nWindows may require a restart before Linux setup can finish."
+            "Install WSL components first and restart Windows if requested.\nThen install Ubuntu for this Windows user and complete its first launch."
     }
     static func current() throws -> WSLSetup {
         let runtime = try hasPackage("MicrosoftCorporationII.WindowsSubsystemForLinux_8wekyb3d8bbwe")
@@ -62,22 +63,19 @@ struct WSLSetup {
         }
         return count > 0
     }
-    /// Resolve trusted Windows executables, independent of PATH or the working directory.
-    static func executable(_ name: String) throws -> String {
-        var directory = [WCHAR](repeating: 0, count: 32768)
-        let size = GetSystemDirectoryW(&directory, UINT(directory.count))
-        guard size > 0, size < directory.count else {
-            throw WindowsError.api("Resolve Windows system directory", GetLastError())
-        }
-        return String(decoding: directory.prefix(Int(size)), as: UTF16.self) + "\\" + name
-    }
     static func install(owner: HWND?) throws {
+        try openInstaller(arguments: "--install --no-distribution", elevated: true, owner: owner)
+    }
+    static func installUbuntu(owner: HWND?) throws {
+        try openInstaller(arguments: "--install --no-launch -d Ubuntu", elevated: false, owner: owner)
+    }
+    private static func openInstaller(arguments: String, elevated: Bool, owner: HWND?) throws {
         // Fixed command only. /d disables AutoRun; pause keeps diagnostics visible without leaving an admin shell.
-        // Linux first launch is a separate, unelevated action in the current user's profile.
-        let wsl = try executable("wsl.exe")
+        // Ubuntu package installation and first launch both stay in the current user's profile.
+        let wsl = try systemExecutable("wsl.exe")
         try shellOpen(
-            executable("cmd.exe"), arguments: "/d /s /c \"\"\(wsl)\" --install --no-launch -d Ubuntu & pause\"",
-            elevated: true, owner: owner)
+            systemExecutable("cmd.exe"), arguments: "/d /s /c \"\"\(wsl)\" \(arguments) & pause\"",
+            elevated: elevated, owner: owner)
     }
     static func openUbuntu() throws {
         // Activate the current user's official Ubuntu package, including first-time registration.
@@ -88,7 +86,9 @@ struct WSLSetup {
             guard value else { throw WindowsError.unsupported("WSL setup check failed: " + message) }
         }
         let missing = WSLSetup(runtimeInstalled: false, ubuntuInstalled: false, restartPending: true, distributions: [])
-        try expect(missing.title == "Install WSL + Ubuntu", "an unrelated restart must not imply WSL installation")
+        try expect(
+            missing.detail.starts(with: "Windows has a restart pending."),
+            "an unrelated restart must not imply WSL installation")
         let installed = WSLSetup(runtimeInstalled: true, ubuntuInstalled: true, restartPending: true, distributions: [])
         try expect(installed.title == "Windows restart pending", "installed packages before reboot")
         let firstLaunch = WSLSetup(
@@ -96,6 +96,44 @@ struct WSLSetup {
         try expect(firstLaunch.title == "Ubuntu first launch required", "package without registered Linux")
         let runtime = WSLSetup(runtimeInstalled: true, ubuntuInstalled: false, restartPending: false, distributions: [])
         try expect(runtime.title == "WSL installed; add Linux", "runtime without distro")
+        let fixturePath = "Software\\SwiftyToys.WSLTest-\(GetCurrentProcessId())-\(GetTickCount64())"
+        var opened: HKEY?
+        let created = withWideString(fixturePath) {
+            RegCreateKeyExW(HKEY_CURRENT_USER, $0, 0, nil, 0, REGSAM(0x2001F), nil, &opened, nil)
+        }
+        guard created == ERROR_SUCCESS, let key = opened else {
+            throw WindowsError.api("Create WSL test fixture", DWORD(created))
+        }
+        defer {
+            RegCloseKey(key)
+            _ = withWideString(fixturePath) { RegDeleteKeyW(HKEY_CURRENT_USER, $0) }
+        }
+        func write(_ name: String, _ value: DWORD) throws {
+            var value = value
+            let result = withWideString(name) { name in
+                withUnsafeBytes(of: &value) {
+                    RegSetValueExW(
+                        key, name, 0, DWORD(REG_DWORD), $0.baseAddress!.assumingMemoryBound(to: BYTE.self), 4)
+                }
+            }
+            guard result == ERROR_SUCCESS else { throw WindowsError.api("Write WSL fixture", DWORD(result)) }
+        }
+        try write("Version", 2)
+        try expect(LinuxDistribution.wslVersion(in: key) == 0, "missing flags must not use filesystem Version")
+        let modes: [(DWORD, UInt32)] = [(0x7, 1), (0xF, 2), (0x8, 2), (0, 1)]
+        for (flags, version) in modes {
+            try write("Flags", flags)
+            try expect(
+                LinuxDistribution.wslVersion(in: key) == version, "WSL mode flag independent of filesystem Version")
+        }
+        var malformed: DWORD = 8
+        let invalid = withWideString("Flags") { name in
+            withUnsafeBytes(of: &malformed) {
+                RegSetValueExW(key, name, 0, DWORD(REG_BINARY), $0.baseAddress!.assumingMemoryBound(to: BYTE.self), 4)
+            }
+        }
+        guard invalid == ERROR_SUCCESS else { throw WindowsError.api("Write malformed WSL fixture", DWORD(invalid)) }
+        try expect(LinuxDistribution.wslVersion(in: key) == 0, "binary flags must not be treated as a DWORD")
         let user = LinuxDistribution(name: "Ubuntu", version: 2)
         try expect(
             user.canInstallHomebrew && !LinuxDistribution(name: "Legacy", version: 1).canInstallHomebrew,
@@ -104,6 +142,7 @@ struct WSLSetup {
             runtimeInstalled: false, ubuntuInstalled: false, restartPending: true, distributions: [user])
         try expect(ready.title == "Choose a Linux distribution", "registered inbox/imported WSL without Store packages")
         Console.writeLine(
-            "PASS: WSL package/restart/first-launch states and WSL 2 readiness; no system changes")
+            "PASS: WSL setup stages, native registry VM-mode flags and WSL 2 readiness; temporary fixture removed, no WSL setting changed"
+        )
     }
 }

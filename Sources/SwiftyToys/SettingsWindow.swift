@@ -509,26 +509,29 @@ final class SettingsWindow {
                 "Two fingers: scroll, zoom, and right-click.\nThree / four: windows, desktops, and assignable shortcuts.\nSmoothness and recognition are provided by Windows Precision Touchpad.\nSet the direction in Windows: wheel inversion is for a regular mouse.\nOver Bluetooth, pairing in Windows and a free connection are required.\nForce Touch and app behavior may differ from macOS.",
                 456, 300, 539, 650, 108)
         case 7:
-            let setup = try? WSLSetup.current()
+            let setup: WSLSetup?
+            var failure = ""
+            do { setup = try WSLSetup.current() } catch { setup = nil; failure = String(describing: error) }
             distributions = setup?.distributions ?? LinuxDistribution.installed()
             ubuntuInstalled = setup?.ubuntuInstalled ?? false
             label(
                 setup?.title ?? "WSL status unavailable", 500, 300, 170, 660,
                 40, large: true)
             label(
-                setup?.detail ?? "Could not query WSL setup. Open the installer terminal to see Windows diagnostics.",
+                setup?.detail ?? failure,
                 501, 300, 228, 650, 74)
-            combo(distributions.map { "\($0.name) (WSL \($0.version))" }, 502, 300, 326, 450)
+            combo(distributions.map { $0.version == 0 ? "\($0.name) (\(localization.text("WSL version unavailable")))" : "\($0.name) (WSL \($0.version))" }, 502, 300, 326, 450)
             button("Refresh list", 503, 772, 324, 192)
-            button("Install WSL + Ubuntu", 510, 300, 393, 282)
-            button("Install Homebrew", 511, 604, 393, 278)
+            button("Install WSL components", 510, 300, 393, 282)
+            button("Install Ubuntu", 514, 604, 393, 278)
+            button("Install Homebrew", 511, 604, 441, 278)
             button("Open Linux setup", 513, 300, 441, 282)
             if let control = controls[513] { EnableWindow(control, ubuntuInstalled || !distributions.isEmpty) }
             updateHomebrewAvailability()
             label(
                 "WSL may require administrator rights and a restart.\nAfter the first Ubuntu launch, create a Linux user.\nHomebrew will open a terminal: you'll see the steps and enter your sudo password yourself.\nThen brew and the PATH setup for Bash will appear.",
-                504, 300, 494, 650, 120)
-            button("Official guide", 512, 604, 441, 278)
+                504, 300, 494, 650, 110)
+            button("Official guide", 512, 300, 609, 282)
         case 8:
             label("Boot Camp drivers", 700, 300, 166, 650, 40, large: true)
             label("Installed versions are shown below. Update through Windows Update or Apple Software Update; compatibility must match your Mac model.", 704, 300, 218, 650, 64)
@@ -709,6 +712,7 @@ final class SettingsWindow {
                 }
                 if id == 503 || id == 453 || id == 705 {
                     renderPage()
+                    if let control = controls[id] { SetFocus(control) }
                     return 0
                 }
                 if id == 512 {
@@ -743,13 +747,16 @@ final class SettingsWindow {
                     status("Applying Apple input profiles.")
                 } else if id == 510 {
                     try WSLSetup.install(owner: window)
-                    status("The installer terminal stays open. Follow any restart instructions, then open Linux setup and refresh.")
+                    status("Follow the Windows component installer instructions. Restart if requested, then install Ubuntu for this user.")
+                } else if id == 514 {
+                    try WSLSetup.installUbuntu(owner: window)
+                    status("Ubuntu installs for this Windows user. When finished, open Linux setup and refresh.")
                 } else if id == 513 {
                     let index = controls[502].map { Int(SendMessageW($0, UINT(CB_GETCURSEL), 0, 0)) } ?? -1
                     if distributions.indices.contains(index) {
                         let distribution = distributions[index]
                         if distribution.name == "Ubuntu", ubuntuInstalled { try WSLSetup.openUbuntu() }
-                        else { try shellOpen(WSLSetup.executable("wsl.exe"), arguments: "--distribution \(distribution.name)") }
+                        else { try shellOpen(systemExecutable("wsl.exe"), arguments: "--distribution \(distribution.name)") }
                     } else if ubuntuInstalled { try WSLSetup.openUbuntu() }
                     else { throw WindowsError.unsupported("Open your Linux distribution and create a non-root user first.") }
                     status("Complete Linux user setup in the terminal, then refresh this page.")

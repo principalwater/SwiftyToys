@@ -153,6 +153,16 @@ struct LinuxDistribution {
     let name: String
     let version: UInt32
     var canInstallHomebrew: Bool { version == 2 }
+    /// Lxss Version is the filesystem format; Flags bit 0x8 selects the WSL 2 VM.
+    static func wslVersion(in key: HKEY) -> UInt32 {
+        var flags: DWORD = 0
+        var size: DWORD = 4
+        let result = withWideString("Flags") {
+            RegGetValueW(key, nil, $0, DWORD(RRF_RT_REG_DWORD), nil, &flags, &size)
+        }
+        guard result == ERROR_SUCCESS, size == 4 else { return 0 }
+        return flags & 0x8 == 0 ? 1 : 2
+    }
     static func installed() -> [LinuxDistribution] {
         var root: HKEY?
         guard
@@ -179,13 +189,7 @@ struct LinuxDistribution {
                     RegQueryValueExW(key, value, nil, nil, $0.baseAddress?.assumingMemoryBound(to: BYTE.self), &size)
                 }
             }
-            var version: DWORD = 0
-            size = 4
-            _ = withWideString("Version") { value in
-                withUnsafeMutableBytes(of: &version) {
-                    RegQueryValueExW(key, value, nil, nil, $0.baseAddress?.assumingMemoryBound(to: BYTE.self), &size)
-                }
-            }
+            let version = wslVersion(in: key)
             let distro = String(decoding: buffer.prefix(while: { $0 != 0 }), as: UTF16.self)
             if read == ERROR_SUCCESS, !distro.isEmpty, distro.count < 100,
                 distro.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "-_.".contains($0)) })
@@ -205,7 +209,7 @@ struct LinuxDistribution {
         let wrapped =
             "( " + script
             + " ); status=$?; printf '\\nFinished with status %s. You can close this terminal.\\n' \"$status\"; exec bash"
-        try shellOpen(WSLSetup.executable("wsl.exe"), arguments: "--distribution \(name) --exec bash -c \(quoteArgument(wrapped))")
+        try shellOpen(systemExecutable("wsl.exe"), arguments: "--distribution \(name) --exec bash -c \(quoteArgument(wrapped))")
     }
 }
 

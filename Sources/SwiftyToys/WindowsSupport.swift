@@ -33,6 +33,15 @@ struct OwnedHandle: ~Copyable {
 func withWideString<Result>(_ value: String, _ body: (UnsafePointer<WCHAR>) throws -> Result) rethrows -> Result {
     try (Array(value.utf16) + [0]).withUnsafeBufferPointer { try body($0.baseAddress!) }
 }
+/// Resolve a trusted Windows executable independently of PATH and App Paths.
+func systemExecutable(_ name: String) throws -> String {
+    var directory = [WCHAR](repeating: 0, count: 32768)
+    let size = GetSystemDirectoryW(&directory, UINT(directory.count))
+    guard size > 0, size < directory.count else {
+        throw WindowsError.api("Resolve Windows system directory", GetLastError())
+    }
+    return String(decoding: directory.prefix(Int(size)), as: UTF16.self) + "\\" + name
+}
 /// Decodes the bounded, null-terminated UTF-16 fields imported from Windows SDK.
 func wideString<Value>(_ value: Value) -> String {
     withUnsafeBytes(of: value) { bytes in

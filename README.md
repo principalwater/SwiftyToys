@@ -96,6 +96,7 @@ SwiftyToys.exe --trackpad-info
 SwiftyToys.exe --driver-info
 SwiftyToys.exe --mouse-info
 SwiftyToys.exe --hardware-info
+SwiftyToys.exe --wsl-info
 SwiftyToys.exe --apple-layouts uk
 SwiftyToys.exe --restore-apple-layouts
 SwiftyToys.exe backend hardware
@@ -118,11 +119,14 @@ or arbitrary process commands execute from keyboard rules.
 ## Homebrew
 
 The setup page distinguishes installed Windows packages from registered Linux.
-If Windows requests a restart, restart first, choose **Open Linux setup**, create
-your Linux user/password in Ubuntu's terminal, then choose **Refresh list**.
+Choose **Install WSL components** for the elevated Windows setup and restart if
+requested. Then choose **Install Ubuntu** to install Linux for the current Windows
+user. Choose **Open Linux setup**, create your Linux user/password in Ubuntu's
+terminal, then choose **Refresh list**.
 Installation output remains visible until a key is pressed; launching an installer
 does not imply that WSL or a Linux account is ready. Linux first launch runs as the
 current Windows user, separately from the elevated Windows component installation.
+The WSL 1/2 indicator reads the VM-mode flag, not the Lxss filesystem-format Version.
 
 Use initialized WSL 2 distributions. Ubuntu/Debian prerequisites can be installed
 with apt; other distributions need their package-manager prerequisites first.
