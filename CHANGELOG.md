@@ -1,5 +1,29 @@
 # Changelog
 
+## SwiftyToys 0.1.5 — 2026-10-06
+
+- Add editable Command+Ctrl+Q → Lock screen and Command+Ctrl+S → Sleep defaults.
+  Use native LockWorkStation/SetSuspendState; keep Sleep off the UI thread and
+  restore the account's original shutdown privilege after the request returns.
+  Existing standard Mac profiles gain the shortcuts; customized profiles are preserved.
+  Record the preset version as a backwards-compatible comment on Save so deleted
+  defaults do not reappear on restart. Store new power rules in an extension that
+  older releases safely ignore during rollback. Prevent nested action-error dialogs.
+- Show Windows' explanation of Win32/HRESULT/NTSTATUS failures and next steps for
+  common permission, missing-component, busy-resource, memory and device errors.
+- Show complete error details in an accessible native dialog after a failed
+  user action, preserving error codes and existing explicit recovery instructions.
+- Detect the current boot's Hyper-V VMX failure through the native Event Log API;
+  explain firmware/boot configuration requirements instead of repeating Ubuntu setup.
+- Keep Homebrew disabled when a confirmed virtualization failure prevents WSL 2.
+  Disable the empty distribution selector so it cannot obscure setup controls.
+- Add native error-readability and virtualization precedence/regression checks.
+  No firmware, EFI boot files or WSL distributions are modified by diagnostics.
+- Read boot diagnostics once in the background; a failed/unavailable log query
+  preserves WSL package and registration status. Verify the no-match event path.
+- Preserve dialog focus, treat cancelled consent as a status, keep AMD driver
+  codes separate from Windows errors and fall back to system-language messages.
+
 ## SwiftyToys 0.1.4 — 2026-10-06
 
 - Distinguish installed WSL/Ubuntu packages, a pending Windows restart and Ubuntu's

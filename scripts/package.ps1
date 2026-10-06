@@ -1,4 +1,4 @@
-param([string]$Version = '0.1.4', [string]$SwiftVersion = '6.4.0')
+param([string]$Version = '0.1.5', [string]$SwiftVersion = '6.4.0')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 if ($Version -notmatch '^\d+\.\d+(?:\.\d+)?(?:-[a-z0-9.-]+)?$') { throw 'Invalid package version.' }

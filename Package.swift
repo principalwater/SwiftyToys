@@ -20,6 +20,7 @@ var products: [Product] = [.library(name: "BrightnessCore", targets: ["Brightnes
                 .linkedLibrary("ole32"), .linkedLibrary("oleaut32"),
                 .linkedLibrary("comctl32"), .linkedLibrary("advapi32"),
                 .linkedLibrary("wtsapi32"), .linkedLibrary("setupapi"), .linkedLibrary("cfgmgr32"),
+                .linkedLibrary("wevtapi"), .linkedLibrary("powrprof"),
             ]),
     ]
     products.append(.executable(name: "SwiftyToys", targets: ["SwiftyToys"]))

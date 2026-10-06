@@ -1,5 +1,29 @@
+import Synchronization
 // SPDX-License-Identifier: MIT
 import WinSDK
+import WindowsDisplayABI
+
+let wslBootResultMessage: UINT = 0x8031
+final class WSLBootDiagnostic: Sendable {
+    private let state = Mutex((started: false, result: Optional<Bool>.none))
+    var result: Bool? { state.withLock { $0.result } }
+    func start(destination: MessageDestination) {
+        guard
+            state.withLock({ value in
+                if value.started { return false }
+                value.started = true
+                return true
+            })
+        else { return }
+        do {
+            _ = try NativeThread(name: "SwiftyToys WSL boot diagnostics") { [self] in
+                let result = WSLSetup.readBootDiagnostic()
+                state.withLock { $0.result = result }
+                _ = destination.post(wslBootResultMessage)
+            }
+        } catch { Diagnostics.write("WSL boot worker: \(error)") }
+    }
+}
 
 /// Package installation precedes Windows restart and per-user Linux registration.
 /// Query only native metadata; never start Linux to render settings.
@@ -8,8 +32,10 @@ struct WSLSetup {
     let ubuntuInstalled: Bool
     let restartPending: Bool
     let distributions: [LinuxDistribution]
+    var virtualizationBootFailure: Bool?
 
     var title: String {
+        if virtualizationBootFailure == true { return "Hardware virtualization unavailable" }
         if !distributions.isEmpty { return "Choose a Linux distribution" }
         if restartPending { return "Windows restart pending" }
         if ubuntuInstalled { return "Ubuntu first launch required" }
@@ -17,6 +43,10 @@ struct WSLSetup {
         return "Set up WSL + Ubuntu"
     }
     var detail: String {
+        if virtualizationBootFailure == true {
+            return
+                "Windows reports that Hyper-V could not start because VMX is disabled or unavailable.\nEnable virtualization in firmware or your supported boot configuration, then restart Windows and refresh."
+        }
         if !distributions.isEmpty {
             return
                 "Linux distributions are registered for this Windows user.\nHomebrew needs WSL 2 and a non-root Linux user."
@@ -37,7 +67,7 @@ struct WSLSetup {
         return
             "Install WSL components first and restart Windows if requested.\nThen install Ubuntu for this Windows user and complete its first launch."
     }
-    static func current() throws -> WSLSetup {
+    static func current(checkBoot: Bool = true) throws -> WSLSetup {
         let runtime = try hasPackage("MicrosoftCorporationII.WindowsSubsystemForLinux_8wekyb3d8bbwe")
         let ubuntu = try hasPackage("CanonicalGroupLimited.Ubuntu_79rhkp1fndgsc")
         var key: HKEY?
@@ -50,9 +80,44 @@ struct WSLSetup {
         guard result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND || result == ERROR_PATH_NOT_FOUND else {
             throw WindowsError.api("Read Windows restart state", DWORD(result))
         }
-        return WSLSetup(
+        var setup = WSLSetup(
             runtimeInstalled: runtime, ubuntuInstalled: ubuntu,
             restartPending: result == ERROR_SUCCESS, distributions: LinuxDistribution.installed())
+        if checkBoot && (runtime || ubuntu || setup.distributions.contains(where: { $0.version == 2 })) {
+            setup.virtualizationBootFailure = readBootDiagnostic()
+        }
+        return setup
+    }
+    /// A specific Hyper-V boot failure is authoritative; PF_VIRT_FIRMWARE_ENABLED alone is not.
+    /// Hyper-V can own VMX even when that processor flag is false. Read one matching event only.
+    static func readBootDiagnostic() -> Bool? {
+        do { return try virtualizationFailedThisBoot() } catch {
+            Diagnostics.write("WSL boot diagnostics unavailable: \(error)")
+            return nil
+        }
+    }
+    private static func virtualizationFailedThisBoot(provider: String = "Microsoft-Windows-Hyper-V-Hypervisor") throws
+        -> Bool
+    {
+        // ponytail: wall-clock/uptime window with 60s slack; correlate boot records if clock-jump reports require it.
+        let query =
+            "*[System[Provider[@Name='\(provider)'] and EventID=41 and TimeCreated[timediff(@SystemTime) >= -60000 and timediff(@SystemTime) <= \(GetTickCount64() + 60000)]]]"
+        let handle = withWideString("System") { path in
+            withWideString(query) {
+                EvtQuery(nil, path, $0, DWORD(EvtQueryChannelPath.rawValue | EvtQueryReverseDirection.rawValue))
+            }
+        }
+        guard let handle else { throw WindowsError.api("Read Hyper-V startup diagnostics", GetLastError()) }
+        defer { EvtClose(handle) }
+        var event: EVT_HANDLE?
+        var returned: DWORD = 0
+        if EvtNext(handle, 1, &event, 2000, 0, &returned) {
+            if let event { EvtClose(event) }
+            return returned == 1
+        }
+        let error = GetLastError()
+        if error == DWORD(ERROR_NO_MORE_ITEMS) { return false }
+        throw WindowsError.api("Read Hyper-V startup event", error)
     }
     private static func hasPackage(_ family: String) throws -> Bool {
         var count: UINT32 = 0
@@ -144,6 +209,13 @@ struct WSLSetup {
         let ready = WSLSetup(
             runtimeInstalled: false, ubuntuInstalled: false, restartPending: true, distributions: [user])
         try expect(ready.title == "Choose a Linux distribution", "registered inbox/imported WSL without Store packages")
+        var blocked = ready
+        blocked.virtualizationBootFailure = true
+        try expect(
+            blocked.title == "Hardware virtualization unavailable", "boot failure takes precedence over registration")
+        try expect(
+            try !virtualizationFailedThisBoot(provider: "SwiftyToys.NonexistentTestProvider"),
+            "healthy event-log no-match path")
         RegCloseKey(key)
         opened = nil
         let deleted = withWideString(fixturePath) { RegDeleteKeyW(HKEY_CURRENT_USER, $0) }

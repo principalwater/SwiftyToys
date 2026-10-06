@@ -27,8 +27,11 @@ final class SettingsWindow {
     private var page = 0
     private var scrollOffset: Int32 = 0
     private var keyboard: KeyboardConfiguration
+    private var presentingActionError = false
     private var distributions: [LinuxDistribution] = []
     private var ubuntuInstalled = false
+    private var wslVirtualizationBlocked = false
+    private let wslBootDiagnostic = WSLBootDiagnostic()
     private var displays: [DisplayOutput] = []
     private var languages: [UInt16] = []
     private let localization = Localization()
@@ -190,6 +193,7 @@ final class SettingsWindow {
             }
             if page == 7, let combo = controls[502], let install = controls[511] {
                 // Selection events must disable WSL 1 and enable WSL 2 without starting Linux.
+                wslVirtualizationBlocked = false
                 distributions = [LinuxDistribution(name: "Legacy", version: 1), LinuxDistribution(name: "Ubuntu", version: 2)]
                 SendMessageW(combo, UINT(CB_RESETCONTENT), 0, 0)
                 for name in ["Legacy", "Ubuntu"] { _ = withWideString(name) { SendMessageW(combo, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0))) } }
@@ -198,6 +202,10 @@ final class SettingsWindow {
                     SendMessageW(window, UINT(WM_COMMAND), WPARAM(502 | Int(CBN_SELCHANGE) << 16), LPARAM(Int(bitPattern: combo)))
                     guard IsWindowEnabled(install) == enabled else { throw WindowsError.unsupported("Homebrew selection readiness failed.") }
                 }
+                SendMessageW(combo, UINT(CB_SETCURSEL), 1, 0)
+                wslVirtualizationBlocked = true
+                updateHomebrewAvailability()
+                guard !IsWindowEnabled(install) else { throw WindowsError.unsupported("Blocked virtualization enabled Homebrew.") }
                 renderPage()
             }
         }
@@ -297,10 +305,25 @@ final class SettingsWindow {
     }
     private func setText(_ handle: HWND, _ text: String) { _ = withWideString(text) { SetWindowTextW(handle, $0) } }
     private func status(_ text: String) { if let handle = controls[99] { setText(handle, localization.text(text)) } }
+    func showActionError(_ error: Error) {
+        let message = String(describing: error)
+        status(message)
+        guard !preview, !presentingActionError else { return }
+        if case WindowsError.api(_, DWORD(ERROR_CANCELLED)) = error { return }
+        presentingActionError = true
+        defer { presentingActionError = false }
+        let focus = GetFocus()
+        defer { if let focus, IsWindow(focus), IsWindowEnabled(focus) { SetFocus(focus) } }
+        let whole = localization.text(message)
+        let translated = whole == message ? message.split(whereSeparator: \.isNewline).map { localization.text(String($0)) }.joined(separator: "\n\n") : whole
+        _ = withWideString(translated) { body in
+            withWideString(localization.text("Action could not be completed")) { MessageBoxW(window, body, $0, UINT(MB_OK | MB_ICONERROR)) }
+        }
+    }
     private func updateHomebrewAvailability() {
         let index = controls[502].map { Int(SendMessageW($0, UINT(CB_GETCURSEL), 0, 0)) } ?? -1
         if let control = controls[511] {
-            EnableWindow(control, distributions.indices.contains(index) && distributions[index].canInstallHomebrew)
+            EnableWindow(control, !wslVirtualizationBlocked && distributions.indices.contains(index) && distributions[index].canInstallHomebrew)
         }
     }
     private func tileState(_ page: Int) -> String {
@@ -409,7 +432,7 @@ final class SettingsWindow {
             edit("", 303, 300, 452, 202)
             label("New shortcut or action", 304, 520, 422, 280, 25)
             combo(
-                ["Switch language", "Pin window", "Minimize window", "Disable key", "Ctrl+C", "Alt+Tab"], 305, 520, 452, 238,
+                ["Switch language", "Pin window", "Minimize window", "Lock screen", "Sleep", "Disable key", "Ctrl+C", "Alt+Tab"], 305, 520, 452, 238,
                 editable: true)
             label("App (empty = all)", 306, 777, 422, 220, 25)
             edit("", 307, 777, 452, 187)
@@ -511,16 +534,23 @@ final class SettingsWindow {
         case 7:
             let setup: WSLSetup?
             var failure = ""
-            do { setup = try WSLSetup.current() } catch { setup = nil; failure = String(describing: error) }
+            do {
+                var value = try WSLSetup.current(checkBoot: false)
+                value.virtualizationBootFailure = wslBootDiagnostic.result
+                setup = value
+                if !preview { wslBootDiagnostic.start(destination: MessageDestination(window)) }
+            } catch { setup = nil; failure = String(describing: error) }
             distributions = setup?.distributions ?? LinuxDistribution.installed()
             ubuntuInstalled = setup?.ubuntuInstalled ?? false
+            wslVirtualizationBlocked = setup?.virtualizationBootFailure == true
             label(
                 setup?.title ?? "WSL status unavailable", 500, 300, 170, 660,
                 40, large: true)
             label(
                 setup?.detail ?? failure,
-                501, 300, 228, 650, 74)
+                501, 300, 228, 650, 90)
             combo(distributions.map { $0.version == 0 ? "\($0.name) (\(localization.text("WSL version unavailable")))" : "\($0.name) (WSL \($0.version))" }, 502, 300, 326, 450)
+            if let control = controls[502] { EnableWindow(control, !distributions.isEmpty) }
             button("Refresh list", 503, 772, 324, 192)
             button("Install WSL components", 510, 300, 393, 282)
             button("Install Ubuntu", 514, 604, 393, 278)
@@ -588,6 +618,19 @@ final class SettingsWindow {
     }
     fileprivate func handle(_ window: HWND, _ message: UINT, _ value: WPARAM, _ data: LPARAM) -> LRESULT {
         switch message {
+        case wslBootResultMessage:
+            if page == 7, IsWindowVisible(window) {
+                do {
+                    var value = try WSLSetup.current(checkBoot: false)
+                    value.virtualizationBootFailure = wslBootDiagnostic.result
+                    wslVirtualizationBlocked = value.virtualizationBootFailure == true
+                    if let control = controls[500] { setText(control, localization.text(value.title)) }
+                    if let control = controls[501] { setText(control, localization.text(value.detail)) }
+                    updateHomebrewAvailability()
+                    if value.virtualizationBootFailure == nil { status("Boot diagnostics unavailable; package and distribution status is still shown.") }
+                } catch { status(String(describing: error)) }
+            }
+            return 0
         case UINT(WM_CLOSE):
             ShowWindow(window, Int32(SW_HIDE))
             if preview {
@@ -646,7 +689,7 @@ final class SettingsWindow {
                         try localization.select(languagePacks[index], persist: !preview); renderPage()
                         if let control = controls[621] { SetFocus(control) }
                     }
-                    catch { status(String(describing: error)) }
+                    catch { showActionError(error) }
                 }
                 return 0
             }
@@ -822,7 +865,7 @@ final class SettingsWindow {
                     guard modes.indices.contains(selected) else { throw WindowsError.unsupported("Invalid brightness mode.") }
                     status(try command(id, [modes[selected]]))
                 }
-            } catch { status(String(describing: error)) }
+            } catch { showActionError(error) }
             return 0
         case UINT(WM_HSCROLL):
             if let slider = controls[211] {

@@ -9,9 +9,13 @@ func runCLI(_ args: [String]) throws -> Int32 {
     Console.attach()
     let command = args[0].lowercased()
     if command == "--test-wsl" { try WSLSetup.selfCheck(); return 0 }
+    if command == "--test-errors" { try WindowsError.selfCheck(); return 0 }
+    if command == "--test-power" { try DesktopPower.selfCheck(); return 0 }
+    if command == "--test-keyboard-config" { try KeyboardConfiguration.selfCheck(); return 0 }
     if command == "--wsl-info" {
         let setup = try WSLSetup.current()
         Console.writeLine(setup.title + "\n" + setup.detail)
+        Console.writeLine("VMX boot failure: " + (setup.virtualizationBootFailure.map { $0 ? "confirmed" : "not detected" } ?? "unavailable"))
         Console.writeLine("WSL package: \(setup.runtimeInstalled); Ubuntu package: \(setup.ubuntuInstalled); Windows restart pending: \(setup.restartPending); registered Linux distributions: \(setup.distributions.count)")
         return 0
     }

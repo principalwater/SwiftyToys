@@ -33,6 +33,7 @@ final class TrayApplication {
     private var applyingMouseScroll = false
     private var dashboard: SettingsWindow?
     private let tools = DesktopTools()
+    private let sleepGate = HardwareGate()
     private var systemIndicator: SystemIndicator?
     private var tray = NOTIFYICONDATAW()
     private var trayAdded = false
@@ -170,7 +171,15 @@ final class TrayApplication {
                 dashboard?.updateScrolling(vertical: data & 1 != 0, horizontal: data & 2 != 0, result: "Could not read or save the mouse state. Verify Windows mouse direction.")
             }
             return 0
+        case sleepResultMessage:
+            guard !exiting, value != 0 else { return 0 }
+            let error = WindowsError.api("Put computer to sleep", DWORD(truncatingIfNeeded: value))
+            Diagnostics.write("sleep: \(error)")
+            do { try showDashboard(); dashboard?.showActionError(error) }
+            catch { Diagnostics.write("show power error: \(error)") }
+            return 0
         case toyActionMessage:
+            guard !exiting else { return 0 }
             do {
                 if value == 1 {
                     try switchLanguage(in: HWND(bitPattern: Int(data)))
@@ -191,8 +200,32 @@ final class TrayApplication {
                 } else if value == 7 {
                     try reloadRemapper()
                     dashboard?.refreshLanguages(result: data == 1 ? "Apple input profiles updated." : "Windows could not update input profiles. Verify language settings.")
+                } else if value == 8 {
+                    try DesktopPower.lock()
+                } else if value == 9 {
+                    guard sleepGate.busy.withLock({ busy in if busy { return false }; busy = true; return true }) else { return 0 }
+                    let destination = MessageDestination(window)
+                    let gate = sleepGate
+                    do {
+                        _ = try NativeThread(name: "SwiftyToys sleep") {
+                            defer { gate.busy.withLock { $0 = false } }
+                            do { try DesktopPower.sleep() }
+                            catch {
+                                Diagnostics.write("sleep: \(error)")
+                                let code: DWORD
+                                if case WindowsError.api(_, let value) = error { code = value } else { code = DWORD(ERROR_GEN_FAILURE) }
+                                _ = destination.post(sleepResultMessage, value: Int(code == 0 ? DWORD(ERROR_GEN_FAILURE) : code))
+                            }
+                        }
+                    } catch { gate.busy.withLock { $0 = false }; throw error }
                 }
-            } catch { Diagnostics.write("desktop action: \(error)") }
+            } catch {
+                Diagnostics.write("desktop action: \(error)")
+                if value == 8 || value == 9 {
+                    do { try showDashboard(); dashboard?.showActionError(error) }
+                    catch { Diagnostics.write("show power error: \(error)") }
+                }
+            }
             return 0
         case brightnessMessage:
             guard !exiting else { return 0 }

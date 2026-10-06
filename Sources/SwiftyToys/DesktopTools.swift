@@ -1,5 +1,68 @@
 // SPDX-License-Identifier: MIT
 import WinSDK
+import WindowsDisplayABI
+
+let sleepResultMessage: UINT = 0x8032
+
+enum DesktopPower {
+    static func lock() throws(WindowsError) {
+        guard LockWorkStation() else { throw .api("Lock screen", GetLastError()) }
+    }
+    static func sleep() throws(WindowsError) {
+        try withShutdownPrivilege { () throws(WindowsError) in
+            // Request Sleep, preserve wake events and leave the user's power plan intact.
+            guard SetSuspendState(0, 0, 0) != 0 else { throw .api("Put computer to sleep", GetLastError()) }
+        }
+    }
+    private static func withShutdownPrivilege(_ action: () throws(WindowsError) -> Void) throws(WindowsError) {
+        var raw: HANDLE?
+        guard OpenProcessToken(GetCurrentProcess(), DWORD(TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY), &raw) else {
+            throw .api("Open power permission token", GetLastError())
+        }
+        let token = try OwnedHandle(raw)
+        var privilege = TOKEN_PRIVILEGES()
+        privilege.PrivilegeCount = 1
+        guard withWideString("SeShutdownPrivilege", { LookupPrivilegeValueW(nil, $0, &privilege.Privileges.Luid) }) else {
+            throw .api("Find sleep permission", GetLastError())
+        }
+        privilege.Privileges.Attributes = DWORD(SE_PRIVILEGE_ENABLED)
+        var previous = TOKEN_PRIVILEGES()
+        var length: DWORD = 0
+        SetLastError(0)
+        let adjusted = AdjustTokenPrivileges(token.raw, false, &privilege, DWORD(MemoryLayout<TOKEN_PRIVILEGES>.size), &previous, &length)
+        let error = GetLastError()
+        guard adjusted, error == DWORD(ERROR_SUCCESS) else { throw .api("Enable sleep permission", error) }
+        defer {
+            if previous.PrivilegeCount > 0 {
+                SetLastError(0)
+                let restored = AdjustTokenPrivileges(token.raw, false, &previous, 0, nil, nil)
+                let error = GetLastError()
+                if !restored || error != DWORD(ERROR_SUCCESS) { Diagnostics.write("Restore sleep permission: \(WindowsError.api("AdjustTokenPrivileges", error))") }
+            }
+        }
+        try action()
+    }
+    /// Exercises native permission acquisition/restoration without locking or suspending.
+    static func selfCheck() throws(WindowsError) {
+        let before = try shutdownPermissionEnabled()
+        try withShutdownPrivilege {}
+        guard try shutdownPermissionEnabled() == before else { throw .unsupported("Sleep permission restoration failed.") }
+        Console.writeLine("PASS: sleep permission acquired/restored; no lock or power transition requested")
+    }
+    private static func shutdownPermissionEnabled() throws(WindowsError) -> Bool {
+        var raw: HANDLE?
+        guard OpenProcessToken(GetCurrentProcess(), DWORD(TOKEN_QUERY), &raw) else { throw .api("Read sleep permission", GetLastError()) }
+        let token = try OwnedHandle(raw)
+        var privileges = PRIVILEGE_SET()
+        privileges.PrivilegeCount = 1
+        privileges.Control = DWORD(PRIVILEGE_SET_ALL_NECESSARY)
+        privileges.Privilege.Attributes = DWORD(SE_PRIVILEGE_ENABLED)
+        guard withWideString("SeShutdownPrivilege", { LookupPrivilegeValueW(nil, $0, &privileges.Privilege.Luid) }) else { throw .api("Find sleep permission", GetLastError()) }
+        var enabled: WindowsBool = false
+        guard PrivilegeCheck(token.raw, &privileges, &enabled) else { throw .api("Check sleep permission", GetLastError()) }
+        return enabled.boolValue
+    }
+}
 
 final class DesktopTools {
     private let pinProperty = "SwiftyToys.Pinned"
@@ -145,7 +208,15 @@ func shellOpen(_ target: String, arguments: String? = nil, elevated: Bool = fals
         }
     }
     guard Int(bitPattern: result) > 32 else {
-        throw WindowsError.unsupported("Windows could not open this action (\(Int(bitPattern: result))).")
+        let code = Int(bitPattern: result)
+        if GetLastError() == DWORD(ERROR_CANCELLED) { throw WindowsError.api("Open requested action", DWORD(ERROR_CANCELLED)) }
+        switch code {
+        case 2, 3, 5, 8, 11: throw WindowsError.api("Open requested action", DWORD(code))
+        case 0: throw WindowsError.api("Open requested action", DWORD(ERROR_NOT_ENOUGH_MEMORY))
+        case 26: throw WindowsError.api("Open requested action", DWORD(ERROR_SHARING_VIOLATION))
+        case 31: throw WindowsError.unsupported("No application is registered for this action. Install or enable the required application, then retry.")
+        default: throw WindowsError.unsupported("Windows could not open the requested application (shell error \(code)). Check its installation and close any unresponsive instance before retrying.")
+        }
     }
 }
 

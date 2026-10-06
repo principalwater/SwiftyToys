@@ -182,5 +182,21 @@
   "Windows has a restart pending. If WSL setup requested it, restart first.\nThen install Ubuntu for this Windows user and refresh this page.": "Windows ожидает перезагрузки. Если установщик WSL её запросил, сначала перезагрузите ПК.\nЗатем установите Ubuntu для текущего пользователя и обновите эту страницу.",
   "Install WSL components first and restart Windows if requested.\nThen install Ubuntu for this Windows user and complete its first launch.": "Сначала установите компоненты WSL и перезагрузите Windows, если потребуется.\nЗатем установите Ubuntu для текущего пользователя и завершите первый запуск.",
   "Follow the Windows component installer instructions. Restart if requested, then install Ubuntu for this user.": "Следуйте указаниям установщика компонентов Windows. При необходимости перезагрузите ПК, затем установите Ubuntu для текущего пользователя.",
-  "Ubuntu installs for this Windows user. When finished, open Linux setup and refresh.": "Ubuntu устанавливается для текущего пользователя Windows. После установки откройте настройку Linux и обновите список."
+  "Ubuntu installs for this Windows user. When finished, open Linux setup and refresh.": "Ubuntu устанавливается для текущего пользователя Windows. После установки откройте настройку Linux и обновите список.",
+  "Hardware virtualization unavailable": "Аппаратная виртуализация недоступна",
+  "Windows reports that Hyper-V could not start because VMX is disabled or unavailable.\nEnable virtualization in firmware or your supported boot configuration, then restart Windows and refresh.": "Windows сообщает, что Hyper-V не запустился: VMX отключён или недоступен.\nВключите виртуализацию в прошивке или поддерживаемой конфигурации загрузки, затем перезагрузите Windows и обновите статус.",
+  "Action could not be completed": "Не удалось выполнить действие",
+  "No application is registered for this action. Install or enable the required application, then retry.": "Для этого действия не зарегистрировано приложение. Установите или включите нужное приложение и повторите попытку.",
+  "Enable Virtual Machine Platform and virtualization in firmware or your supported boot configuration, then restart Windows.": "Включите Virtual Machine Platform и виртуализацию в прошивке или поддерживаемой конфигурации загрузки, затем перезагрузите Windows.",
+  "Install the Windows WSL components and restart Windows if requested.": "Установите компоненты WSL в Windows и перезагрузите систему, если потребуется.",
+  "Check permissions. If this action requests administrator consent, approve the Windows prompt.": "Проверьте права доступа. Если действие запрашивает разрешение администратора, подтвердите запрос Windows.",
+  "Check that the required file or component is installed, then retry.": "Проверьте, установлен ли нужный файл или компонент, затем повторите попытку.",
+  "The resource is busy. Finish the other operation, then retry.": "Ресурс занят. Завершите другую операцию и повторите попытку.",
+  "Close unused applications, then retry.": "Закройте ненужные приложения и повторите попытку.",
+  "Reconnect the affected device and refresh its status.": "Переподключите устройство и обновите его статус.",
+  "Retry when ready.": "Повторите попытку, когда будете готовы.",
+  "Boot diagnostics unavailable; package and distribution status is still shown.": "Диагностика загрузки недоступна; статус пакетов и дистрибутивов по-прежнему отображается.",
+  "Lock screen": "Заблокировать экран",
+  "Sleep": "Сон",
+  "Windows has not granted this account the required system permission. Ask the administrator to check user rights for this action.": "Windows не предоставила этой учётной записи нужное системное право. Попросите администратора проверить права пользователя для этого действия."
 }

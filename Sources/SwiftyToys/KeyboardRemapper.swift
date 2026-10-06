@@ -79,9 +79,16 @@ private func deliverAction(_ action: String, context: UnsafeMutablePointer<Remap
             return true
         } catch { return false }
     }
-    guard action == "pin window" || action == "minimize window" else { return false }
+    let command: Int
+    switch action {
+    case "pin window": command = 2
+    case "minimize window": command = 5
+    case "lock screen": command = 8
+    case "sleep": command = 9
+    default: return false
+    }
     return context.pointee.destination.post(
-        toyActionMessage, value: action == "minimize window" ? 5 : 2, data: foreground.map { Int(bitPattern: $0) } ?? 0)
+        toyActionMessage, value: command, data: foreground.map { Int(bitPattern: $0) } ?? 0)
 }
 private func deliverCaps(_ decision: CapsDecision, context: UnsafeMutablePointer<RemappingState>) -> Bool {
     if decision.toggleCaps { return emitTransitions([KeyTransition(20, down: true), KeyTransition(20, down: false)]) }

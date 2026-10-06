@@ -55,7 +55,7 @@ final class AMDControl {
     }
 
     private static func check(_ status: Int32, _ operation: String) throws(WindowsError) {
-        guard status == 0 else { throw .status(operation, status) }
+        guard status == 0 else { throw .unsupported("\(operation) failed (AMD ADL status \(status)). Check the AMD display driver and the selected physical SDR output.") }
     }
 
     func enumerate() throws -> [AMDOutput] {

@@ -1,4 +1,22 @@
-# Validation snapshot: 0.1.3
+# Validation snapshot: 0.1.5
+
+2026-10-06 release checks on Windows 10 build 19045 / MacPro6,1:
+
+15 KeyboardCore and 15 BrightnessCore checks pass. The checked executable is
+6,451,712 bytes, SHA-256
+`4F96FB2463A04AC839AFCC1A6EC6FCFD266A3D597D0C58A4651FAFF0C5F9DABF`.
+This is the packaged executable; all 12 native checks were repeated on that file.
+
+| Area | Current evidence | Limits |
+| --- | --- | --- |
+| Windows errors and WSL setup | Native Win32/HRESULT explanations, error domains, current-boot Event Log query and no-match path pass; settings preserve package/registration status if diagnostics fail | This boot reports Hyper-V VMX unavailable. Linux/Ubuntu first launch and Homebrew installation were deferred; no firmware or EFI changes were made |
+| Keyboard lock / Sleep | Portable engine checks both modifier sides/order, repeat suppression and editable alternative; native shutdown privilege acquisition/restoration and saved-profile round-trip/deletions pass without a power transition | Actual lock, Sleep and resume remain manual checks, including held keys/sign-in policy; Windows reports S3 available on this host |
+| Settings and shared runtime | All 10 English/Russian pages, WSL selection/blocking, storage/recovery, ABI, worker waits, mouse scope, device matching and layout API checks pass | Automated tests use the app's own controls and fixtures; they do not simulate physical device behavior |
+| Brightness | Existing display/recovery tests pass; earlier physical DDC/CI and cursor-dimming checks below remain the hardware evidence | Only a virtual streaming output is active during this release check. The app correctly retains the disconnected physical target and does not retarget it |
+| Mouse, keyboard and trackpad | Native mouhid direction remains vertical=1/horizontal=0; earlier user checks established Windows natural direction, LoL zoom, shortcuts and USB/Bluetooth gestures/reconnect | Those physical checks are not newly repeated by automation; original/USB-C trackpads and other Bluetooth radios remain unverified |
+| Distribution | Static Swift 6.4, -Osize, no Swift DLLs, System32-only imports; 6.5 MB EXE / 3 MB ZIP budgets enforced | Size and successful tests do not establish a CPU/latency improvement or universal macOS-equivalent feel |
+
+## Previously verified 0.1.3 behavior
 
 2026-10-06 update on the same MacPro6,1 / Windows 10 build 19045:
 
@@ -125,3 +143,22 @@ records a normal shutdown with output restoration. There is one resident and its
 watchdog. The user's current saved brightness is 55%; configuration remains intact.
 This validates the reported settings freeze fix on this hardware; it does not
 prove that every possible configuration or Windows system has been tested.
+# 0.1.5 release verification
+
+This snapshot separates automated checks, earlier physical confirmation and current
+hardware availability. It does not claim every device/model or configuration works.
+
+| Feature | Verified evidence | Limit |
+| --- | --- | --- |
+| Brightness, calibration and recovery | 15 portable brightness/storage tests; native storage/ABI checks; earlier user confirmed hardware-cursor dimming and responsive controls | Current session has only an active virtual streaming display; the saved physical output is disconnected and brightness is intentionally unavailable |
+| Mac keyboard/input languages | 14 portable keyboard tests; native input/profile checks; earlier user confirmed Ctrl+Space, held Command+Tab, Command+H without Start, bare Command and browser tab shortcuts | Physical behavior was confirmed before this error-handling change; remapping behavior is unchanged |
+| Natural mouse scrolling | Native registry/scope tests; current device flags remain vertical=1/horizontal=0; earlier Windows direction and game zoom confirmed | Vendor/injected wheels remain outside mouhid |
+| Magic Trackpad | Native matching and scoped repair-selection tests; existing driver status reads successfully; earlier USB/Bluetooth gestures and reconnection confirmed | Lightning model validated; other models and long sleep/wake remain untested |
+| Settings/localization | All 10 English/Russian pages, native controls, selector readiness and worker-wait regression pass | Tests use this app's own controls |
+| Windows errors | Win32/HRESULT explanations and recovery hints pass native checks | Unknown/vendor-specific errors retain their diagnostic code |
+| WSL/Homebrew | Native package/registry/VM-mode and boot-failure precedence checks; current Hyper-V VMX failure correctly reported | End-to-end Linux account/Homebrew installation is deferred on this firmware-blocked test host |
+| Desktop utilities | Native implementation retained; existing control/action paths build and settings validate | Pin/awake duration behavior is not newly physically exercised in this snapshot |
+
+The error-fix executable is below the 6.5 MB budget, links the official Swift
+runtime statically and restricts static DLL imports to System32. No firmware,
+EFI configuration or driver binding was changed during error diagnosis.

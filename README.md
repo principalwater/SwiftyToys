@@ -22,6 +22,9 @@ or Apple.
   rules/exclusions and pause. Ctrl+Space switches configured layouts; Command/Win+Tab
   cycles windows; Command editing/search/screenshot shortcuts and Option word navigation.
   Command/Win+H minimizes the active application window with the native Windows API.
+  Command+Ctrl+Q locks the session; Command+Ctrl+S requests Sleep through Windows.
+  Both actions are editable in the keyboard page. Sleep uses the account's existing
+  shutdown permission, preserves wake events and does not change the power plan.
   Command+Option+Left/Right maps to Ctrl+PageUp/PageDown for browser tabs. A shared
   Ctrl menu-mask pulse keeps mapped Command chords from opening Start; bare Command
   retains the Windows Start action.
@@ -113,7 +116,7 @@ SwiftyToys.exe --preview
 Settings: %LOCALAPPDATA%\SwiftyToys. The preview disables application actions and
 never captures a display or attaches input hooks. Keyboard rules are source,
 destination, optional executable name. Destinations also accept Switch language,
-Pin window and Disable key. Up to 64 rules and 32 application exclusions. No script
+Pin window, Minimize window, Lock screen, Sleep and Disable key. Up to 64 rules and 32 application exclusions. No script
 or arbitrary process commands execute from keyboard rules.
 
 ## Homebrew
@@ -127,6 +130,12 @@ Installation output remains visible until a key is pressed; launching an install
 does not imply that WSL or a Linux account is ready. Linux first launch runs as the
 current Windows user, separately from the elevated Windows component installation.
 The WSL 1/2 indicator reads the VM-mode flag, not the Lxss filesystem-format Version.
+If Hyper-V reports that VMX is disabled/unavailable during the current boot, the
+page explains the firmware/boot configuration requirement. A background worker reads
+Windows Event Log once per settings session; Refresh reads packages and registration.
+Unavailable boot diagnostics do not hide installed packages or prevent setup.
+Diagnostics do not start Linux or change firmware. WSL 2 still needs
+working hardware virtualization; having Windows packages installed is insufficient.
 
 Use initialized WSL 2 distributions. Ubuntu/Debian prerequisites can be installed
 with apt; other distributions need their package-manager prerequisites first.
