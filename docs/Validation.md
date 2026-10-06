@@ -2,10 +2,14 @@
 
 2026-10-06 release checks on Windows 10 build 19045 / MacPro6,1:
 
+15 KeyboardCore and 15 BrightnessCore checks pass. The checked executable is
+6,451,712 bytes, SHA-256
+`6FEBC8CFDDB5AB6F78BCFB61A7D54C5F1D30D0B7FA55D21763F625EBEE1B79C5`.
+
 | Area | Current evidence | Limits |
 | --- | --- | --- |
 | Windows errors and WSL setup | Native Win32/HRESULT explanations, error domains, current-boot Event Log query and no-match path pass; settings preserve package/registration status if diagnostics fail | This boot reports Hyper-V VMX unavailable. Linux/Ubuntu first launch and Homebrew installation were deferred; no firmware or EFI changes were made |
-| Keyboard lock / Sleep | Portable engine checks both modifier sides/order, repeat suppression and editable alternative; native shutdown privilege acquisition/restoration passes without a power transition | Actual lock, Sleep and resume remain manual checks; Windows power availability and account policy still apply |
+| Keyboard lock / Sleep | Portable engine checks both modifier sides/order, repeat suppression and editable alternative; native shutdown privilege acquisition/restoration and saved-profile round-trip/deletions pass without a power transition | Actual lock, Sleep and resume remain manual checks, including held keys/sign-in policy; Windows reports S3 available on this host |
 | Settings and shared runtime | All 10 English/Russian pages, WSL selection/blocking, storage/recovery, ABI, worker waits, mouse scope, device matching and layout API checks pass | Automated tests use the app's own controls and fixtures; they do not simulate physical device behavior |
 | Brightness | Existing display/recovery tests pass; earlier physical DDC/CI and cursor-dimming checks below remain the hardware evidence | Only a virtual streaming output is active during this release check. The app correctly retains the disconnected physical target and does not retarget it |
 | Mouse, keyboard and trackpad | Native mouhid direction remains vertical=1/horizontal=0; earlier user checks established Windows natural direction, LoL zoom, shortcuts and USB/Bluetooth gestures/reconnect | Those physical checks are not newly repeated by automation; original/USB-C trackpads and other Bluetooth radios remain unverified |
