@@ -221,8 +221,10 @@ final class TrayApplication {
                 }
             } catch {
                 Diagnostics.write("desktop action: \(error)")
-                do { try showDashboard(); dashboard?.showActionError(error) }
-                catch { Diagnostics.write("show action error: \(error)") }
+                if value == 8 || value == 9 {
+                    do { try showDashboard(); dashboard?.showActionError(error) }
+                    catch { Diagnostics.write("show power error: \(error)") }
+                }
             }
             return 0
         case brightnessMessage:

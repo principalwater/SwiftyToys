@@ -68,7 +68,7 @@ enum WindowsError: Error, Sendable, CustomStringConvertible {
             case DWORD(ERROR_DEVICE_NOT_CONNECTED): next = "Reconnect the affected device and refresh its status."
             case DWORD(ERROR_CANCELLED): next = "Retry when ready."
             case DWORD(ERROR_NOT_ALL_ASSIGNED), DWORD(ERROR_PRIVILEGE_NOT_HELD):
-                next = "Windows has not granted this account permission to put the computer to sleep. Ask the administrator to check the Shut down the system user right."
+                next = "Windows has not granted this account the required system permission. Ask the administrator to check user rights for this action."
             default: next = ""
             }
         }

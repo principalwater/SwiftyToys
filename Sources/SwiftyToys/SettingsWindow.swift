@@ -27,6 +27,7 @@ final class SettingsWindow {
     private var page = 0
     private var scrollOffset: Int32 = 0
     private var keyboard: KeyboardConfiguration
+    private var presentingActionError = false
     private var distributions: [LinuxDistribution] = []
     private var ubuntuInstalled = false
     private var wslVirtualizationBlocked = false
@@ -307,8 +308,10 @@ final class SettingsWindow {
     func showActionError(_ error: Error) {
         let message = String(describing: error)
         status(message)
-        guard !preview else { return }
+        guard !preview, !presentingActionError else { return }
         if case WindowsError.api(_, DWORD(ERROR_CANCELLED)) = error { return }
+        presentingActionError = true
+        defer { presentingActionError = false }
         let focus = GetFocus()
         defer { if let focus, IsWindow(focus), IsWindowEnabled(focus) { SetFocus(focus) } }
         let whole = localization.text(message)

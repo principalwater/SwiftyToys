@@ -198,5 +198,5 @@
   "Boot diagnostics unavailable; package and distribution status is still shown.": "Диагностика загрузки недоступна; статус пакетов и дистрибутивов по-прежнему отображается.",
   "Lock screen": "Заблокировать экран",
   "Sleep": "Сон",
-  "Windows has not granted this account permission to put the computer to sleep. Ask the administrator to check the Shut down the system user right.": "Windows не предоставила этой учётной записи право переводить компьютер в сон. Попросите администратора проверить право пользователя «Завершение работы системы»."
+  "Windows has not granted this account the required system permission. Ask the administrator to check user rights for this action.": "Windows не предоставила этой учётной записи нужное системное право. Попросите администратора проверить права пользователя для этого действия."
 }

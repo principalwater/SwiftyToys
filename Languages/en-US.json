@@ -198,5 +198,5 @@
   "Boot diagnostics unavailable; package and distribution status is still shown.": "Boot diagnostics unavailable; package and distribution status is still shown.",
   "Lock screen": "Lock screen",
   "Sleep": "Sleep",
-  "Windows has not granted this account permission to put the computer to sleep. Ask the administrator to check the Shut down the system user right.": "Windows has not granted this account permission to put the computer to sleep. Ask the administrator to check the Shut down the system user right."
+  "Windows has not granted this account the required system permission. Ask the administrator to check user rights for this action.": "Windows has not granted this account the required system permission. Ask the administrator to check user rights for this action."
 }
