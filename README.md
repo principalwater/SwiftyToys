@@ -144,7 +144,7 @@ and embeds the UI manifest. See [packaging](docs/Packaging.md) and
 without a reproducible benchmark. Driver and keyboard work use dedicated threads;
 the settings window currently shares the tray UI thread.
 See [requirements and remaining acceptance checks](docs/Requirements.md) and
-[measurement protocol](docs/Performance.md). 
+[measurement protocol](docs/Performance.md).
 
 ## Credits
 
