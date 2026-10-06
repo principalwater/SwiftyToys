@@ -31,10 +31,6 @@
   driver 27.20.14540.15002, Broadcom/Apple devices and Windows problem codes.
   Virtual display devices are excluded. No driver was updated from this inventory,
   and no "latest compatible" claim is made.
-- Axiom 27.3.0 and Xcode Build Skills 1.0.1 are verified enabled through marketplaces
-  in local Codex and Claude on Windows and Mac Studio. Newly copied Xcode skill
-  duplicates were backed up and removed from loose skill discovery. Existing
-  instructions/plugins are retained; shared/host optimization preferences are saved.
 - Short counter samples and their limits are recorded in Performance.md. CPU/RSS
   timing improvements, universal macOS feel and weakest-hardware support are not
   inferred from compilation or uncontrolled short samples.

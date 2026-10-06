@@ -144,9 +144,7 @@ and embeds the UI manifest. See [packaging](docs/Packaging.md) and
 without a reproducible benchmark. Driver and keyboard work use dedicated threads;
 the settings window currently shares the tray UI thread.
 See [requirements and remaining acceptance checks](docs/Requirements.md) and
-[measurement protocol](docs/Performance.md). Performance skills are maintained
-through Axiom / Xcode Build Skills marketplaces on the Windows and Mac Studio
-development hosts; Apple-specific tools stay scoped to macOS.
+[measurement protocol](docs/Performance.md). 
 
 ## Credits
 
