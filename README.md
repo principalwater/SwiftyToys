@@ -127,6 +127,10 @@ Installation output remains visible until a key is pressed; launching an install
 does not imply that WSL or a Linux account is ready. Linux first launch runs as the
 current Windows user, separately from the elevated Windows component installation.
 The WSL 1/2 indicator reads the VM-mode flag, not the Lxss filesystem-format Version.
+If Hyper-V reports that VMX is disabled/unavailable during the current boot, the
+page explains the firmware/boot configuration requirement. Refresh reads Windows
+Event Log metadata; it does not start Linux or change firmware. WSL 2 still needs
+working hardware virtualization; having Windows packages installed is insufficient.
 
 Use initialized WSL 2 distributions. Ubuntu/Debian prerequisites can be installed
 with apt; other distributions need their package-manager prerequisites first.

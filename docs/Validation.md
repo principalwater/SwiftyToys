@@ -125,3 +125,22 @@ records a normal shutdown with output restoration. There is one resident and its
 watchdog. The user's current saved brightness is 55%; configuration remains intact.
 This validates the reported settings freeze fix on this hardware; it does not
 prove that every possible configuration or Windows system has been tested.
+# 0.1.5 release verification
+
+This snapshot separates automated checks, earlier physical confirmation and current
+hardware availability. It does not claim every device/model or configuration works.
+
+| Feature | Verified evidence | Limit |
+| --- | --- | --- |
+| Brightness, calibration and recovery | 15 portable brightness/storage tests; native storage/ABI checks; earlier user confirmed hardware-cursor dimming and responsive controls | Current session has only an active virtual streaming display; the saved physical output is disconnected and brightness is intentionally unavailable |
+| Mac keyboard/input languages | 14 portable keyboard tests; native input/profile checks; earlier user confirmed Ctrl+Space, held Command+Tab, Command+H without Start, bare Command and browser tab shortcuts | Physical behavior was confirmed before this error-handling change; remapping behavior is unchanged |
+| Natural mouse scrolling | Native registry/scope tests; current device flags remain vertical=1/horizontal=0; earlier Windows direction and game zoom confirmed | Vendor/injected wheels remain outside mouhid |
+| Magic Trackpad | Native matching and scoped repair-selection tests; existing driver status reads successfully; earlier USB/Bluetooth gestures and reconnection confirmed | Lightning model validated; other models and long sleep/wake remain untested |
+| Settings/localization | All 10 English/Russian pages, native controls, selector readiness and worker-wait regression pass | Tests use this app's own controls |
+| Windows errors | Win32/HRESULT explanations and recovery hints pass native checks | Unknown/vendor-specific errors retain their diagnostic code |
+| WSL/Homebrew | Native package/registry/VM-mode and boot-failure precedence checks; current Hyper-V VMX failure correctly reported | End-to-end Linux account/Homebrew installation is deferred on this firmware-blocked test host |
+| Desktop utilities | Native implementation retained; existing control/action paths build and settings validate | Pin/awake duration behavior is not newly physically exercised in this snapshot |
+
+The error-fix executable is below the 6.5 MB budget, links the official Swift
+runtime statically and restricts static DLL imports to System32. No firmware,
+EFI configuration or driver binding was changed during error diagnosis.

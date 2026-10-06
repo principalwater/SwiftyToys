@@ -145,7 +145,16 @@ func shellOpen(_ target: String, arguments: String? = nil, elevated: Bool = fals
         }
     }
     guard Int(bitPattern: result) > 32 else {
-        throw WindowsError.unsupported("Windows could not open this action (\(Int(bitPattern: result))).")
+        let code = Int(bitPattern: result)
+        if GetLastError() == DWORD(ERROR_CANCELLED) { throw WindowsError.api("Open requested action", DWORD(ERROR_CANCELLED)) }
+        switch code {
+        case 2, 3, 5: throw WindowsError.api("Open requested action", DWORD(code))
+        case 0, 8: throw WindowsError.api("Open requested action", DWORD(ERROR_NOT_ENOUGH_MEMORY))
+        case 11: throw WindowsError.api("Open requested action", DWORD(ERROR_BAD_EXE_FORMAT))
+        case 26: throw WindowsError.api("Open requested action", DWORD(ERROR_SHARING_VIOLATION))
+        case 31: throw WindowsError.unsupported("No application is registered for this action. Install or enable the required application, then retry.")
+        default: throw WindowsError.unsupported("Windows could not open the requested application (shell error \(code)). Check its installation and close any unresponsive instance before retrying.")
+        }
     }
 }
 

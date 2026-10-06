@@ -182,5 +182,9 @@
   "Windows has a restart pending. If WSL setup requested it, restart first.\nThen install Ubuntu for this Windows user and refresh this page.": "Windows has a restart pending. If WSL setup requested it, restart first.\nThen install Ubuntu for this Windows user and refresh this page.",
   "Install WSL components first and restart Windows if requested.\nThen install Ubuntu for this Windows user and complete its first launch.": "Install WSL components first and restart Windows if requested.\nThen install Ubuntu for this Windows user and complete its first launch.",
   "Follow the Windows component installer instructions. Restart if requested, then install Ubuntu for this user.": "Follow the Windows component installer instructions. Restart if requested, then install Ubuntu for this user.",
-  "Ubuntu installs for this Windows user. When finished, open Linux setup and refresh.": "Ubuntu installs for this Windows user. When finished, open Linux setup and refresh."
+  "Ubuntu installs for this Windows user. When finished, open Linux setup and refresh.": "Ubuntu installs for this Windows user. When finished, open Linux setup and refresh.",
+  "Hardware virtualization unavailable": "Hardware virtualization unavailable",
+  "Windows reports that Hyper-V could not start because VMX is disabled or unavailable.\nEnable virtualization in firmware or your supported boot configuration, then restart Windows and refresh.": "Windows reports that Hyper-V could not start because VMX is disabled or unavailable.\nEnable virtualization in firmware or your supported boot configuration, then restart Windows and refresh.",
+  "Action could not be completed": "Action could not be completed",
+  "No application is registered for this action. Install or enable the required application, then retry.": "No application is registered for this action. Install or enable the required application, then retry."
 }

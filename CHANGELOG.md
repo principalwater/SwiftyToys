@@ -1,5 +1,18 @@
 # Changelog
 
+## SwiftyToys 0.1.5 — 2026-10-06
+
+- Show Windows' explanation of Win32/HRESULT/NTSTATUS failures and next steps for
+  common permission, missing-component, busy-resource, memory and device errors.
+- Show complete error details in an accessible native dialog after a failed
+  user action, preserving error codes and existing explicit recovery instructions.
+- Detect the current boot's Hyper-V VMX failure through the native Event Log API;
+  explain firmware/boot configuration requirements instead of repeating Ubuntu setup.
+- Keep Homebrew disabled when a confirmed virtualization failure prevents WSL 2.
+  Disable the empty distribution selector so it cannot obscure setup controls.
+- Add native error-readability and virtualization precedence/regression checks.
+  No firmware, EFI boot files or WSL distributions are modified by diagnostics.
+
 ## SwiftyToys 0.1.4 — 2026-10-06
 
 - Distinguish installed WSL/Ubuntu packages, a pending Windows restart and Ubuntu's

@@ -12,10 +12,67 @@ enum WindowsError: Error, Sendable, CustomStringConvertible {
 
     var description: String {
         switch self {
-        case .api(let operation, let code): "\(operation) failed (Win32 \(code))."
-        case .status(let operation, let code): "\(operation) failed (status \(UInt32(bitPattern: code)))."
+        case .api(let operation, let code): Self.describe(operation, code, kind: "Win32")
+        case .status(let operation, let code): Self.describe(operation, UInt32(bitPattern: code), kind: "status")
         case .unsupported(let reason): reason
         }
+    }
+    private static func describe(_ operation: String, _ code: DWORD, kind: String) -> String {
+        let win32 = code & 0xFFFF_0000 == 0x8007_0000 ? code & 0xFFFF : code
+        var buffer = [WCHAR](repeating: 0, count: 4096)
+        var count = FormatMessageW(
+            DWORD(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS), nil, win32, 0x0409, &buffer,
+            DWORD(buffer.count), nil)
+        if count == 0, let module = withWideString("ntdll.dll", { GetModuleHandleW($0) }) {
+            count = FormatMessageW(
+                DWORD(FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS), module, code, 0x0409, &buffer,
+                DWORD(buffer.count), nil)
+        }
+        let explanation = String(decoding: buffer.prefix(Int(count)), as: UTF16.self).split(whereSeparator: {
+            $0 == "\r" || $0 == "\n"
+        }).joined(separator: " ")
+        let message =
+            explanation.isEmpty
+            ? "\(operation) failed (\(kind) \(code))." : "\(operation): \(explanation) (\(kind) \(code))."
+        let next: String
+        switch code {
+        case 0x8037_0102, 0x8037_0114:
+            next =
+                "Enable Virtual Machine Platform and virtualization in firmware or your supported boot configuration, then restart Windows."
+        case 0x8007_019E:
+            next = "Install the Windows WSL components and restart Windows if requested."
+        default:
+            switch win32 {
+            case DWORD(ERROR_ACCESS_DENIED):
+                next = "Check permissions. If this action requests administrator consent, approve the Windows prompt."
+            case DWORD(ERROR_FILE_NOT_FOUND), DWORD(ERROR_PATH_NOT_FOUND):
+                next = "Check that the required file or component is installed, then retry."
+            case DWORD(ERROR_SHARING_VIOLATION), DWORD(ERROR_LOCK_VIOLATION):
+                next = "The resource is busy. Finish the other operation, then retry."
+            case DWORD(ERROR_NOT_ENOUGH_MEMORY), DWORD(ERROR_OUTOFMEMORY):
+                next = "Close unused applications, then retry."
+            case DWORD(ERROR_DEVICE_NOT_CONNECTED): next = "Reconnect the affected device and refresh its status."
+            case DWORD(ERROR_CANCELLED): next = "The action was cancelled. Retry when ready."
+            default: next = ""
+            }
+        }
+        return next.isEmpty ? message : message + "\n\n" + next
+    }
+    static func selfCheck() throws {
+        let denied = WindowsError.api("Open file", DWORD(ERROR_ACCESS_DENIED)).description
+        let status = WindowsError.status("Open file", Int32(bitPattern: 0x8007_0005)).description
+        guard denied.hasPrefix("Open file: "), status.hasPrefix("Open file: "),
+            WindowsError.unsupported("Retry the action.").description == "Retry the action."
+        else {
+            throw WindowsError.unsupported("Windows error readability check failed.")
+        }
+        guard
+            WindowsError.status("Start WSL", Int32(bitPattern: 0x8037_0102)).description.hasSuffix(
+                "then restart Windows.")
+        else {
+            throw WindowsError.unsupported("WSL recovery instruction check failed.")
+        }
+        Console.writeLine("PASS: readable Win32/HRESULT explanations and explicit recovery instructions preserved")
     }
 }
 /// Owns one Windows handle. Swift forbids accidental copies and double closes.
@@ -72,7 +129,8 @@ func waitForWindowEvent(_ event: HANDLE, timeout: DWORD) -> DWORD {
     while true {
         let now = GetTickCount64()
         let remaining = now < deadline ? DWORD(deadline - now) : 0
-        let result = MsgWaitForMultipleObjectsEx(1, &handle, remaining, DWORD(QS_SENDMESSAGE), DWORD(MWMO_INPUTAVAILABLE))
+        let result = MsgWaitForMultipleObjectsEx(
+            1, &handle, remaining, DWORD(QS_SENDMESSAGE), DWORD(MWMO_INPUTAVAILABLE))
         guard result == DWORD(WAIT_OBJECT_0) + 1 else { return result }
         var message = MSG()
         // PeekMessage dispatches sent messages; PM_QS_SENDMESSAGE leaves clicks/timers queued.

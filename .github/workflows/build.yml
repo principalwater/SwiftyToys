@@ -38,6 +38,11 @@ jobs:
         run: |
           $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-wsl' -Wait -PassThru -NoNewWindow
           if ($process.ExitCode -ne 0) { throw 'WSL setup state check failed' }
+      - name: Check actionable Windows errors
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-errors' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw 'Windows error readability check failed' }
       - name: Check native input-profile API without changing profiles
         shell: pwsh
         run: |
