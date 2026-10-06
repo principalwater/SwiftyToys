@@ -149,8 +149,10 @@ enum NativeMouseScrolling {
             var restorationFailed = false
             for index in changed {
                 let target = targets[index]
-                do { try setDirection(target.key, "FlipFlopWheel", target.vertical); try setDirection(target.key, "FlipFlopHScroll", target.horizontal) }
-                catch { restorationFailed = true }
+                for (name, value) in [("FlipFlopWheel", target.vertical), ("FlipFlopHScroll", target.horizontal)] {
+                    do { try setDirection(target.key, name, value) }
+                    catch { restorationFailed = true }
+                }
             }
             if restorationFailed { throw WindowsError.api("Mouse state requires verification after failed rollback", 3) }
             throw failure

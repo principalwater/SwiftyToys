@@ -5,8 +5,8 @@
 - 14 KeyboardCore and 15 BrightnessCore tests pass. Native ABI, storage/recovery,
   mouse registry scope, input-profile API resolution, Boot Camp ID matching,
   bounded sent-message worker waits and all 10 English/Russian settings pages pass.
-- The current prepared executable is 6,407,680 bytes, SHA-256
-  `9AF60E54173C3BD3B9018AAD5C54BBEA12F16278528260E36D8EC01A77B0F151`.
+- The current prepared executable is 6,411,264 bytes, SHA-256
+  `65729E124718E38B309AF4EDD97AC04086A41F5351E7E8354C8BE18AA45342E8`.
   It links Swift statically and verifies System32-only static DLL import resolution.
   Its Apple-layout GUI integration is prepared; the resident's preceding build is
   retained while the native mouse UAC prompt is pending.

@@ -15,6 +15,9 @@ enum AppleKeyboardLayouts {
         let status = withWideString("Keyboard Layout\\Preload") { RegOpenKeyExW(HKEY_CURRENT_USER, $0, 0, REGSAM(KEY_QUERY_VALUE), &key) }
         guard status == ERROR_SUCCESS, let key else { throw WindowsError.api("Read installed input profiles", DWORD(status)) }
         defer { RegCloseKey(key) }
+        var substitutes: HKEY?
+        _ = withWideString("Keyboard Layout\\Substitutes") { RegOpenKeyExW(HKEY_CURRENT_USER, $0, 0, REGSAM(KEY_QUERY_VALUE), &substitutes) }
+        defer { if let substitutes { RegCloseKey(substitutes) } }
         var ids: [String] = []
         for index in 1...16 {
             var buffer = Array(repeating: WCHAR(0), count: 32); var size = DWORD(buffer.count * 2); var type: DWORD = 0
@@ -22,8 +25,18 @@ enum AppleKeyboardLayouts {
                 buffer.withUnsafeMutableBytes { RegQueryValueExW(key, name, nil, &type, $0.baseAddress?.assumingMemoryBound(to: BYTE.self), &size) }
             }
             if read == ERROR_FILE_NOT_FOUND { break }
-            let id = String(decoding: buffer.prefix(while: { $0 != 0 }), as: UTF16.self).lowercased()
+            var id = String(decoding: buffer.prefix(while: { $0 != 0 }), as: UTF16.self).lowercased()
             guard read == ERROR_SUCCESS, type == REG_SZ, id.utf8.count == 8, UInt32(id, radix: 16) != nil else { throw WindowsError.unsupported("Unexpected input profile value.") }
+            if let substitutes {
+                buffer = Array(repeating: WCHAR(0), count: 32); size = DWORD(buffer.count * 2)
+                let replaced = withWideString(id) { name in
+                    buffer.withUnsafeMutableBytes { RegQueryValueExW(substitutes, name, nil, &type, $0.baseAddress?.assumingMemoryBound(to: BYTE.self), &size) }
+                }
+                if replaced == ERROR_SUCCESS {
+                    id = String(decoding: buffer.prefix(while: { $0 != 0 }), as: UTF16.self).lowercased()
+                    guard type == REG_SZ, id.utf8.count == 8, UInt32(id, radix: 16) != nil else { throw WindowsError.unsupported("Invalid input-profile substitution.") }
+                }
+            }
             ids.append(id)
         }
         return ids
@@ -52,14 +65,15 @@ enum AppleKeyboardLayouts {
         }
         try withAPI { install in
             let previous = try preload()
-            let original = previous.filter { standard.contains($0) }
+            let original = previous.filter { standard.contains($0) || apple.contains($0) }
+            let removed = original.filter { !selected.contains($0) }
             let added = selected.filter { !previous.contains($0) }
             let backup = try NativeFiles.path("apple-layouts-backup.json")
             if try !NativeFiles.exists(backup) {
                 try NativeFiles.write(StateJSON.encode(["original": .string(original.joined(separator: ",")), "added": .string(added.joined(separator: ","))]), to: backup)
             }
             guard withWideString(tips(selected), { install($0, 0) }) != 0 else { throw WindowsError.unsupported("Windows could not enable the Apple layouts.") }
-            guard original.isEmpty || withWideString(tips(original), { install($0, 1) }) != 0 else {
+            guard removed.isEmpty || withWideString(tips(removed), { install($0, 1) }) != 0 else {
                 _ = withWideString(tips(original)) { install($0, 0) }
                 throw WindowsError.unsupported("Apple layouts added; Windows could not disable the previous profiles. Verify Windows language settings.")
             }
@@ -70,7 +84,7 @@ enum AppleKeyboardLayouts {
         let fields = try StateJSON.decode(NativeFiles.read(NativeFiles.path("apple-layouts-backup.json")))
         guard let oldText = fields["original"]?.string, let addedText = fields["added"]?.string else { throw WindowsError.unsupported("Invalid Apple layout backup.") }
         let original = oldText.split(separator: ",").map(String.init); let added = addedText.split(separator: ",").map(String.init)
-        guard original.count <= 3, added.count <= 2, original.allSatisfy(standard.contains), added.allSatisfy(apple.contains) else { throw WindowsError.unsupported("Unexpected layouts in recovery backup.") }
+        guard original.count <= 6, added.count <= 2, original.allSatisfy({ standard.contains($0) || apple.contains($0) }), added.allSatisfy(apple.contains) else { throw WindowsError.unsupported("Unexpected layouts in recovery backup.") }
         try withAPI { install in
             guard original.isEmpty || withWideString(tips(original), { install($0, 0) }) != 0,
                 added.isEmpty || withWideString(tips(added), { install($0, 1) }) != 0 else { throw WindowsError.unsupported("Windows could not restore input profiles. Backup retained.") }

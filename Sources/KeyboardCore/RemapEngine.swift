@@ -182,20 +182,24 @@ public struct RemapEngine {
     }
     private func matchingSingle(_ key: UInt16, application: String) -> RemapRule? {
         // ponytail: bounded scan of 64 rules; index by key only if profiling requires it.
-        let matches = rules.lazy.filter {
-            $0.source.modifiers == 0 && KeyChord.matches($0.source.key, key)
-                && ($0.target?.modifiers == 0 || $0.action == "disable key")
-                && ($0.application.isEmpty || $0.application == application)
+        var global: RemapRule?
+        for rule in rules where rule.source.modifiers == 0 && KeyChord.matches(rule.source.key, key)
+            && (rule.target?.modifiers == 0 || rule.action == "disable key")
+            && (rule.application.isEmpty || rule.application == application) {
+            if !rule.application.isEmpty { return rule }
+            if global == nil { global = rule }
         }
-        return matches.first { !$0.application.isEmpty } ?? matches.first
+        return global
     }
     private func matchingShortcut(_ key: UInt16, modifiers: UInt8, application: String) -> RemapRule? {
-        let matches = rules.lazy.filter {
-            $0.source.modifiers == modifiers && KeyChord.matches($0.source.key, key)
-                && ($0.application.isEmpty || $0.application == application)
-                && !($0.source.modifiers == 0 && $0.target?.modifiers == 0)
+        var global: RemapRule?
+        for rule in rules where rule.source.modifiers == modifiers && KeyChord.matches(rule.source.key, key)
+            && (rule.application.isEmpty || rule.application == application)
+            && !(rule.source.modifiers == 0 && rule.target?.modifiers == 0) {
+            if !rule.application.isEmpty { return rule }
+            if global == nil { global = rule }
         }
-        return matches.first { !$0.application.isEmpty } ?? matches.first
+        return global
     }
     private func targetModifiers(_ mask: UInt8) -> Set<UInt16> {
         Set([(UInt8(8), UInt16(91)), (2, 162), (1, 164), (4, 160)].compactMap { mask & $0.0 == 0 ? nil : $0.1 })
