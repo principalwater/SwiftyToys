@@ -2,6 +2,11 @@
 
 ## SwiftyToys 0.1.5 — 2026-10-06
 
+- Add editable Command+Ctrl+Q → Lock screen and Command+Ctrl+S → Sleep defaults.
+  Use native LockWorkStation/SetSuspendState; keep Sleep off the UI thread and
+  restore the account's original shutdown privilege after the request returns.
+  Existing standard Mac profiles gain the shortcuts; customized profiles are preserved.
+  Record the preset version on Save so deleted defaults do not reappear on restart.
 - Show Windows' explanation of Win32/HRESULT/NTSTATUS failures and next steps for
   common permission, missing-component, busy-resource, memory and device errors.
 - Show complete error details in an accessible native dialog after a failed

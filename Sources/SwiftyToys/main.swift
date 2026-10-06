@@ -10,6 +10,8 @@ func runCLI(_ args: [String]) throws -> Int32 {
     let command = args[0].lowercased()
     if command == "--test-wsl" { try WSLSetup.selfCheck(); return 0 }
     if command == "--test-errors" { try WindowsError.selfCheck(); return 0 }
+    if command == "--test-power" { try DesktopPower.selfCheck(); return 0 }
+    if command == "--test-keyboard-config" { try KeyboardConfiguration.selfCheck(); return 0 }
     if command == "--wsl-info" {
         let setup = try WSLSetup.current()
         Console.writeLine(setup.title + "\n" + setup.detail)

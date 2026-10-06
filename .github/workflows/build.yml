@@ -48,6 +48,16 @@ jobs:
         run: |
           $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-apple-layouts' -Wait -PassThru -NoNewWindow
           if ($process.ExitCode -ne 0) { throw 'Native input-profile check failed' }
+      - name: Check native sleep permission without changing power state
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-power' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw 'Native sleep permission check failed' }
+      - name: Check Mac preset migration and saved edits
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-keyboard-config' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw 'Mac preset migration check failed' }
       - name: Check native ABI
         shell: pwsh
         run: |

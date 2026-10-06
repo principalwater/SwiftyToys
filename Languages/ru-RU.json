@@ -195,5 +195,8 @@
   "Close unused applications, then retry.": "Закройте ненужные приложения и повторите попытку.",
   "Reconnect the affected device and refresh its status.": "Переподключите устройство и обновите его статус.",
   "Retry when ready.": "Повторите попытку, когда будете готовы.",
-  "Boot diagnostics unavailable; package and distribution status is still shown.": "Диагностика загрузки недоступна; статус пакетов и дистрибутивов по-прежнему отображается."
+  "Boot diagnostics unavailable; package and distribution status is still shown.": "Диагностика загрузки недоступна; статус пакетов и дистрибутивов по-прежнему отображается.",
+  "Lock screen": "Заблокировать экран",
+  "Sleep": "Сон",
+  "Windows has not granted this account permission to put the computer to sleep. Ask the administrator to check the Shut down the system user right.": "Windows не предоставила этой учётной записи право переводить компьютер в сон. Попросите администратора проверить право пользователя «Завершение работы системы»."
 }

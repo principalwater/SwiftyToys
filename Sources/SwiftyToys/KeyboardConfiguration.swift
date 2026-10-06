@@ -15,11 +15,18 @@ struct KeyboardConfiguration: Sendable {
     var languagePair: [UInt16] = []
     init() throws {
         let file = try NativeFiles.path("keyboard.ini")
-        guard try NativeFiles.exists(file) else { return }
+        try self.init(contents: NativeFiles.exists(file) ? NativeFiles.text(file) : nil)
+    }
+    init(contents: String?) throws {
+        guard let contents else { return }
         rules = []
-        for line in try NativeFiles.text(file).split(whereSeparator: \.isNewline) {
+        var presetVersion = 0
+        for line in contents.split(whereSeparator: \.isNewline) {
             if line.hasPrefix("enabled=") {
                 enabled = line == "enabled=1"
+            } else if line.hasPrefix("macPresetVersion=") {
+                guard let version = Int(line.dropFirst(17)), (0...1).contains(version) else { throw WindowsError.unsupported("Unsupported Mac preset version.") }
+                presetVersion = version
             } else if line.hasPrefix("reverseVertical=") {
                 reverseVertical = line == "reverseVertical=1"
             } else if line.hasPrefix("reverseHorizontal=") {
@@ -55,8 +62,8 @@ struct KeyboardConfiguration: Sendable {
             }
         }
         let preset = RemapRule.macPreset
-        let additions: Set<String> = ["Win+H", "Win+Alt+Left", "Win+Alt+Right"]
-        if rules.filter({ !additions.contains($0.source.description) }) == preset.filter({ !additions.contains($0.source.description) }) {
+        let additions: Set<String> = ["Win+H", "Win+Alt+Left", "Win+Alt+Right", "Win+Ctrl+Q", "Win+Ctrl+S"]
+        if presetVersion == 0, rules.filter({ !additions.contains($0.source.description) }) == preset.filter({ !additions.contains($0.source.description) }) {
             rules += preset.filter { candidate in additions.contains(candidate.source.description) && !rules.contains(where: { $0.source == candidate.source }) }
         }
     }
@@ -81,7 +88,7 @@ struct KeyboardConfiguration: Sendable {
         }
         let text =
             ([
-                "# SwiftyToys keyboard rules: source<TAB>destination<TAB>executable", "enabled=\(enabled ? 1 : 0)",
+                "# SwiftyToys keyboard rules: source<TAB>destination<TAB>executable", "enabled=\(enabled ? 1 : 0)", "macPresetVersion=1",
                 "reverseVertical=\(reverseVertical ? 1 : 0)", "reverseHorizontal=\(reverseHorizontal ? 1 : 0)",
                 "smartCaps=\(smartCaps ? 1 : 0)", "capsThreshold=\(capsThreshold)", "capsAction=\(capsAction)",
                 "languageMode=\(languageMode)", "languagePair=\(languagePair.map(String.init).joined(separator:","))",
@@ -91,5 +98,16 @@ struct KeyboardConfiguration: Sendable {
             + "\r\n"
         guard text.utf8.count <= 32767 else { throw WindowsError.unsupported("Keyboard configuration is too large.") }
         try NativeFiles.write(Array(text.utf8), to: NativeFiles.path("keyboard.ini"))
+    }
+    static func selfCheck() throws {
+        let powerSources: Set<String> = ["Win+Ctrl+Q", "Win+Ctrl+S"]
+        let legacy = RemapRule.macPreset.filter { !powerSources.contains($0.source.description) }
+        let contents = legacy.map { "\($0.source.description)\t\($0.destination)\t\($0.application)" }.joined(separator: "\n")
+        let customized = "Win+C\tCtrl+X\t\n" + legacy.filter { $0.source.description != "Win+C" }.map { "\($0.source.description)\t\($0.destination)\t\($0.application)" }.joined(separator: "\n")
+        guard try KeyboardConfiguration(contents: contents).rules.count == RemapRule.macPreset.count,
+            try KeyboardConfiguration(contents: "macPresetVersion=1\n" + contents).rules == legacy,
+            try KeyboardConfiguration(contents: customized).rules.count == legacy.count
+        else { throw WindowsError.unsupported("Mac preset migration did not preserve edited rules.") }
+        Console.writeLine("PASS: legacy Mac preset upgrade, saved deletions and customized rules preserved")
     }
 }

@@ -3,6 +3,22 @@ import KeyboardCore
 import Testing
 
 struct RemappingTests {
+    @Test func commandControlPowerActionsRunOnceWithoutSyntheticKeys() throws {
+        for (key, action) in [(UInt16(81), "lock screen"), (83, "sleep")] {
+            for modifiers in [[UInt16(91), 162], [163, 92]] {
+                var engine = RemapEngine(rules: RemapRule.macPreset)
+                for modifier in modifiers { #expect(engine.process(key: modifier, down: true).suppress == false) }
+                let result = engine.process(key: key, down: true)
+                #expect(result.action == action)
+                #expect(result.suppress && result.events.isEmpty)
+                #expect(engine.process(key: key, down: true).action == nil)
+                #expect(engine.process(key: key, down: false).suppress)
+                for modifier in modifiers.reversed() { #expect(engine.process(key: modifier, down: false).suppress == false) }
+                #expect(engine.release().isEmpty)
+            }
+        }
+        #expect(try RemapRule(from: "Ctrl+Option+Cmd+S", to: "Sleep").action == "sleep")
+    }
     @Test func applicationRuleTakesPriorityWithoutChangingFirstMatchOrder() throws {
         var engine = RemapEngine(rules: [
             try RemapRule(from: "Win+C", to: "Ctrl+C"),

@@ -304,7 +304,7 @@ final class SettingsWindow {
     }
     private func setText(_ handle: HWND, _ text: String) { _ = withWideString(text) { SetWindowTextW(handle, $0) } }
     private func status(_ text: String) { if let handle = controls[99] { setText(handle, localization.text(text)) } }
-    private func showActionError(_ error: Error) {
+    func showActionError(_ error: Error) {
         let message = String(describing: error)
         status(message)
         guard !preview else { return }
@@ -429,7 +429,7 @@ final class SettingsWindow {
             edit("", 303, 300, 452, 202)
             label("New shortcut or action", 304, 520, 422, 280, 25)
             combo(
-                ["Switch language", "Pin window", "Minimize window", "Disable key", "Ctrl+C", "Alt+Tab"], 305, 520, 452, 238,
+                ["Switch language", "Pin window", "Minimize window", "Lock screen", "Sleep", "Disable key", "Ctrl+C", "Alt+Tab"], 305, 520, 452, 238,
                 editable: true)
             label("App (empty = all)", 306, 777, 422, 220, 25)
             edit("", 307, 777, 452, 187)

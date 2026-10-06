@@ -195,5 +195,8 @@
   "Close unused applications, then retry.": "Close unused applications, then retry.",
   "Reconnect the affected device and refresh its status.": "Reconnect the affected device and refresh its status.",
   "Retry when ready.": "Retry when ready.",
-  "Boot diagnostics unavailable; package and distribution status is still shown.": "Boot diagnostics unavailable; package and distribution status is still shown."
+  "Boot diagnostics unavailable; package and distribution status is still shown.": "Boot diagnostics unavailable; package and distribution status is still shown.",
+  "Lock screen": "Lock screen",
+  "Sleep": "Sleep",
+  "Windows has not granted this account permission to put the computer to sleep. Ask the administrator to check the Shut down the system user right.": "Windows has not granted this account permission to put the computer to sleep. Ask the administrator to check the Shut down the system user right."
 }
