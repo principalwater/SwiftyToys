@@ -524,8 +524,8 @@ final class SettingsWindow {
             button("Refresh list", 503, 772, 324, 192)
             button("Install WSL components", 510, 300, 393, 282)
             button("Install Ubuntu", 514, 604, 393, 278)
-            button("Install Homebrew", 511, 604, 441, 278)
             button("Open Linux setup", 513, 300, 441, 282)
+            button("Install Homebrew", 511, 604, 441, 278)
             if let control = controls[513] { EnableWindow(control, ubuntuInstalled || !distributions.isEmpty) }
             updateHomebrewAvailability()
             label(

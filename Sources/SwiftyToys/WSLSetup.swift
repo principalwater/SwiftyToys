@@ -99,14 +99,17 @@ struct WSLSetup {
         let fixturePath = "Software\\SwiftyToys.WSLTest-\(GetCurrentProcessId())-\(GetTickCount64())"
         var opened: HKEY?
         let created = withWideString(fixturePath) {
-            RegCreateKeyExW(HKEY_CURRENT_USER, $0, 0, nil, 0, REGSAM(0x2001F), nil, &opened, nil)
+            RegCreateKeyExW(
+                HKEY_CURRENT_USER, $0, 0, nil, DWORD(REG_OPTION_VOLATILE), REGSAM(0x2001F), nil, &opened, nil)
         }
         guard created == ERROR_SUCCESS, let key = opened else {
             throw WindowsError.api("Create WSL test fixture", DWORD(created))
         }
         defer {
-            RegCloseKey(key)
-            _ = withWideString(fixturePath) { RegDeleteKeyW(HKEY_CURRENT_USER, $0) }
+            if let opened {
+                RegCloseKey(opened)
+                _ = withWideString(fixturePath) { RegDeleteKeyW(HKEY_CURRENT_USER, $0) }
+            }
         }
         func write(_ name: String, _ value: DWORD) throws {
             var value = value
@@ -141,6 +144,10 @@ struct WSLSetup {
         let ready = WSLSetup(
             runtimeInstalled: false, ubuntuInstalled: false, restartPending: true, distributions: [user])
         try expect(ready.title == "Choose a Linux distribution", "registered inbox/imported WSL without Store packages")
+        RegCloseKey(key)
+        opened = nil
+        let deleted = withWideString(fixturePath) { RegDeleteKeyW(HKEY_CURRENT_USER, $0) }
+        guard deleted == ERROR_SUCCESS else { throw WindowsError.api("Remove WSL fixture", DWORD(deleted)) }
         Console.writeLine(
             "PASS: WSL setup stages, native registry VM-mode flags and WSL 2 readiness; temporary fixture removed, no WSL setting changed"
         )
