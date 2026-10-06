@@ -18,6 +18,8 @@
 #include <taskschd.h>
 #include <winevt.h>
 #include <powrprof.h>
+#include <bcrypt.h>
+#include <wintrust.h>
 #include "AMDABI.h"
 // WinSDK's Swift overlay turns GetMessageW's three states into Bool.
 // A declaration alias preserves the native -1 / 0 / positive result.

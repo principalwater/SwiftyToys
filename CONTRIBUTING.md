@@ -30,6 +30,14 @@ must finish successfully before packaging or running a new executable. Separate
 portable/native checks from physical display/input-device validation. Never modify
 the watchdog, recovery state or driver trust configuration just to make a test pass.
 
+Keep blocking driver calls on the dedicated display executor and input callbacks
+on their own message thread. Use swift-format and the checked-in formatting rules.
+Display validation should cover 0%/100%, restoration after exit/crash, reconnection,
+multiple-monitor targeting and input. Report anonymized GPU/driver/HDR/streaming
+conditions. Do not add a global dimming fallback for unsupported GPUs or alter a
+virtual streaming output. Keep private configurations, dumps and recovery backups
+out of commits and release packages.
+
 ## Privacy, licensing and security
 
 Keep personal agent instructions and machine configuration outside the repository.

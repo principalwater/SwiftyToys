@@ -37,6 +37,16 @@ private bytes 4.41 MiB, working set 24.31 MiB, 11 threads and 367 handles. No CP
 increment was visible at the Windows counter resolution. This is not proof of
 zero CPU usage, and UAC/waiting threads make it unsuitable for an idle A/B claim.
 
+A separate 300.8-second steady-state sample of the installed executable
+`65729E124718E38B309AF4EDD97AC04086A41F5351E7E8354C8BE18AA45342E8`
+(6,411,264 bytes) used the High performance power plan. Resident counters stayed
+at 3.57 MiB private bytes, 16.59 MiB working set, 8 threads and 258 handles;
+CPU advanced by 0.015625 seconds, approximately 0.0052% of one core. Watchdog
+counters stayed at 1.95 MiB private bytes, 8.66 MiB working set, 1 thread and
+118 handles, with no measured CPU increment. Foreground activity was not
+controlled; this is evidence of a small resident footprint during this interval,
+not an isolated optimization gain, input-latency or low-end-hardware benchmark.
+
 ## Swift hotspot map and audit
 
 - RemapEngine handles physical keyboard events; its rule scan is capped at 64.

@@ -19,6 +19,14 @@ func runCLI(_ args: [String]) throws -> Int32 {
         Console.writeLine("WSL package: \(setup.runtimeInstalled); Ubuntu package: \(setup.ubuntuInstalled); Windows restart pending: \(setup.restartPending); registered Linux distributions: \(setup.distributions.count)")
         return 0
     }
+    if command == "--test-driver-trust" { try NativeDriverTrust.selfCheck(); return 0 }
+    if command == "--verify-driver-file" {
+        guard args.count == 4, args[3] == "apple" || args[3] == "microsoft-hardware" else {
+            throw WindowsError.unsupported("Use --verify-driver-file <path> <SHA-256> apple|microsoft-hardware.")
+        }
+        try NativeDriverTrust.verifyFile(args[1], expected: args[2], signer: args[3] == "apple" ? .apple : .microsoftHardware)
+        Console.writeLine("PASS: pinned SHA-256, trusted Authenticode chain and expected publisher"); return 0
+    }
     if command == "--test-native-mouse" { try NativeMouseScrolling.selfCheck(); return 0 }
     if command == "--mouse-info" { Console.writeLine(try NativeMouseScrolling.current().summary); return 0 }
     if command == "--driver-info" { Console.writeLine(try BootCampInventory.current().summary); return 0 }
