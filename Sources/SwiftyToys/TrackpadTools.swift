@@ -78,6 +78,6 @@ struct TrackpadStatus {
             throw WindowsError.unsupported("Install from the complete release ZIP to use the trackpad installer.")
         }
         guard source == "Apple" || source == "Imbushuo" else { throw WindowsError.unsupported("Unknown driver source.") }
-        try shellOpen("powershell.exe", arguments: "-NoProfile -ExecutionPolicy Bypass -File " + quoteArgument(path) + " -Source " + source + (rollback ? " -Rollback" : "") + (repairBluetooth ? " -RepairBluetooth" : ""), elevated: true, owner: owner)
+        try shellOpen(systemExecutable("WindowsPowerShell\\v1.0\\powershell.exe"), arguments: "-NoProfile -ExecutionPolicy Bypass -File " + quoteArgument(path) + " -Source " + source + (rollback ? " -Rollback" : "") + (repairBluetooth ? " -RepairBluetooth" : ""), elevated: true, owner: owner)
     }
 }

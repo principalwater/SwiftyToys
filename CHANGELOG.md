@@ -1,5 +1,19 @@
 # Changelog
 
+## SwiftyToys 0.1.4 — 2026-10-06
+
+- Distinguish installed WSL/Ubuntu packages, a pending Windows restart and Ubuntu's
+  first launch from registered Linux distributions. Refresh reads native metadata.
+- Keep WSL installation diagnostics visible until a key is pressed. Separate the
+  elevated Windows component setup from current-user Ubuntu installation/first launch.
+- Read the WSL VM-mode flag rather than the Lxss filesystem-format Version; keep
+  missing/invalid mode metadata unavailable rather than assuming WSL 2.
+- Enable Homebrew only for a selected WSL 2 distribution; verify its actual Linux
+  user before installing prerequisites or Homebrew, respecting wsl.conf defaults.
+  Render disabled native buttons with the system disabled-text color.
+- Resolve WSL and driver-installer command executables from System32. Preserve
+  keyboard focus after refreshing native setup/device pages.
+
 ## SwiftyToys 0.1.3 — 2026-10-06
 
 - Replace synthetic mouse-wheel inversion with native Windows physical HID direction.
