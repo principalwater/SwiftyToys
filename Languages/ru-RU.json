@@ -166,5 +166,20 @@
   "Applying Apple input profiles.": "Применяются профили ввода Apple.",
   "Apple input profiles updated.": "Профили ввода Apple обновлены.",
   "US (Apple)": "US (Apple)",
-  "Use Apple RU + EN": "Apple RU + EN"
+  "Use Apple RU + EN": "Apple RU + EN",
+  "Complete Linux user setup in the terminal, then refresh this page.": "Завершите настройку пользователя Linux в терминале и обновите эту страницу.",
+  "Could not query WSL setup. Open the installer terminal to see Windows diagnostics.": "Не удалось определить состояние WSL. Откройте терминал установщика для диагностики Windows.",
+  "Install WSL and Ubuntu, then follow the terminal instructions.\nWindows may require a restart before Linux setup can finish.": "Установите WSL и Ubuntu, затем следуйте инструкциям терминала.\nДля завершения установки Linux может потребоваться перезагрузка Windows.",
+  "Linux distributions are registered for this Windows user.\nHomebrew needs WSL 2 and a non-root Linux user.": "Дистрибутивы Linux зарегистрированы для текущего пользователя Windows.\nHomebrew нужны WSL 2 и обычный пользователь Linux, не root.",
+  "Open Linux setup": "Открыть настройку Linux",
+  "Open your Linux distribution and create a non-root user first.": "Сначала откройте дистрибутив Linux и создайте обычного пользователя, не root.",
+  "The WSL package is installed; no Linux distribution is registered yet.\nInstall Ubuntu, complete its first launch, then refresh this page.": "Пакет WSL установлен, но дистрибутив Linux ещё не зарегистрирован.\nУстановите Ubuntu, завершите первый запуск и обновите эту страницу.",
+  "The installer terminal stays open. Follow any restart instructions, then open Linux setup and refresh.": "Терминал установщика останется открыт. Выполните указания о перезагрузке, затем откройте настройку Linux и обновите список.",
+  "Ubuntu first launch required": "Нужен первый запуск Ubuntu",
+  "Ubuntu is installed but has not completed its first launch.\nOpen Ubuntu, create your Linux user, then refresh this page.": "Ubuntu установлен, но первый запуск ещё не завершён.\nОткройте Ubuntu, создайте пользователя Linux и обновите эту страницу.",
+  "Upgrade this distribution to WSL 2 before installing Homebrew.": "Перед установкой Homebrew обновите этот дистрибутив до WSL 2.",
+  "WSL installed; add Linux": "WSL установлен; добавьте Linux",
+  "WSL setup packages are installed. Windows has a restart pending.\nRestart Windows, then open Ubuntu to finish Linux setup and refresh this page.": "Пакеты WSL установлены. Windows ожидает перезагрузки.\nПерезагрузите Windows, завершите настройку Ubuntu и обновите эту страницу.",
+  "WSL status unavailable": "Статус WSL недоступен",
+  "Windows restart pending": "Ожидается перезагрузка Windows"
 }

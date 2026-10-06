@@ -28,6 +28,7 @@ final class SettingsWindow {
     private var scrollOffset: Int32 = 0
     private var keyboard: KeyboardConfiguration
     private var distributions: [LinuxDistribution] = []
+    private var ubuntuInstalled = false
     private var displays: [DisplayOutput] = []
     private var languages: [UInt16] = []
     private let localization = Localization()
@@ -187,6 +188,18 @@ final class SettingsWindow {
                 SendMessageW(handle, UINT(BM_CLICK), 0, 0)
                 guard checked(id) == before else { throw WindowsError.unsupported("Checkbox \(id) did not restore.") }
             }
+            if page == 7, let combo = controls[502], let install = controls[511] {
+                // Selection events must disable WSL 1 and enable WSL 2 without starting Linux.
+                distributions = [LinuxDistribution(name: "Legacy", version: 1), LinuxDistribution(name: "Ubuntu", version: 2)]
+                SendMessageW(combo, UINT(CB_RESETCONTENT), 0, 0)
+                for name in ["Legacy", "Ubuntu"] { _ = withWideString(name) { SendMessageW(combo, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0))) } }
+                for (index, enabled) in [(0, false), (1, true), (0, false)] {
+                    SendMessageW(combo, UINT(CB_SETCURSEL), WPARAM(index), 0)
+                    SendMessageW(window, UINT(WM_COMMAND), WPARAM(502 | Int(CBN_SELCHANGE) << 16), LPARAM(Int(bitPattern: combo)))
+                    guard IsWindowEnabled(install) == enabled else { throw WindowsError.unsupported("Homebrew selection readiness failed.") }
+                }
+                renderPage()
+            }
         }
         }
         page = 1; renderPage(); update(brightness: 68)
@@ -284,6 +297,12 @@ final class SettingsWindow {
     }
     private func setText(_ handle: HWND, _ text: String) { _ = withWideString(text) { SetWindowTextW(handle, $0) } }
     private func status(_ text: String) { if let handle = controls[99] { setText(handle, localization.text(text)) } }
+    private func updateHomebrewAvailability() {
+        let index = controls[502].map { Int(SendMessageW($0, UINT(CB_GETCURSEL), 0, 0)) } ?? -1
+        if let control = controls[511] {
+            EnableWindow(control, distributions.indices.contains(index) && distributions[index].canInstallHomebrew)
+        }
+    }
     private func tileState(_ page: Int) -> String {
         switch page {
         case 1: return "\(level)%"
@@ -490,21 +509,26 @@ final class SettingsWindow {
                 "Two fingers: scroll, zoom, and right-click.\nThree / four: windows, desktops, and assignable shortcuts.\nSmoothness and recognition are provided by Windows Precision Touchpad.\nSet the direction in Windows: wheel inversion is for a regular mouse.\nOver Bluetooth, pairing in Windows and a free connection are required.\nForce Touch and app behavior may differ from macOS.",
                 456, 300, 539, 650, 108)
         case 7:
-            distributions = LinuxDistribution.installed()
+            let setup = try? WSLSetup.current()
+            distributions = setup?.distributions ?? LinuxDistribution.installed()
+            ubuntuInstalled = setup?.ubuntuInstalled ?? false
             label(
-                distributions.isEmpty ? "Install WSL 2 first" : "Choose a Linux distribution", 500, 300, 170, 660,
+                setup?.title ?? "WSL status unavailable", 500, 300, 170, 660,
                 40, large: true)
             label(
-                "Homebrew installs inside WSL 2.\nWindows apps are installed separately, for example via winget.",
+                setup?.detail ?? "Could not query WSL setup. Open the installer terminal to see Windows diagnostics.",
                 501, 300, 228, 650, 74)
             combo(distributions.map { "\($0.name) (WSL \($0.version))" }, 502, 300, 326, 450)
             button("Refresh list", 503, 772, 324, 192)
             button("Install WSL + Ubuntu", 510, 300, 393, 282)
             button("Install Homebrew", 511, 604, 393, 278)
+            button("Open Linux setup", 513, 300, 441, 282)
+            if let control = controls[513] { EnableWindow(control, ubuntuInstalled || !distributions.isEmpty) }
+            updateHomebrewAvailability()
             label(
                 "WSL may require administrator rights and a restart.\nAfter the first Ubuntu launch, create a Linux user.\nHomebrew will open a terminal: you'll see the steps and enter your sudo password yourself.\nThen brew and the PATH setup for Bash will appear.",
-                504, 300, 468, 650, 120)
-            button("Official guide", 512, 300, 609, 282)
+                504, 300, 494, 650, 120)
+            button("Official guide", 512, 604, 441, 278)
         case 8:
             label("Boot Camp drivers", 700, 300, 166, 650, 40, large: true)
             label("Installed versions are shown below. Update through Windows Update or Apple Software Update; compatibility must match your Mac model.", 704, 300, 218, 650, 64)
@@ -611,6 +635,7 @@ final class SettingsWindow {
         case UINT(WM_COMMAND):
             let id = Int(value & 0xFFFF)
             let notification = Int((value >> 16) & 0xFFFF)
+            if id == 502, notification == Int(CBN_SELCHANGE) { updateHomebrewAvailability(); return 0 }
             if id == 621, notification == Int(CBN_SELCHANGE), let control = controls[621] {
                 let index = Int(SendMessageW(control, UINT(CB_GETCURSEL), 0, 0))
                 if languagePacks.indices.contains(index) {
@@ -717,8 +742,17 @@ final class SettingsWindow {
                     try shellOpen(executablePath(), arguments: "--apple-layouts " + english, owner: window)
                     status("Applying Apple input profiles.")
                 } else if id == 510 {
-                    try shellOpen("wsl.exe", arguments: "--install -d Ubuntu", elevated: true, owner: window)
-                    status("Finish installing and first launching Ubuntu, then refresh the list.")
+                    try WSLSetup.install(owner: window)
+                    status("The installer terminal stays open. Follow any restart instructions, then open Linux setup and refresh.")
+                } else if id == 513 {
+                    let index = controls[502].map { Int(SendMessageW($0, UINT(CB_GETCURSEL), 0, 0)) } ?? -1
+                    if distributions.indices.contains(index) {
+                        let distribution = distributions[index]
+                        if distribution.name == "Ubuntu", ubuntuInstalled { try WSLSetup.openUbuntu() }
+                        else { try shellOpen(WSLSetup.executable("wsl.exe"), arguments: "--distribution \(distribution.name)") }
+                    } else if ubuntuInstalled { try WSLSetup.openUbuntu() }
+                    else { throw WindowsError.unsupported("Open your Linux distribution and create a non-root user first.") }
+                    status("Complete Linux user setup in the terminal, then refresh this page.")
                 } else if id == 511 {
                     let index = controls[502].map { Int(SendMessageW($0, UINT(CB_GETCURSEL), 0, 0)) } ?? -1
                     guard distributions.indices.contains(index) else {
@@ -871,7 +905,7 @@ final class SettingsWindow {
         DeleteObject(brush)
         DeleteObject(pen)
         SetBkMode(dc, Int32(TRANSPARENT))
-        SetTextColor(dc, nav || badge ? 0x00FF_FFFF : 0x0036_2B24)
+        SetTextColor(dc, item.itemState & UINT(ODS_DISABLED) != 0 ? GetSysColor(Int32(COLOR_GRAYTEXT)) : nav || badge ? 0x00FF_FFFF : 0x0036_2B24)
         let font = fonts.first.map { SelectObject(dc, $0) }
         defer { if let font { SelectObject(dc, font) } }
         var rect = item.rcItem

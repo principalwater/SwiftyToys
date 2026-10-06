@@ -117,6 +117,13 @@ or arbitrary process commands execute from keyboard rules.
 
 ## Homebrew
 
+The setup page distinguishes installed Windows packages from registered Linux.
+If Windows requests a restart, restart first, choose **Open Linux setup**, create
+your Linux user/password in Ubuntu's terminal, then choose **Refresh list**.
+Installation output remains visible until a key is pressed; launching an installer
+does not imply that WSL or a Linux account is ready. Linux first launch runs as the
+current Windows user, separately from the elevated Windows component installation.
+
 Use initialized WSL 2 distributions. Ubuntu/Debian prerequisites can be installed
 with apt; other distributions need their package-manager prerequisites first.
 The standard prefix is /home/linuxbrew/.linuxbrew. Bash shellenv is added once;

@@ -166,5 +166,20 @@
   "Applying Apple input profiles.": "Applying Apple input profiles.",
   "Apple input profiles updated.": "Apple input profiles updated.",
   "US (Apple)": "US (Apple)",
-  "Use Apple RU + EN": "Use Apple RU + EN"
+  "Use Apple RU + EN": "Use Apple RU + EN",
+  "Complete Linux user setup in the terminal, then refresh this page.": "Complete Linux user setup in the terminal, then refresh this page.",
+  "Could not query WSL setup. Open the installer terminal to see Windows diagnostics.": "Could not query WSL setup. Open the installer terminal to see Windows diagnostics.",
+  "Install WSL and Ubuntu, then follow the terminal instructions.\nWindows may require a restart before Linux setup can finish.": "Install WSL and Ubuntu, then follow the terminal instructions.\nWindows may require a restart before Linux setup can finish.",
+  "Linux distributions are registered for this Windows user.\nHomebrew needs WSL 2 and a non-root Linux user.": "Linux distributions are registered for this Windows user.\nHomebrew needs WSL 2 and a non-root Linux user.",
+  "Open Linux setup": "Open Linux setup",
+  "Open your Linux distribution and create a non-root user first.": "Open your Linux distribution and create a non-root user first.",
+  "The WSL package is installed; no Linux distribution is registered yet.\nInstall Ubuntu, complete its first launch, then refresh this page.": "The WSL package is installed; no Linux distribution is registered yet.\nInstall Ubuntu, complete its first launch, then refresh this page.",
+  "The installer terminal stays open. Follow any restart instructions, then open Linux setup and refresh.": "The installer terminal stays open. Follow any restart instructions, then open Linux setup and refresh.",
+  "Ubuntu first launch required": "Ubuntu first launch required",
+  "Ubuntu is installed but has not completed its first launch.\nOpen Ubuntu, create your Linux user, then refresh this page.": "Ubuntu is installed but has not completed its first launch.\nOpen Ubuntu, create your Linux user, then refresh this page.",
+  "Upgrade this distribution to WSL 2 before installing Homebrew.": "Upgrade this distribution to WSL 2 before installing Homebrew.",
+  "WSL installed; add Linux": "WSL installed; add Linux",
+  "WSL setup packages are installed. Windows has a restart pending.\nRestart Windows, then open Ubuntu to finish Linux setup and refresh this page.": "WSL setup packages are installed. Windows has a restart pending.\nRestart Windows, then open Ubuntu to finish Linux setup and refresh this page.",
+  "WSL status unavailable": "WSL status unavailable",
+  "Windows restart pending": "Windows restart pending"
 }

@@ -8,6 +8,13 @@ import WindowsDisplayABI
 func runCLI(_ args: [String]) throws -> Int32 {
     Console.attach()
     let command = args[0].lowercased()
+    if command == "--test-wsl" { try WSLSetup.selfCheck(); return 0 }
+    if command == "--wsl-info" {
+        let setup = try WSLSetup.current()
+        Console.writeLine(setup.title + "\n" + setup.detail)
+        Console.writeLine("WSL package: \(setup.runtimeInstalled); Ubuntu package: \(setup.ubuntuInstalled); Windows restart pending: \(setup.restartPending); registered Linux distributions: \(setup.distributions.count)")
+        return 0
+    }
     if command == "--test-native-mouse" { try NativeMouseScrolling.selfCheck(); return 0 }
     if command == "--mouse-info" { Console.writeLine(try NativeMouseScrolling.current().summary); return 0 }
     if command == "--driver-info" { Console.writeLine(try BootCampInventory.current().summary); return 0 }
