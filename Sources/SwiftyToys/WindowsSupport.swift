@@ -20,20 +20,34 @@ enum WindowsError: Error, Sendable, CustomStringConvertible {
     private static func describe(_ operation: String, _ code: DWORD, kind: String) -> String {
         let win32 = code & 0xFFFF_0000 == 0x8007_0000 ? code & 0xFFFF : code
         var buffer = [WCHAR](repeating: 0, count: 4096)
-        var count = FormatMessageW(
-            DWORD(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS), nil, win32, 0x0409, &buffer,
-            DWORD(buffer.count), nil)
-        if count == 0, let module = withWideString("ntdll.dll", { GetModuleHandleW($0) }) {
-            count = FormatMessageW(
-                DWORD(FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS), module, code, 0x0409, &buffer,
-                DWORD(buffer.count), nil)
+        var count: DWORD = 0
+        let knownWindowsCode = code != 0 && (kind == "Win32" || code & 0x8000_0000 != 0)
+        let languages: [DWORD] = [0x0409, 0]
+        if knownWindowsCode {
+            for language in languages {
+                count = FormatMessageW(
+                    DWORD(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS), nil, win32, language, &buffer,
+                    DWORD(buffer.count), nil)
+                if count > 0 { break }
+            }
+        }
+        if knownWindowsCode, kind == "status", count == 0,
+            let module = withWideString("ntdll.dll", { GetModuleHandleW($0) })
+        {
+            for language in languages {
+                count = FormatMessageW(
+                    DWORD(FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS), module, code, language, &buffer,
+                    DWORD(buffer.count), nil)
+                if count > 0 { break }
+            }
         }
         let explanation = String(decoding: buffer.prefix(Int(count)), as: UTF16.self).split(whereSeparator: {
-            $0 == "\r" || $0 == "\n"
+            $0.isNewline
         }).joined(separator: " ")
+        let codeText = kind == "status" ? "0x" + String(code, radix: 16).uppercased() : String(code)
         let message =
             explanation.isEmpty
-            ? "\(operation) failed (\(kind) \(code))." : "\(operation): \(explanation) (\(kind) \(code))."
+            ? "\(operation) failed (\(kind) \(codeText))." : "\(operation): \(explanation) (\(kind) \(codeText))."
         let next: String
         switch code {
         case 0x8037_0102, 0x8037_0114:
@@ -42,7 +56,7 @@ enum WindowsError: Error, Sendable, CustomStringConvertible {
         case 0x8007_019E:
             next = "Install the Windows WSL components and restart Windows if requested."
         default:
-            switch win32 {
+            switch knownWindowsCode ? win32 : 0 {
             case DWORD(ERROR_ACCESS_DENIED):
                 next = "Check permissions. If this action requests administrator consent, approve the Windows prompt."
             case DWORD(ERROR_FILE_NOT_FOUND), DWORD(ERROR_PATH_NOT_FOUND):
@@ -52,7 +66,7 @@ enum WindowsError: Error, Sendable, CustomStringConvertible {
             case DWORD(ERROR_NOT_ENOUGH_MEMORY), DWORD(ERROR_OUTOFMEMORY):
                 next = "Close unused applications, then retry."
             case DWORD(ERROR_DEVICE_NOT_CONNECTED): next = "Reconnect the affected device and refresh its status."
-            case DWORD(ERROR_CANCELLED): next = "The action was cancelled. Retry when ready."
+            case DWORD(ERROR_CANCELLED): next = "Retry when ready."
             default: next = ""
             }
         }
@@ -65,6 +79,12 @@ enum WindowsError: Error, Sendable, CustomStringConvertible {
             WindowsError.unsupported("Retry the action.").description == "Retry the action."
         else {
             throw WindowsError.unsupported("Windows error readability check failed.")
+        }
+        guard denied.prefix(while: { !$0.isNewline }).hasSuffix("(Win32 5)."),
+            !WindowsError.status("Vendor", 2).description.hasPrefix("Vendor: "),
+            !WindowsError.api("Unknown", 0).description.hasPrefix("Unknown: ")
+        else {
+            throw WindowsError.unsupported("Windows error domain/newline check failed.")
         }
         guard
             WindowsError.status("Start WSL", Int32(bitPattern: 0x8037_0102)).description.hasSuffix(

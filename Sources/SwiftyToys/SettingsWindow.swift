@@ -30,6 +30,7 @@ final class SettingsWindow {
     private var distributions: [LinuxDistribution] = []
     private var ubuntuInstalled = false
     private var wslVirtualizationBlocked = false
+    private let wslBootDiagnostic = WSLBootDiagnostic()
     private var displays: [DisplayOutput] = []
     private var languages: [UInt16] = []
     private let localization = Localization()
@@ -307,7 +308,12 @@ final class SettingsWindow {
         let message = String(describing: error)
         status(message)
         guard !preview else { return }
-        _ = withWideString(localization.text(message)) { body in
+        if case WindowsError.api(_, DWORD(ERROR_CANCELLED)) = error { return }
+        let focus = GetFocus()
+        defer { if let focus, IsWindow(focus), IsWindowEnabled(focus) { SetFocus(focus) } }
+        let whole = localization.text(message)
+        let translated = whole == message ? message.split(whereSeparator: \.isNewline).map { localization.text(String($0)) }.joined(separator: "\n\n") : whole
+        _ = withWideString(translated) { body in
             withWideString(localization.text("Action could not be completed")) { MessageBoxW(window, body, $0, UINT(MB_OK | MB_ICONERROR)) }
         }
     }
@@ -525,10 +531,15 @@ final class SettingsWindow {
         case 7:
             let setup: WSLSetup?
             var failure = ""
-            do { setup = try WSLSetup.current() } catch { setup = nil; failure = String(describing: error) }
+            do {
+                var value = try WSLSetup.current(checkBoot: false)
+                value.virtualizationBootFailure = wslBootDiagnostic.result
+                setup = value
+                if !preview { wslBootDiagnostic.start(destination: MessageDestination(window)) }
+            } catch { setup = nil; failure = String(describing: error) }
             distributions = setup?.distributions ?? LinuxDistribution.installed()
             ubuntuInstalled = setup?.ubuntuInstalled ?? false
-            wslVirtualizationBlocked = setup?.virtualizationBootFailure ?? false
+            wslVirtualizationBlocked = setup?.virtualizationBootFailure == true
             label(
                 setup?.title ?? "WSL status unavailable", 500, 300, 170, 660,
                 40, large: true)
@@ -604,6 +615,19 @@ final class SettingsWindow {
     }
     fileprivate func handle(_ window: HWND, _ message: UINT, _ value: WPARAM, _ data: LPARAM) -> LRESULT {
         switch message {
+        case wslBootResultMessage:
+            if page == 7, IsWindowVisible(window) {
+                do {
+                    var value = try WSLSetup.current(checkBoot: false)
+                    value.virtualizationBootFailure = wslBootDiagnostic.result
+                    wslVirtualizationBlocked = value.virtualizationBootFailure == true
+                    if let control = controls[500] { setText(control, localization.text(value.title)) }
+                    if let control = controls[501] { setText(control, localization.text(value.detail)) }
+                    updateHomebrewAvailability()
+                    if value.virtualizationBootFailure == nil { status("Boot diagnostics unavailable; package and distribution status is still shown.") }
+                } catch { status(String(describing: error)) }
+            }
+            return 0
         case UINT(WM_CLOSE):
             ShowWindow(window, Int32(SW_HIDE))
             if preview {

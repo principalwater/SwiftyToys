@@ -12,6 +12,10 @@
   Disable the empty distribution selector so it cannot obscure setup controls.
 - Add native error-readability and virtualization precedence/regression checks.
   No firmware, EFI boot files or WSL distributions are modified by diagnostics.
+- Read boot diagnostics once in the background; a failed/unavailable log query
+  preserves WSL package and registration status. Verify the no-match event path.
+- Preserve dialog focus, treat cancelled consent as a status, keep AMD driver
+  codes separate from Windows errors and fall back to system-language messages.
 
 ## SwiftyToys 0.1.4 — 2026-10-06
 
