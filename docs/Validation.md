@@ -4,7 +4,8 @@
 
 15 KeyboardCore and 15 BrightnessCore checks pass. The checked executable is
 6,451,712 bytes, SHA-256
-`6FEBC8CFDDB5AB6F78BCFB61A7D54C5F1D30D0B7FA55D21763F625EBEE1B79C5`.
+`4F96FB2463A04AC839AFCC1A6EC6FCFD266A3D597D0C58A4651FAFF0C5F9DABF`.
+This is the packaged executable; all 12 native checks were repeated on that file.
 
 | Area | Current evidence | Limits |
 | --- | --- | --- |
