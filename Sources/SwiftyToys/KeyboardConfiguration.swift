@@ -22,7 +22,10 @@ struct KeyboardConfiguration: Sendable {
         rules = []
         var presetVersion = 0
         let marker = "# macPresetVersion="
-        for line in contents.split(whereSeparator: \.isNewline) {
+        let powerPrefix = "# powerRule\t"
+        for rawLine in contents.split(whereSeparator: \.isNewline) {
+            // Older releases ignore the new power actions rather than failing at startup.
+            let line = rawLine.hasPrefix(powerPrefix) ? rawLine.dropFirst(powerPrefix.count) : rawLine
             if line.hasPrefix("enabled=") {
                 enabled = line == "enabled=1"
             } else if line.hasPrefix(marker) {
@@ -87,7 +90,12 @@ struct KeyboardConfiguration: Sendable {
                 throw WindowsError.unsupported("Duplicate source shortcut for the same application.")
             }
         }
-        let text =
+        let text = fileContents
+        guard text.utf8.count <= 32767 else { throw WindowsError.unsupported("Keyboard configuration is too large.") }
+        try NativeFiles.write(Array(text.utf8), to: NativeFiles.path("keyboard.ini"))
+    }
+    private var fileContents: String {
+        return
             ([
                 "# SwiftyToys keyboard rules: source<TAB>destination<TAB>executable", "enabled=\(enabled ? 1 : 0)", "# macPresetVersion=1",
                 "reverseVertical=\(reverseVertical ? 1 : 0)", "reverseHorizontal=\(reverseHorizontal ? 1 : 0)",
@@ -95,10 +103,8 @@ struct KeyboardConfiguration: Sendable {
                 "languageMode=\(languageMode)", "languagePair=\(languagePair.map(String.init).joined(separator:","))",
                 "exclude=\(excluded.joined(separator: ","))",
             ]
-            + rules.map { "\($0.source.description)\t\($0.destination)\t\($0.application)" }).joined(separator: "\r\n")
+            + rules.map { ($0.action == "lock screen" || $0.action == "sleep" ? "# powerRule\t" : "") + "\($0.source.description)\t\($0.destination)\t\($0.application)" }).joined(separator: "\r\n")
             + "\r\n"
-        guard text.utf8.count <= 32767 else { throw WindowsError.unsupported("Keyboard configuration is too large.") }
-        try NativeFiles.write(Array(text.utf8), to: NativeFiles.path("keyboard.ini"))
     }
     static func selfCheck() throws {
         let powerSources: Set<String> = ["Win+Ctrl+Q", "Win+Ctrl+S"]
@@ -110,6 +116,11 @@ struct KeyboardConfiguration: Sendable {
             try KeyboardConfiguration(contents: "# macPresetVersion=2\n" + contents).rules == legacy,
             try KeyboardConfiguration(contents: customized).rules.count == legacy.count
         else { throw WindowsError.unsupported("Mac preset migration did not preserve edited rules.") }
+        let upgraded = try KeyboardConfiguration(contents: contents)
+        let persisted = upgraded.fileContents
+        guard try KeyboardConfiguration(contents: persisted).rules == upgraded.rules,
+            persisted.split(whereSeparator: \.isNewline).filter({ !$0.hasPrefix("#") }).allSatisfy({ !$0.hasSuffix("\tlock screen\t") && !$0.hasSuffix("\tsleep\t") })
+        else { throw WindowsError.unsupported("Power rules did not round-trip or remain rollback-compatible.") }
         Console.writeLine("PASS: legacy Mac preset upgrade, saved deletions and customized rules preserved")
     }
 }

@@ -7,7 +7,8 @@
   restore the account's original shutdown privilege after the request returns.
   Existing standard Mac profiles gain the shortcuts; customized profiles are preserved.
   Record the preset version as a backwards-compatible comment on Save so deleted
-  defaults do not reappear on restart. Prevent nested action-error dialogs.
+  defaults do not reappear on restart. Store new power rules in an extension that
+  older releases safely ignore during rollback. Prevent nested action-error dialogs.
 - Show Windows' explanation of Win32/HRESULT/NTSTATUS failures and next steps for
   common permission, missing-component, busy-resource, memory and device errors.
 - Show complete error details in an accessible native dialog after a failed
