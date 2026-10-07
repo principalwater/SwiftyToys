@@ -14,13 +14,15 @@ and dim ordinary tooltips. Its fixed 60% coefficient above the old gamma caused
 double dimming and did not follow the application slider; the production candidate
 uses one coefficient and releases the viewport at 100%. The installed software mode
 reads 80%, Windows compositor, DDC off and physical backlight 100%. Physical
-no-flash/hold/100% checks and release remain pending.
+the user confirms adjacent changes without popup flashes, held F1/F2 repetition
+and normal brightness at 100%. Release preparation remains pending.
 
 The user narrowed the remaining flash to the application's percentage popup.
 Source review identified its unconditional TOPMOST promotion above the compositor;
 the installed follow-up inserts it behind the visible, process-owned viewport.
 Non-erasing invalidation also avoids clearing the composition background. These
-changes passed all 16 packaged native checks; physical popup acceptance is pending.
+changes passed all 16 packaged native checks. The user confirms the popup flash is
+gone and the held-key/100% checks work.
 
 A 15.02-second interactive prototype sample used 2.7% of one CPU core, 33.65 MiB
 private bytes and 21.95 MiB working set. This is not an idle, latency, GPU or
