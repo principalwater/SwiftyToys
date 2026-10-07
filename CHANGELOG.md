@@ -2,6 +2,15 @@
 
 ## SwiftyToys 0.1.6 — 2026-10-07
 
+- Add an experimental native software method including the cursor and ordinary
+  tooltips on one active physical SDR display. Use one coefficient without a gamma
+  overlay, retain the viewport between adjacent values, and stop it at 100%.
+  Preserve cursor visibility recovery and add Ctrl+Alt+Shift+F10 emergency reset.
+- Repeat held F1/F2 through shared keyboard/HID state and Windows delay/speed;
+  cancel on release, focus, device, session and power changes. Restore native repeat
+  for configured up/down hotkeys, keeping maximum/minimum shortcuts one-shot.
+- Distinguish a busy brightness worker from a failed driver operation and validate
+  the complete IPC reply range before conversion.
 - Replace conflicting maximum-backlight/mode settings with explicit DDC/CI opt-in.
   Off uses software dimming; leaving hardware mode restores the original backlight
   once. Remove the periodic maximum-backlight worker. Legacy maximum=on + hardware

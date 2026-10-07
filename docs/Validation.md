@@ -1,5 +1,31 @@
 # Validation snapshot: 0.1.6
 
+## Cursor and held-key follow-up candidate
+
+The installed full package is 6,533,120 bytes, SHA-256
+`CA39CA098F0BEF8BF500B400D675E318834EC06FD5C23CC3EEA6C8964D061339`;
+31 portable tests and all 16 native checks pass on the packaged binary.
+The native cursor policy check creates no viewport and changes no cursor state.
+The input check captures F2 in its own hook before, during and after a 2.4-second
+blocked test UI. It constructs no display controller.
+
+The private refreshed prototype was confirmed to show a dimmed, controllable cursor
+and dim ordinary tooltips. Its fixed 60% coefficient above the old gamma caused
+double dimming and did not follow the application slider; the production candidate
+uses one coefficient and releases the viewport at 100%. The installed software mode
+reads 80%, Windows compositor, DDC off and physical backlight 100%. Physical
+no-flash/hold/100% checks and release remain pending.
+
+A 15.02-second interactive prototype sample used 2.7% of one CPU core, 33.65 MiB
+private bytes and 21.95 MiB working set. This is not an idle, latency, GPU or
+weakest-hardware benchmark; it does not establish production resource usage.
+
+A separate 15.01-second installed interactive sample recorded 2.705% of one core,
+34.96 MiB private bytes and 26.19 MiB working set. Foreground workload was not
+controlled; this is not an idle, input-latency or comparable before/after benchmark.
+
+## Previously installed tile-navigation candidate
+
 2026-10-07, Windows 10 build 19045 / MacPro6,1. The installed packaged executable
 is 6,510,592 bytes, SHA-256
 `8891B654DB6AB4CEE0B126D44E3965687C90F43DB1A30CC890B7EB5DBB71BFAF`.

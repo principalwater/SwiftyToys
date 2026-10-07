@@ -4,6 +4,10 @@ import Synchronization
 import WinSDK
 import WindowsDisplayABI
 
+// wParam: F1=1, F2=2 held mask; lParam: hook=-generation, HID=device handle.
+let brightnessKeyStateMessage: UINT = 0x8021
+let brightnessKeyCancelMessage: UINT = 0x8022
+
 // Set, used and cleared exclusively on the thread that owns WH_KEYBOARD_LL.
 // Windows invokes this hook on that thread; no UI/driver thread accesses it.
 
@@ -30,16 +34,18 @@ private func keyboardCallback(_ code: Int32, _ message: WPARAM, _ data: LPARAM) 
     let up = message == WPARAM(WM_KEYUP) || message == WPARAM(WM_SYSKEYUP)
     if up && (context.pointee.swallowed & bit) != 0 {
         context.pointee.swallowed &= ~bit
+        _ = context.pointee.destination.post(brightnessKeyStateMessage, value: Int(context.pointee.swallowed))
         return 1  // Match the suppressed keydown, even if modifiers changed.
     }
     if down {
         let held = (context.pointee.swallowed & bit) != 0
+        if held { return 1 } // Shared repeat owns the rate; ignore Windows auto-repeat.
         let modified =
             GetAsyncKeyState(17) < 0 || GetAsyncKeyState(18) < 0 || GetAsyncKeyState(16) < 0 || GetAsyncKeyState(91) < 0
             || GetAsyncKeyState(92) < 0
-        if held || (!modified && !IsHungAppWindow(context.pointee.destination.window)) {
-            let posted = context.pointee.destination.post(keyStepMessage, value: key.vkCode == 113 ? 1 : -1)
-            if posted || held {
+        if !modified && !IsHungAppWindow(context.pointee.destination.window) {
+            let posted = context.pointee.destination.post(brightnessKeyStateMessage, value: Int(context.pointee.swallowed | bit))
+            if posted {
                 context.pointee.swallowed |= bit
                 return 1
             }
@@ -105,6 +111,7 @@ final class KeyboardInput: @unchecked Sendable {
         withUnsafeMutablePointer(to: &context) { pointer in
             inputState = pointer
             defer {
+                _ = destination.post(brightnessKeyStateMessage)
                 if let hook = pointer.pointee.hook { UnhookWindowsHookEx(hook) }
                 inputState = nil
             }

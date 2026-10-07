@@ -13,6 +13,7 @@ func runCLI(_ args: [String]) throws -> Int32 {
     if command == "--test-power" { try DesktopPower.selfCheck(); return 0 }
     if command == "--test-brightness-policy" { try Settings.selfCheck(); return 0 }
     if command == "--test-display-queue" { try DisplayRequestQueue.selfCheck(); return 0 }
+    if command == "--test-cursor-policy" { try SoftwareCursorDimmingSession.selfCheck(); return 0 }
     if command == "--test-keyboard-config" { try KeyboardConfiguration.selfCheck(); return 0 }
     if command == "--wsl-info" {
         let setup = try WSLSetup.current()
@@ -53,10 +54,10 @@ func runCLI(_ args: [String]) throws -> Int32 {
         Console.writeLine(try hardwareBrightnessInfo(displayID: id)); return 0
     }
     if command == "backend" {
-        let modes = ["auto", "native", "amd", "hardware"]
+        let modes = Settings.modes
         guard args.count == 2, let index = modes.firstIndex(of: args[1]),
             let window = withWideString(controlWindowTitle, { FindWindowW(nil, $0) }) else {
-            throw WindowsError.unsupported("Use backend auto|native|amd|hardware with SwiftyToys running.")
+            throw WindowsError.unsupported("Use backend auto|native|amd|hardware|compositor with SwiftyToys running.")
         }
         _ = try sendResident(window, command: 6, value: index); Console.writeLine("Brightness mode: " + args[1]); return 0
     }

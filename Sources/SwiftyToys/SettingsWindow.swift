@@ -239,7 +239,11 @@ final class SettingsWindow {
         let enabled = brightnessConfiguration?.ddcEnabled ?? false
         if let control = controls[244] { SendMessageW(control, UINT(BM_SETCHECK), enabled ? WPARAM(BST_CHECKED) : WPARAM(BST_UNCHECKED), 0) }
         for id in [245, 246] { if let control = controls[id] { EnableWindow(control, !enabled) } }
-        if let hint = controls[248] { setText(hint, localization.text(enabled ? "DDC/CI controls the monitor backlight, including the cursor. Turn off to use software dimming." : "Software dimming changes the image only. Monitor backlight stays unchanged; hardware cursors may remain brighter.")) }
+        let hintText = enabled ? "DDC/CI controls the monitor backlight, including the cursor. Turn off to use software dimming."
+            : brightnessConfiguration?.softwareBackend == "compositor"
+                ? "Software with cursor uses Windows composition on one physical SDR display. Backlight stays unchanged. At 100%, the effect turns off."
+                : "Software dimming changes the image only. Monitor backlight stays unchanged; hardware cursors may remain brighter."
+        if let hint = controls[248] { setText(hint, localization.text(hintText)) }
         brightnessControlBusy(modeBusy)
     }
     /// Tests this application's own native controls without sending desktop input.
@@ -535,8 +539,8 @@ final class SettingsWindow {
             check("Hardware brightness (DDC/CI)", 244, 300, 318, 650, on: settings?.ddcEnabled ?? false)
             label("", 248, 300, 361, 650, 66)
             label("Software compatibility", 247, 300, 444, 650, 25)
-            combo(["Automatic", "Windows color controls", "AMD display controls"], 246, 300, 479, 450)
-            if let control = controls[246], let selected = ["auto", "native", "amd"].firstIndex(of: settings?.softwareBackend ?? "auto") { SendMessageW(control, UINT(CB_SETCURSEL), WPARAM(selected), 0) }
+            combo(["Automatic", "Windows color controls", "AMD display controls", "Software with cursor (experimental)"], 246, 300, 479, 450)
+            if let control = controls[246], let selected = Settings.softwareModes.firstIndex(of: settings?.softwareBackend ?? "auto") { SendMessageW(control, UINT(CB_SETCURSEL), WPARAM(selected), 0) }
             button("Apply software method", 245, 770, 477, 180)
             updateBrightnessMode()
             displays = ((try? discoverDisplays()) ?? []).filter { $0.isPhysical && !$0.isCloned && !$0.isHDR }
@@ -885,7 +889,7 @@ final class SettingsWindow {
             if id == 244, notification == Int(BN_CLICKED) {
                 brightnessControlBusy(false)
                 if !preview {
-                    let choice = checked(244) ? "hardware" : ["auto", "native", "amd"][max(0, min(2, Int(controls[246].map { SendMessageW($0, UINT(CB_GETCURSEL), 0, 0) } ?? 0)))]
+                    let choice = checked(244) ? "hardware" : Settings.softwareModes[max(0, min(Settings.softwareModes.count - 1, Int(controls[246].map { SendMessageW($0, UINT(CB_GETCURSEL), 0, 0) } ?? 0)))]
                     do { status(try command(245, [choice])) } catch { refreshBrightnessControl(); showActionError(error) }
                 }
                 return 0
@@ -1076,7 +1080,7 @@ final class SettingsWindow {
                 } else if id == 241 || id == 411 {
                     status(try command(id, []))
                 } else if id == 245 {
-                    let modes = ["auto", "native", "amd"]
+                    let modes = Settings.softwareModes
                     let selected = controls[246].map { Int(SendMessageW($0, UINT(CB_GETCURSEL), 0, 0)) } ?? -1
                     guard modes.indices.contains(selected) else { throw WindowsError.unsupported("Invalid brightness mode.") }
                     status(try command(id, [modes[selected]]))

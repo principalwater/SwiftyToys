@@ -5,6 +5,8 @@ import WinSDK
 
 /// Portable user settings. Hardware identities remain only in the local file.
 struct Settings: Sendable {
+    static let softwareModes = ["auto", "native", "amd", "compositor"]
+    static let modes = ["auto", "native", "amd", "hardware", "compositor"]
     var targetID: String?
     var legacyTarget: String?
     var step = 5
@@ -72,7 +74,7 @@ struct Settings: Sendable {
             case "max": hotkeys[2] = value
             case "min": hotkeys[3] = value
             case "backend":
-                backend = ["auto", "amd", "native", "hardware"].contains(value.lowercased()) ? value.lowercased() : "auto"
+                backend = Self.modes.contains(value.lowercased()) ? value.lowercased() : "auto"
             case "osd": indicator = IndicatorMode(rawValue: value.lowercased()) ?? .custom
             default: break
             }
@@ -105,7 +107,7 @@ struct Settings: Sendable {
 
     /// Persist the DDC switch and software preference together, before rebinding.
     func setBackend(_ mode: String) throws {
-        guard ["auto", "native", "amd", "hardware"].contains(mode) else { throw WindowsError.unsupported("Invalid brightness mode.") }
+        guard Self.modes.contains(mode) else { throw WindowsError.unsupported("Invalid brightness mode.") }
         try setValues(["ddcEnabled": mode == "hardware" ? "1" : "0", "backend": mode == "hardware" ? softwareBackend : mode])
     }
 
@@ -135,6 +137,8 @@ struct Settings: Sendable {
             ("backend=hardware\nddcEnabled=0", "auto"),
             ("backend=native\nddcEnabled=1\nhardwareMaximum=1", "hardware"),
             ("backend=amd\nddcEnabled=0", "amd"),
+            ("backend=compositor\nddcEnabled=0", "compositor"),
+            ("backend=compositor\nddcEnabled=1", "hardware"),
         ] {
             guard try Settings(contents: contents).backend == expected else { throw WindowsError.unsupported("DDC/software brightness policy check failed.") }
         }

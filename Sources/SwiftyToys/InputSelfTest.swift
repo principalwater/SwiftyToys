@@ -26,8 +26,8 @@ func testKeyboardInput() throws {
     func drain() -> Int {
         var message = MSG()
         var count = 0
-        while PeekMessageW(&message, window, keyStepMessage, keyStepMessage, UINT(PM_REMOVE)) {
-            if message.wParam == 1 { count += 1 }
+        while PeekMessageW(&message, window, brightnessKeyStateMessage, brightnessKeyStateMessage, UINT(PM_REMOVE)) {
+            if message.wParam == 2 { count += 1 }
         }
         return count
     }

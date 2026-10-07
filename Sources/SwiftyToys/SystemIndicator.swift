@@ -16,6 +16,12 @@ private func indicatorShown(
     guard let window, object == 0, child == 0 else { return }
     activeIndicator?.takeUnretainedValue().event(event, window: window, timestamp: timestamp)
 }
+private func indicatorForegroundChanged(
+    _ hook: HWINEVENTHOOK?, _ event: DWORD, _ window: HWND?, _ object: LONG,
+    _ child: LONG, _ thread: DWORD, _ timestamp: DWORD
+) {
+    activeIndicator?.takeUnretainedValue().cancelBrightnessKeys()
+}
 
 // Mutex protects every shared value. Event handles stay alive through the
 // worker's retained reference, including startup/shutdown timeouts.
@@ -127,6 +133,8 @@ private final class IndicatorWatcher {
     private let shellMessage = withWideString("SHELLHOOK") { RegisterWindowMessageW($0) }
     private let taskbarCreated = withWideString("TaskbarCreated") { RegisterWindowMessageW($0) }
     private var hook: HWINEVENTHOOK?
+    private var focusHook: HWINEVENTHOOK?
+    private var brightnessSources: [Int: UInt8] = [:]
     private var shellPID: DWORD = 0
     private var mediaTimestamp: DWORD?
     private var mediaShown = false
@@ -152,7 +160,8 @@ private final class IndicatorWatcher {
             throw WindowsError.unsupported("Could not register the Shell indicator observer.")
         }
         if state.hardwareKeys {
-            var raw = RAWINPUTDEVICE(usUsagePage: 0x0C, usUsage: 1, dwFlags: DWORD(RIDEV_INPUTSINK), hwndTarget: window)
+            var raw = RAWINPUTDEVICE(usUsagePage: 0x0C, usUsage: 1,
+                dwFlags: DWORD(RIDEV_INPUTSINK | RIDEV_DEVNOTIFY), hwndTarget: window)
             if !RegisterRawInputDevices(&raw, 1, UINT(MemoryLayout<RAWINPUTDEVICE>.size)) {
                 let error = GetLastError()
                 DeregisterShellHookWindow(window)
@@ -161,6 +170,9 @@ private final class IndicatorWatcher {
             }
         }
         activeIndicator = .passUnretained(self)
+        focusHook = SetWinEventHook(
+            DWORD(EVENT_SYSTEM_FOREGROUND), DWORD(EVENT_SYSTEM_FOREGROUND), nil, indicatorForegroundChanged,
+            0, 0, DWORD(WINEVENT_OUTOFCONTEXT))
         refreshShell()
         SetTimer(window, 1, 3000, nil)
     }
@@ -173,15 +185,26 @@ private final class IndicatorWatcher {
                 mediaShown = false
                 NativeFlyout.restore(owner: owner, started: started)
             }
-            let steps = actions.steps
-            if steps != 0 {
+            for keys in actions.states {
+                let previous = brightnessSources[actions.source] ?? 0
+                guard keys != previous else { continue }
+                if keys == 0 { brightnessSources.removeValue(forKey: actions.source) }
+                else {
+                    guard brightnessSources[actions.source] != nil || brightnessSources.count < 64 else { continue }
+                    brightnessSources[actions.source] = keys
+                }
+                _ = state.destination.post(brightnessKeyStateMessage, value: Int(keys), data: actions.source)
+                guard keys != 0 else { continue }
                 if state.values.withLock({ $0.custom }) {
                     mediaTimestamp = nil
                     prepareFlyout()
                 }
-                _ = state.destination.post(keyStepMessage, value: steps)
             }
             _ = DefWindowProcW(window, message.message, message.wParam, message.lParam)
+        } else if message.message == UINT(WM_INPUT_DEVICE_CHANGE), message.wParam == WPARAM(GIDC_REMOVAL) {
+            let source = Int(message.lParam)
+            brightnessSources.removeValue(forKey: source)
+            _ = state.destination.post(brightnessKeyStateMessage, data: source)
         } else if message.message == shellMessage {
             if message.wParam == 55 && state.values.withLock({ $0.custom }) {
                 mediaTimestamp = nil
@@ -210,6 +233,10 @@ private final class IndicatorWatcher {
         } else {
             NativeFlyout.restore(owner: owner, started: started)
         }
+    }
+
+    func cancelBrightnessKeys() {
+        _ = state.destination.post(brightnessKeyCancelMessage)
     }
 
     private func prepareFlyout() {
@@ -265,7 +292,12 @@ private final class IndicatorWatcher {
     }
 
     func stop() {
+        for source in brightnessSources.keys {
+            _ = state.destination.post(brightnessKeyStateMessage, data: source)
+        }
+        brightnessSources.removeAll()
         activeIndicator = nil
+        if let focusHook { UnhookWinEvent(focusHook) }
         if let hook { UnhookWinEvent(hook) }
         NativeFlyout.restore(owner: owner, started: started)
         KillTimer(window, 1)
@@ -273,33 +305,33 @@ private final class IndicatorWatcher {
         DestroyWindow(window)
     }
 }
-private func brightnessActions(_ handle: HRAWINPUT?) -> (steps: Int, media: Bool) {
-    var steps = 0
+private func brightnessActions(_ handle: HRAWINPUT?) -> (states: [UInt8], source: Int, media: Bool) {
+    var states: [UInt8] = []
     var media = false
-    guard let handle else { return (0, false) }
+    guard let handle else { return ([], 0, false) }
     var size: UINT = 0
     let headerSize = UINT(MemoryLayout<RAWINPUTHEADER>.size)
     guard GetRawInputData(handle, UINT(RID_INPUT), nil, &size, headerSize) == 0, size > headerSize + 8,
         size <= 65536
-    else { return (0, false) }
+    else { return ([], 0, false) }
     let buffer = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<RAWINPUT>.alignment)
     defer { buffer.deallocate() }
-    guard GetRawInputData(handle, UINT(RID_INPUT), buffer, &size, headerSize) == size else { return (0, false) }
+    guard GetRawInputData(handle, UINT(RID_INPUT), buffer, &size, headerSize) == size else { return ([], 0, false) }
     let header = buffer.load(as: RAWINPUTHEADER.self)
-    guard header.dwType == DWORD(RIM_TYPEHID) else { return (0, false) }
+    guard header.dwType == DWORD(RIM_TYPEHID), let device = header.hDevice else { return ([], 0, false) }
     let reportSize = Int(buffer.advanced(by: Int(headerSize)).load(as: DWORD.self))
     let count = Int(buffer.advanced(by: Int(headerSize) + 4).load(as: DWORD.self))
     guard reportSize > 0, count > 0, count <= 1024, reportSize <= (Int(size) - Int(headerSize) - 8) / count else {
-        return (0, false)
+        return ([], 0, false)
     }
     var preparsedSize: UINT = 0
     guard GetRawInputDeviceInfoW(header.hDevice, UINT(RIDI_PREPARSEDDATA), nil, &preparsedSize) != UINT.max,
         preparsedSize > 0, preparsedSize <= 65536
-    else { return (0, false) }
+    else { return ([], 0, false) }
     let preparsed = UnsafeMutableRawPointer.allocate(byteCount: Int(preparsedSize), alignment: 8)
     defer { preparsed.deallocate() }
     guard GetRawInputDeviceInfoW(header.hDevice, UINT(RIDI_PREPARSEDDATA), preparsed, &preparsedSize) != UINT.max
-    else { return (0, false) }
+    else { return ([], 0, false) }
     for index in 0..<count {
         var usages = Array(repeating: USAGE(0), count: 64)
         var usageCount = ULONG(usages.count)
@@ -308,16 +340,18 @@ private func brightnessActions(_ handle: HRAWINPUT?) -> (steps: Int, media: Bool
             buffer.advanced(by: Int(headerSize) + 8 + index * reportSize).assumingMemoryBound(to: CChar.self),
             ULONG(reportSize))
         if status >= 0 {
+            var keys: UInt8 = 0
             for usage in usages.prefix(min(Int(usageCount), usages.count)) {
                 if usage == 0x6F {
-                    steps += 1
+                    keys |= 2
                 } else if usage == 0x70 {
-                    steps -= 1
+                    keys |= 1
                 } else if [0xE2, 0xE9, 0xEA, 0xB0, 0xB1, 0xB5, 0xB6, 0xB7, 0xCD].contains(usage) {
                     media = true
                 }
             }
+            states.append(keys) // An empty usage list is the key-release report.
         }
     }
-    return (steps, media)
+    return (states, Int(bitPattern: device), media)
 }

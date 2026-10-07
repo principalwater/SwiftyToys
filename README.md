@@ -47,8 +47,15 @@ Existing BrightnessCtl settings migrate after safe restoration; its installation
 
 - **On:** brightness changes the monitor backlight, including the cursor. Requires
   compatible DDC/CI; writes are verified and recovery is retained.
-- **Off:** software dims only the image; the physical backlight stays unchanged.
-  Leaving DDC restores its previous backlight once. Hardware cursors may remain brighter.
+- **Off:** software dims the image; the physical backlight stays unchanged.
+  Leaving DDC restores its previous backlight once. Automatic/Windows/AMD methods
+  may leave hardware cursors brighter. **Software with cursor (experimental)**
+  includes the pointer and ordinary tooltips on one active physical SDR display;
+  100% stops its viewport and restores the native cursor. It uses additional
+  composition resources; protected surfaces and exclusive fullscreen need validation.
+
+Holding F1/F2 repeats brightness using Windows keyboard timing. **Ctrl+Alt+Shift+F10**
+requests 100% as an emergency reset.
 
 Supports one independent **physical SDR output**. HDR, clones and virtual outputs
 are excluded; fullscreen/calibration software can compete for the output.

@@ -44,6 +44,7 @@ final class TrayApplication {
     private var lastApply: UInt64 = 0
     private let displayMailbox = DisplayMailbox()
     private var displayQueue = DisplayRequestQueue(level: 100)
+    private var brightnessRepeat = BrightnessKeyRepeat()
     private let taskbarCreated = withWideString("TaskbarCreated") { RegisterWindowMessageW($0) }
 
     init(settings: Settings) throws {
@@ -66,6 +67,7 @@ final class TrayApplication {
             "SwiftyToys.OSD", title: "SwiftyToys", style: DWORD(WS_POPUP),
             extended: DWORD(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TOPMOST))
         guard let window, let osd else { throw WindowsError.api("CreateWindow", GetLastError()) }
+        configureBrightnessRepeat()
         WTSRegisterSessionNotification(window, DWORD(NOTIFY_FOR_THIS_SESSION))
         remapper = try KeyboardRemapper(
             destination: MessageDestination(window), configuration: KeyboardConfiguration(),
@@ -80,10 +82,13 @@ final class TrayApplication {
         updateTray()
         for (index, hotkey) in settings.hotkeys.enumerated() {
             if let combo = parseHotkey(hotkey),
-                !RegisterHotKey(window, Int32(index + 1), combo.modifiers | UINT(MOD_NOREPEAT), combo.key)
+                !RegisterHotKey(window, Int32(index + 1), combo.modifiers | (index < 2 ? 0 : UINT(MOD_NOREPEAT)), combo.key)
             {
                 Diagnostics.write("input: configured hotkey \(index + 1) is already registered")
             }
+        }
+        if !RegisterHotKey(window, 5, UINT(MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT), UINT(VK_F10)) {
+            Diagnostics.write("input: emergency brightness reset shortcut is already registered")
         }
         systemIndicator = try SystemIndicator(
             destination: MessageDestination(window), custom: settings.indicator == .custom,
@@ -252,7 +257,7 @@ final class TrayApplication {
         case brightnessMessage:
             guard !exiting else { return 0 }
             if value == 6 {
-                let modes = ["auto", "native", "amd", "hardware"]
+                let modes = Settings.modes
                 guard displayQueue.active == nil else { return brightnessBusyReply }
                 guard modes.indices.contains(Int(data)) else { return 0 }
                 do {
@@ -284,6 +289,16 @@ final class TrayApplication {
         case keyStepMessage:
             if !exiting { queue(Int(Int64(bitPattern: value))) }
             return 0
+        case brightnessKeyStateMessage:
+            guard !exiting, value <= 3,
+                data >= 0 || data == -Int(remapper?.generation ?? 0) else { return 0 }
+            let steps = brightnessRepeat.update(source: Int(data), keys: UInt8(value), time: GetTickCount64())
+            if steps != 0 { queue(steps) }
+            updateBrightnessRepeatTimer()
+            return 0
+        case brightnessKeyCancelMessage:
+            if data == 0 || data == -Int(remapper?.generation ?? 0) { cancelBrightnessRepeat() }
+            return 0
         case UINT(WM_HOTKEY):
             if value == 1 {
                 queue(1)
@@ -293,11 +308,18 @@ final class TrayApplication {
                 requestDisplay(DisplayRequest(1, value: 100, show: true))
             } else if value == 4 {
                 requestDisplay(DisplayRequest(1, value: 0, show: true))
+            } else if value == 5 {
+                cancelBrightnessRepeat()
+                requestDisplay(DisplayRequest(1, value: 100, show: true))
             }
             return 0
         case UINT(WM_TIMER):
             guard !exiting else { return 0 }
-            if value == 2 {
+            if value == 3 {
+                let steps = brightnessRepeat.tick(time: GetTickCount64())
+                if steps != 0 { queue(steps) }
+                updateBrightnessRepeatTimer()
+            } else if value == 2 {
                 flushSteps()
             } else {
                 tools.tick()
@@ -305,15 +327,24 @@ final class TrayApplication {
             }
             return 0
         case UINT(WM_DISPLAYCHANGE):
+            cancelBrightnessRepeat()
             if !exiting {
                 requestDisplay(DisplayRequest(5))
             }
             return 0
         case UINT(WM_POWERBROADCAST):
+            cancelBrightnessRepeat()
             if value == WPARAM(PBT_APMRESUMEAUTOMATIC) || value == WPARAM(PBT_APMRESUMESUSPEND) {
                 requestDisplay(DisplayRequest(settings.restoreOnResume ? 5 : 1, value: 100))
             }
             return 1
+        case UINT(WM_DEVICECHANGE):
+            cancelBrightnessRepeat()
+            return DefWindowProcW(window, message, value, data)
+        case UINT(WM_SETTINGCHANGE):
+            cancelBrightnessRepeat()
+            configureBrightnessRepeat()
+            return DefWindowProcW(window, message, value, data)
         case trayMessage:
             if UINT(truncatingIfNeeded: data) == UINT(WM_RBUTTONUP) {
                 showMenu()
@@ -323,6 +354,7 @@ final class TrayApplication {
             return 0
         case UINT(WM_QUERYENDSESSION): return 1
         case UINT(WM_WTSSESSION_CHANGE):
+            cancelBrightnessRepeat()
             if value == WPARAM(WTS_SESSION_LOCK) {
                 if remapper?.stop() != false { remapper = nil }
             } else if value == WPARAM(WTS_SESSION_UNLOCK) {
@@ -388,7 +420,30 @@ final class TrayApplication {
         if GetTickCount64() - lastApply >= 130 { flushSteps() } else if let window { SetTimer(window, 2, 130, nil) }
     }
 
+    private func configureBrightnessRepeat() {
+        var delay: DWORD = 0
+        var speed: DWORD = 20
+        _ = SystemParametersInfoW(UINT(SPI_GETKEYBOARDDELAY), 0, &delay, 0)
+        _ = SystemParametersInfoW(UINT(SPI_GETKEYBOARDSPEED), 0, &speed, 0)
+        let rate = 2.5 + 27.5 * Double(min(speed, 31)) / 31
+        brightnessRepeat.configure(delayMs: UInt64(min(delay, 3) + 1) * 250,
+            intervalMs: UInt64(1000 / rate))
+    }
+
+    private func updateBrightnessRepeatTimer() {
+        guard let window else { return }
+        if brightnessRepeat.isHeld { SetTimer(window, 3, 10, nil) }
+        else { KillTimer(window, 3) }
+    }
+
+    private func cancelBrightnessRepeat() {
+        brightnessRepeat.cancel()
+        pendingSteps = 0
+        if let window { KillTimer(window, 3) }
+    }
+
     private func reloadRemapper() throws {
+        cancelBrightnessRepeat()
         guard !exiting, !reloadingInput else { throw WindowsError.unsupported("Input settings are already changing.") }
         reloadingInput = true
         defer { reloadingInput = false }
@@ -441,7 +496,7 @@ final class TrayApplication {
                 var success = true
                 for (index, key) in keys.enumerated() {
                     guard let combo = parseHotkey(key) else { continue }
-                    if !RegisterHotKey(window, Int32(index + 1), combo.modifiers | UINT(MOD_NOREPEAT), combo.key) {
+                    if !RegisterHotKey(window, Int32(index + 1), combo.modifiers | (index < 2 ? 0 : UINT(MOD_NOREPEAT)), combo.key) {
                         success = false
                         break
                     }
@@ -450,7 +505,7 @@ final class TrayApplication {
                     for id in 1...4 { UnregisterHotKey(window, Int32(id)) }
                     for (index, key) in previous.enumerated() {
                         if let combo = parseHotkey(key) {
-                            RegisterHotKey(window, Int32(index + 1), combo.modifiers | UINT(MOD_NOREPEAT), combo.key)
+                            RegisterHotKey(window, Int32(index + 1), combo.modifiers | (index < 2 ? 0 : UINT(MOD_NOREPEAT)), combo.key)
                         }
                     }
                     throw WindowsError.unsupported(
@@ -648,6 +703,8 @@ final class TrayApplication {
     }
 
     func shutdown() {
+        cancelBrightnessRepeat()
+        brightnessRepeat.reset()
         guard !exiting else { return }
         exiting = true
         dashboard = nil
@@ -659,7 +716,7 @@ final class TrayApplication {
             WTSUnRegisterSessionNotification(window)
             KillTimer(window, 1)
             KillTimer(window, 2)
-            for id in 1...4 { UnregisterHotKey(window, Int32(id)) }
+            for id in 1...5 { UnregisterHotKey(window, Int32(id)) }
         }
         stopDisplay(controller)
         Shell_NotifyIconW(DWORD(NIM_DELETE), &tray)
