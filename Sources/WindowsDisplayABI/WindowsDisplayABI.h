@@ -5,6 +5,7 @@
 #include <Windows.h>
 #include <commctrl.h>
 #include <wtsapi32.h>
+#include <dbt.h>
 #include <magnification.h>
 #include <setupapi.h>
 #include <cfgmgr32.h>

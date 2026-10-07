@@ -1,6 +1,38 @@
-# Validation snapshot: 0.1.6
+# Validation snapshot: 0.1.7
 
-## Cursor and held-key follow-up candidate
+## Brightness notification stability
+
+2026-10-07, Windows 10 / MacPro6,1. The full installed package's executable is
+6,535,680 bytes, SHA-256
+`B7FEE740130ED3E500B074B0C579F914388760C289E7DCC64867478D3F8984F8`.
+31 portable tests and all 16 native checks pass on that packaged executable.
+
+Generic device/settings/power-status broadcasts now mark one pending validation.
+The display executor checks the actual physical SDR path, identity and bounds on
+the next request or existing 3-second tick, preserving an unchanged viewport.
+Display-mode/session/suspend/resume events still restore immediately. Failed queries
+also restore; a newer hint received during validation remains pending. At 100%,
+viewport buffers and their notifications are not allocated.
+
+A payload-free runtime notification burst against this process's viewport preserves
+the same visible HWND, session pointer and saved 80% level through deferred checks;
+its lifecycle log records no restore, recreation or color reapply. Installed queries
+confirm DDC off and physical brightness 100%. The user reports no further jumps
+after checking ordinary use and mouse wake. This does not establish a vendor-specific
+cause or cover every possible display/power transition.
+
+An invalid private cross-process Magnification diagnostic crashed the resident;
+the watchdog restored cursor visibility and cleared completed recovery. That probe
+was removed. Safe runtime checks pass after restart; the diagnostic is absent from
+the application and release. This is not a crash-recovery stress test.
+
+Uncontrolled 15-second interactive samples before/after record 2.80%/4.36% of one
+CPU core, 35.33/34.40 MiB private bytes and 27.05/25.33 MiB working set. Workloads
+were not matched, so these samples establish neither a speedup nor a regression,
+idle cost, input latency, GPU usage or weakest-hardware performance. The executable
+grew by 1,024 bytes; static Swift and the 3 MB archive budget remain enforced.
+
+## Previously released 0.1.6 cursor and held-key checks
 
 The installed full package is 6,534,656 bytes, SHA-256
 `1DEF251C33CB878F9F454A09140864FB7D8B9366B7D0A7DD84A3A2FBCB3C5F56`;
@@ -13,9 +45,9 @@ The private refreshed prototype was confirmed to show a dimmed, controllable cur
 and dim ordinary tooltips. Its fixed 60% coefficient above the old gamma caused
 double dimming and did not follow the application slider; the production candidate
 uses one coefficient and releases the viewport at 100%. The installed software mode
-reads 80%, Windows compositor, DDC off and physical backlight 100%. Physical
-the user confirms adjacent changes without popup flashes, held F1/F2 repetition
-and normal brightness at 100%. Release preparation remains pending.
+reads 80%, Windows compositor, DDC off and physical backlight 100%. The user
+confirms adjacent changes without popup flashes, held F1/F2 repetition and normal
+brightness at 100%. Version 0.1.6 was published as a prerelease.
 
 The user narrowed the remaining flash to the application's percentage popup.
 Source review identified its unconditional TOPMOST promotion above the compositor;

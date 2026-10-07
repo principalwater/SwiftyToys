@@ -94,6 +94,9 @@ actor DisplayController {
     }
 
     private func bind() throws {
+        // Validate hints before discovery: a failed query must restore the cursor,
+        // not leave a stale viewport active because discovery threw first.
+        try compositor?.validateTopology()
         let outputs = try discoverDisplays()
         let eligible = outputs.filter { $0.isPhysical && !$0.isCloned && !$0.isHDR }
         var saved = settings.targetID

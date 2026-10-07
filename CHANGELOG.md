@@ -1,5 +1,16 @@
 # Changelog
 
+## SwiftyToys 0.1.7 — 2026-10-07
+
+- Keep software brightness through generic device, settings and power-status
+  notifications. Coalesce hints and validate the actual display configuration on
+  the display executor without removing an unchanged viewport; no vendor exceptions.
+- Subscribe to monitor interface notifications and retain immediate restoration
+  for display-mode, session and suspend/resume changes. Preserve physical SDR,
+  HDR/clone/virtual exclusions and cursor recovery.
+- Create the software viewport only below 100%, avoiding hidden buffers and device
+  subscriptions when the effect is off.
+
 ## SwiftyToys 0.1.6 — 2026-10-07
 
 - Keep the brightness percentage popup behind the active software viewport from
