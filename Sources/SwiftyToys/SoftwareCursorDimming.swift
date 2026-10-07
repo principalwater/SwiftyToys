@@ -32,6 +32,15 @@ private func cursorDimmingProcedure(_ window: HWND?, _ message: UINT, _ value: W
 /// Protected surfaces and exclusive fullscreen applications require physical validation.
 final class SoftwareCursorDimmingSession {
     private static let windowClass = "SwiftyToys.SoftwareCursorDimming"
+
+    /// OSD stays behind this process's visible viewport, so its first frame is
+    /// dimmed too. Resolve through Windows; never transfer the actor's session.
+    static func activeViewport() -> HWND? {
+        guard let window = withWideString(windowClass, { FindWindowW($0, nil) }), IsWindowVisible(window) else { return nil }
+        var owner: DWORD = 0
+        GetWindowThreadProcessId(window, &owner)
+        return owner == GetCurrentProcessId() ? window : nil
+    }
     private static let frameTimer: UINT_PTR = 1
     private let threadID = GetCurrentThreadId()
     private let output: DisplayOutput
@@ -43,6 +52,8 @@ final class SoftwareCursorDimmingSession {
     private var sessionNotifications = false
     private var cursorRestoreNeeded = false
     private var appliedPercent: Int?
+    private var invalidationMessage: UINT?
+    private var traceCount = 0
     private(set) var isActive = false
     private(set) var isValid = true
     private(set) var failure: WindowsError?
@@ -67,6 +78,7 @@ final class SoftwareCursorDimmingSession {
     func apply(_ level: BrightnessLevel) throws(WindowsError) {
         precondition(GetCurrentThreadId() == threadID)
         if level.percent == 100 { try restore(); return }
+        if !isActive || appliedPercent != level.percent { trace("apply \(level.percent)%") }
         guard isValid else {
             throw failure ?? .unsupported("Software cursor dimming was invalidated. Select the display again.")
         }
@@ -84,12 +96,16 @@ final class SoftwareCursorDimmingSession {
             guard let host, let control else {
                 throw WindowsError.unsupported("Software cursor viewport is unavailable.")
             }
-            // Update the existing viewport first: adjacent levels never expose a 100% frame.
+            // Keep the existing viewport and its previous frame during adjacent changes.
             var effect = Self.colorEffect(level.percent)
             guard MagSetColorEffect(control, &effect) else {
                 throw WindowsError.api("Set software brightness", GetLastError())
             }
-            try refreshFrame(host, control)
+            if isActive {
+                guard InvalidateRect(control, nil, false) else {
+                    throw WindowsError.api("Repaint software brightness", GetLastError())
+                }
+            } else { try refreshFrame(host, control) }
             if !isActive {
                 guard SetTimer(host, Self.frameTimer, 16, nil) != 0 else {
                     throw WindowsError.api("Start software cursor refresh", GetLastError())
@@ -121,6 +137,7 @@ final class SoftwareCursorDimmingSession {
     /// Restore visibility before destroying the viewport; release its native buffers at 100%.
     func restore() throws(WindowsError) {
         precondition(GetCurrentThreadId() == threadID)
+        if host != nil || cursorRestoreNeeded || !isValid { trace("restore") }
         let error = deactivate()
         closeWindows()
         if let error { throw error }
@@ -159,6 +176,7 @@ final class SoftwareCursorDimmingSession {
         case UINT(WM_DISPLAYCHANGE), UINT(WM_SETTINGCHANGE), UINT(WM_DEVICECHANGE),
             UINT(WM_WTSSESSION_CHANGE), UINT(WM_POWERBROADCAST), UINT(WM_CLOSE):
             // Native callback: bounded visibility/window work only; no discovery or lease I/O.
+            invalidationMessage = message
             invalidate(.unsupported("The display or Windows session changed. Select the display again."))
             return message == UINT(WM_POWERBROADCAST) ? 1 : 0
         case UINT(WM_MOUSEACTIVATE): return LRESULT(MA_NOACTIVATE)
@@ -177,7 +195,7 @@ final class SoftwareCursorDimmingSession {
         guard SetWindowPos(host, HWND(bitPattern: -1), 0, 0, 0, 0, UINT(SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) else {
             throw .api("Refresh software cursor viewport", GetLastError())
         }
-        guard InvalidateRect(control, nil, true) else {
+        guard InvalidateRect(control, nil, false) else {
             throw .api("Refresh magnified cursor", GetLastError())
         }
     }
@@ -224,6 +242,14 @@ final class SoftwareCursorDimmingSession {
             throw .api("Monitor software cursor session", GetLastError())
         }
         sessionNotifications = true
+        trace("create viewport")
+    }
+
+    private func trace(_ event: String) {
+        // Bound temporary lifecycle diagnostics; never log from the frame/input callbacks.
+        guard traceCount < 32 else { return }
+        traceCount += 1
+        Diagnostics.write("software cursor: \(event); active=\(isActive) valid=\(isValid) previous=\(appliedPercent ?? 100) message=\(invalidationMessage ?? 0) failure=\(failure?.description ?? "none")")
     }
 
     private func closeWindows() {

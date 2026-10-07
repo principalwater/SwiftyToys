@@ -2,6 +2,8 @@
 
 ## SwiftyToys 0.1.6 — 2026-10-07
 
+- Keep the brightness percentage popup behind the active software viewport from
+  its first visible frame; repaint without clearing the composition background.
 - Add an experimental native software method including the cursor and ordinary
   tooltips on one active physical SDR display. Use one coefficient without a gamma
   overlay, retain the viewport between adjacent values, and stop it at 100%.

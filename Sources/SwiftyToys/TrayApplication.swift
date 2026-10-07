@@ -655,7 +655,7 @@ final class TrayApplication {
         let height = Int32(92 * scale)
         let area = info.rcWork
         SetWindowPos(
-            osd, HWND(bitPattern: -1), area.left + (area.right - area.left - width) / 2,
+            osd, SoftwareCursorDimmingSession.activeViewport() ?? HWND(bitPattern: -1), area.left + (area.right - area.left - width) / 2,
             area.bottom - height - Int32(110 * scale), width, height, UINT(SWP_NOACTIVATE | SWP_SHOWWINDOW))
         InvalidateRect(osd, nil, false)
         SetTimer(osd, 1, 1100, nil)

@@ -2,8 +2,8 @@
 
 ## Cursor and held-key follow-up candidate
 
-The installed full package is 6,533,120 bytes, SHA-256
-`CA39CA098F0BEF8BF500B400D675E318834EC06FD5C23CC3EEA6C8964D061339`;
+The installed full package is 6,534,656 bytes, SHA-256
+`1DEF251C33CB878F9F454A09140864FB7D8B9366B7D0A7DD84A3A2FBCB3C5F56`;
 31 portable tests and all 16 native checks pass on the packaged binary.
 The native cursor policy check creates no viewport and changes no cursor state.
 The input check captures F2 in its own hook before, during and after a 2.4-second
@@ -15,6 +15,12 @@ double dimming and did not follow the application slider; the production candida
 uses one coefficient and releases the viewport at 100%. The installed software mode
 reads 80%, Windows compositor, DDC off and physical backlight 100%. Physical
 no-flash/hold/100% checks and release remain pending.
+
+The user narrowed the remaining flash to the application's percentage popup.
+Source review identified its unconditional TOPMOST promotion above the compositor;
+the installed follow-up inserts it behind the visible, process-owned viewport.
+Non-erasing invalidation also avoids clearing the composition background. These
+changes passed all 16 packaged native checks; physical popup acceptance is pending.
 
 A 15.02-second interactive prototype sample used 2.7% of one CPU core, 33.65 MiB
 private bytes and 21.95 MiB working set. This is not an idle, latency, GPU or
