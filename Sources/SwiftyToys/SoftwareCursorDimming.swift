@@ -42,6 +42,9 @@ final class SoftwareCursorDimmingSession {
         return owner == GetCurrentProcessId() ? window : nil
     }
     private static let frameTimer: UINT_PTR = 1
+    // Documented GUID_DEVINTERFACE_MONITOR; no device identity or payload name is retained.
+    private static let monitorInterface = GUID(Data1: 0xe6f07b5f, Data2: 0xee97, Data3: 0x4a90,
+        Data4: (0xb0, 0x76, 0x33, 0xf5, 0x7b, 0xf4, 0xea, 0xa7))
     private let threadID = GetCurrentThreadId()
     private let output: DisplayOutput
     private var source = RECT()
@@ -50,6 +53,8 @@ final class SoftwareCursorDimmingSession {
     private var initialized = false
     private var registeredClass = false
     private var sessionNotifications = false
+    private var monitorNotifications: HDEVNOTIFY?
+    private var needsTopologyValidation = false
     private var cursorRestoreNeeded = false
     private var appliedPercent: Int?
     private var invalidationMessage: UINT?
@@ -66,7 +71,6 @@ final class SoftwareCursorDimmingSession {
             guard MagInitialize() else { throw WindowsError.api("Initialize magnification", GetLastError()) }
             initialized = true
             try checkMagnifierState()
-            try createWindows()
         } catch {
             closeWindows()
             if initialized { MagUninitialize(); initialized = false }
@@ -77,7 +81,7 @@ final class SoftwareCursorDimmingSession {
     /// Call only after the controller durably saves its lease and starts recovery.
     func apply(_ level: BrightnessLevel) throws(WindowsError) {
         precondition(GetCurrentThreadId() == threadID)
-        if level.percent == 100 { try restore(); return }
+        if !Self.requiresViewport(level.percent) { try restore(); return }
         if !isActive || appliedPercent != level.percent { trace("apply \(level.percent)%") }
         guard isValid else {
             throw failure ?? .unsupported("Software cursor dimming was invalidated. Select the display again.")
@@ -143,6 +147,24 @@ final class SoftwareCursorDimmingSession {
         if let error { throw error }
     }
 
+    /// Generic device/settings broadcasts are hints, not proof of a display change.
+    /// Validate on the display executor before reuse, keeping an unchanged frame visible.
+    func validateTopology() throws(WindowsError) {
+        precondition(GetCurrentThreadId() == threadID)
+        guard needsTopologyValidation, isValid else { return }
+        // Native calls can dispatch a newer sent broadcast. Keep its flag armed.
+        needsTopologyValidation = false
+        do throws(WindowsError) {
+            let bounds = try Self.checkedBounds(output)
+            guard isValid, Self.sameRect(bounds, source) else {
+                throw failure ?? .unsupported("Display bounds changed. Select the display again.")
+            }
+        } catch {
+            invalidate(error)
+            throw error
+        }
+    }
+
     private func deactivate() -> WindowsError? {
         var error: WindowsError?
         if cursorRestoreNeeded {
@@ -176,9 +198,14 @@ final class SoftwareCursorDimmingSession {
         case UINT(WM_DISPLAYCHANGE), UINT(WM_SETTINGCHANGE), UINT(WM_DEVICECHANGE),
             UINT(WM_WTSSESSION_CHANGE), UINT(WM_POWERBROADCAST), UINT(WM_CLOSE):
             // Native callback: bounded visibility/window work only; no discovery or lease I/O.
-            invalidationMessage = message
-            invalidate(.unsupported("The display or Windows session changed. Select the display again."))
-            return message == UINT(WM_POWERBROADCAST) ? 1 : 0
+            switch Self.eventAction(message, value) {
+            case .ignore: break
+            case .validate: needsTopologyValidation = true
+            case .invalidate:
+                invalidationMessage = message
+                invalidate(.unsupported("The display or Windows session changed. Select the display again."))
+            }
+            return message == UINT(WM_POWERBROADCAST) || message == UINT(WM_DEVICECHANGE) ? 1 : 0
         case UINT(WM_MOUSEACTIVATE): return LRESULT(MA_NOACTIVATE)
         case UINT(WM_NCHITTEST): return LRESULT(HTTRANSPARENT)
         case UINT(WM_NCDESTROY):
@@ -242,6 +269,14 @@ final class SoftwareCursorDimmingSession {
             throw .api("Monitor software cursor session", GetLastError())
         }
         sessionNotifications = true
+        var filter = DEV_BROADCAST_DEVICEINTERFACE_W()
+        filter.dbcc_size = DWORD(MemoryLayout.size(ofValue: filter))
+        filter.dbcc_devicetype = DWORD(DBT_DEVTYP_DEVICEINTERFACE)
+        filter.dbcc_classguid = Self.monitorInterface
+        monitorNotifications = RegisterDeviceNotificationW(host, &filter, DWORD(DEVICE_NOTIFY_WINDOW_HANDLE))
+        guard monitorNotifications != nil else {
+            throw .api("Monitor software cursor display changes", GetLastError())
+        }
         trace("create viewport")
     }
 
@@ -257,6 +292,8 @@ final class SoftwareCursorDimmingSession {
             KillTimer(host, Self.frameTimer)
             if sessionNotifications { WTSUnRegisterSessionNotification(host) }
             sessionNotifications = false
+            if let monitorNotifications { UnregisterDeviceNotification(monitorNotifications) }
+            monitorNotifications = nil
             // The session owns the HWND; its userdata never retains the session.
             SetWindowLongPtrW(host, Int32(GWLP_USERDATA), 0)
             DestroyWindow(host)
@@ -327,6 +364,25 @@ final class SoftwareCursorDimmingSession {
         lhs.left == rhs.left && lhs.top == rhs.top && lhs.right == rhs.right && lhs.bottom == rhs.bottom
     }
 
+    private enum EventAction { case ignore, validate, invalidate }
+
+    private static func eventAction(_ message: UINT, _ value: WPARAM) -> EventAction {
+        switch message {
+        case UINT(WM_DISPLAYCHANGE), UINT(WM_CLOSE): return .invalidate
+        case UINT(WM_DEVICECHANGE), UINT(WM_SETTINGCHANGE): return .validate
+        case UINT(WM_POWERBROADCAST):
+            switch value {
+            case WPARAM(PBT_APMSUSPEND), WPARAM(PBT_APMRESUMEAUTOMATIC),
+                WPARAM(PBT_APMRESUMESUSPEND), WPARAM(PBT_APMRESUMECRITICAL): return .invalidate
+            default: return .validate
+            }
+        case UINT(WM_WTSSESSION_CHANGE): return .invalidate
+        default: return .ignore
+        }
+    }
+
+    private static func requiresViewport(_ percent: Int) -> Bool { percent < 100 }
+
     private static func colorEffect(_ percent: Int) -> MAGCOLOREFFECT {
         var effect = MAGCOLOREFFECT()
         withUnsafeMutableBytes(of: &effect) { bytes in
@@ -344,6 +400,21 @@ final class SoftwareCursorDimmingSession {
                 source: 0, target: 1, isPhysical: physical, isCloned: cloned, isHDR: hdr)
         }
         let output = fixture()
+        // Generic hints share one policy, independent of the device/vendor/action.
+        for value in [WPARAM(0), WPARAM(DBT_DEVNODES_CHANGED), WPARAM(DBT_DEVICEARRIVAL),
+            WPARAM(DBT_DEVICEREMOVECOMPLETE), WPARAM(SPI_SETMOUSE), WPARAM(SPI_SETMOUSESPEED), WPARAM.max] {
+            guard eventAction(UINT(WM_DEVICECHANGE), value) == .validate,
+                eventAction(UINT(WM_SETTINGCHANGE), value) == .validate
+            else { throw .unsupported("Software cursor generic-event policy check failed.") }
+        }
+        guard !requiresViewport(100), requiresViewport(0), requiresViewport(99),
+            eventAction(UINT(WM_DISPLAYCHANGE), 0) == .invalidate,
+            eventAction(UINT(WM_POWERBROADCAST), WPARAM(PBT_APMSUSPEND)) == .invalidate,
+            eventAction(UINT(WM_POWERBROADCAST), WPARAM(PBT_APMRESUMEAUTOMATIC)) == .invalidate,
+            eventAction(UINT(WM_POWERBROADCAST), WPARAM(PBT_APMPOWERSTATUSCHANGE)) == .validate,
+            eventAction(UINT(WM_POWERBROADCAST), WPARAM(PBT_POWERSETTINGCHANGE)) == .validate,
+            eventAction(UINT(WM_WTSSESSION_CHANGE), WPARAM(WTS_SESSION_LOCK)) == .invalidate
+        else { throw .unsupported("Software cursor event-scope/idle-policy check failed.") }
         guard supports(output, activePathCount: 1, displays: [output]),
             !supports(output, activePathCount: 2, displays: [output]),
             !supports(output, activePathCount: 1, displays: [output, fixture("virtual", physical: false)]),
@@ -363,7 +434,7 @@ final class SoftwareCursorDimmingSession {
             }
             guard correct else { throw .unsupported("Software cursor color-matrix check failed.") }
         }
-        Console.writeLine("PASS: software cursor single-output SDR policy and absolute color scaling; no cursor/display changes")
+        Console.writeLine("PASS: software cursor event scope, idle resources, single-output SDR policy and absolute color scaling; no cursor/display changes")
     }
 
     deinit {
