@@ -68,8 +68,8 @@ The two rule matchers now use a single bounded traversal without temporary match
 App-specific first-match priority is covered by a regression test.
 
 The tray now modifies its icon only when its text changes. The duplicate timer
-update was removed. The 10-second DDC gate runs before reading configuration,
-including when maximum-backlight enforcement is disabled. Unchanged mouse direction
+update was removed. The former maximum-backlight worker was removed in 0.1.6; software dimming has
+no periodic physical-backlight writes. Display requests are bounded and coalesced. Unchanged mouse direction
 does not request UAC or restart a device. These eliminate concrete operations;
 their independent timing/energy benefit is not claimed from source inspection.
 
@@ -86,7 +86,7 @@ their independent timing/energy benefit is not claimed from source inspection.
 ## Build budget and safety
 
 Release uses `-Osize`, static official Swift runtime, no debug information, dead
-stripping and identical COMDAT folding. Budget: executable <=6.5 MB, ZIP <=3 MB.
+stripping and identical COMDAT folding. Budget: executable <=6.6 MB, ZIP <=3 MB.
 Static DLL imports are restricted to System32 and verified with dumpbin loadconfig;
 there are no bundled Swift DLLs or web renderer. Do not replace `-Osize` with `-O`
 or change CPU target/ownership/concurrency based on guesswork.

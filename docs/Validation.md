@@ -1,4 +1,35 @@
-# Validation snapshot: 0.1.5
+# Validation snapshot: 0.1.6
+
+2026-10-07, Windows 10 build 19045 / MacPro6,1. The installed packaged executable
+is 6,510,592 bytes, SHA-256
+`8891B654DB6AB4CEE0B126D44E3965687C90F43DB1A30CC890B7EB5DBB71BFAF`.
+
+- 30 portable Swift tests and 15 native checks pass. Native tests cover DDC opt-in,
+  legacy conflict migration, bounded request coalescing, Tab traversal through the
+  clipped viewport, usable control sizes, back navigation, drafts/focus, English/Russian
+  pages, ABI, storage, keyboard/worker ownership, driver trust and input-profile APIs.
+- On the selected physical SDR monitor, software levels 50%, 40% and 45% all read
+  back physical backlight 100%; 7 seconds of idle ticks retain 100%. Enabling DDC
+  and setting 50% reads back physical 50%. Disabling DDC restores 100% once; saved
+  software level 45% is restored. Tests finish with DDC off and software dimming.
+- The actual installed GUI's DDC checkbox switches both ways with verified monitor
+  readback. WM_NULL responds within the 500-ms probe limit during each request;
+  this bounded check is not a latency benchmark. Overview return works afterwards.
+- Real own-window previews verify the 3-column overview, 2-column compact overview
+  and brightness details. Captures contain this app only; an overview preview is
+  public. Header/viewport batches share their respective parents and Tab enters content.
+- Watchdog/recovery, target identity, HDR/clone/virtual exclusions and signed trackpad
+  input are preserved. Failed enable/disable, cable removal, abrupt-crash recovery,
+  sleep/resume, screen-reader and additional DPI/device combinations remain physical
+  acceptance checks; the existing earlier user confirmations below remain evidence.
+- GUI brightness/method requests and cold device reports are asynchronous. Legacy
+  synchronous CLI IPC retains a bounded wait and can report busy during UI driver work;
+  GUI completion is not claimed to eliminate every synchronous compatibility path.
+- Static Swift runtime, System32 DLL imports and 3 MB ZIP budget are preserved.
+  The EXE ceiling is now 6.6 MB for the added native UI/responsiveness work. Size
+  growth does not establish CPU/RSS, battery or weakest-hardware improvements.
+
+## Previously verified 0.1.5 behavior
 
 2026-10-06 release checks on Windows 10 build 19045 / MacPro6,1:
 

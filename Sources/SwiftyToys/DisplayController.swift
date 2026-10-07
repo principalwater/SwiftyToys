@@ -216,8 +216,19 @@ actor DisplayController {
         switch command {
         case 0: try apply(level)
         case 3:
-            try restoreAndRelease()
             settings = try Settings()
+            try restoreAndRelease()
+            try apply(level)
+        case 4:
+            // Idle ticks never retry an unresolved physical recovery or open a driver.
+            if output != nil { try apply(level) }
+            else if !settings.ddcEnabled, (try ColorLease.read())?.backend != "hardware" { try apply(level) }
+        case 5:
+            let current = try Settings()
+            if current.backend != settings.backend || current.targetID != settings.targetID {
+                settings = current
+                try restoreAndRelease()
+            } else { hardware?.invalidate() }
             try apply(level)
         case 1: try apply(BrightnessLevel(max(0, min(100, value))))
         case 2: try apply(level.adjusted(by: value))

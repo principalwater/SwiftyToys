@@ -7,7 +7,8 @@ import WinSDK
 import WindowsDisplayABI
 
 private let trayMessage: UINT = 0x8004
-private final class HardwareGate: Sendable { let busy = Mutex(false) }
+private let displayReplyMessage: UINT = 0x8035
+private final class SleepGate: Sendable { let busy = Mutex(false) }
 private func windowProcedure(_ window: HWND?, _ message: UINT, _ value: WPARAM, _ data: LPARAM) -> LRESULT {
     guard let window else { return DefWindowProcW(window, message, value, data) }
     if message == UINT(WM_NCCREATE), let creation = UnsafePointer<CREATESTRUCTW>(bitPattern: Int(data)),
@@ -33,7 +34,7 @@ final class TrayApplication {
     private var applyingMouseScroll = false
     private var dashboard: SettingsWindow?
     private let tools = DesktopTools()
-    private let sleepGate = HardwareGate()
+    private let sleepGate = SleepGate()
     private var systemIndicator: SystemIndicator?
     private var tray = NOTIFYICONDATAW()
     private var trayAdded = false
@@ -41,17 +42,15 @@ final class TrayApplication {
     private var exiting = false
     private var pendingSteps = 0
     private var lastApply: UInt64 = 0
-    private var lastHardwareCheck: UInt64 = 0
-    private let hardwareGate = HardwareGate()
+    private let displayMailbox = DisplayMailbox()
+    private var displayQueue = DisplayRequestQueue(level: 100)
     private let taskbarCreated = withWideString("TaskbarCreated") { RegisterWindowMessageW($0) }
 
     init(settings: Settings) throws {
         self.settings = settings
         controller = try DisplayController(settings: settings)
-        do { state = try displayCommand(controller, command: 0) } catch {
-            Diagnostics.write("initial display unavailable: \(error)")
-            state = DisplayState(level: settings.brightness, device: "", backend: "unavailable", connected: false)
-        }
+        state = DisplayState(level: settings.brightness, device: "", backend: "unavailable", connected: false)
+        displayQueue.level = settings.brightness.percent
         var initialized = false
         defer {
             if !initialized {
@@ -90,7 +89,7 @@ final class TrayApplication {
             destination: MessageDestination(window), custom: settings.indicator == .custom,
             hardwareKeys: settings.grabFunctionKeys)
         SetTimer(window, 1, 3000, nil)
-        queueHardwareMaximum()
+        requestDisplay(DisplayRequest(3))
         Diagnostics.write(
             "start: \(AppVersion.implementation) \(AppVersion.string); dedicated input active=\(remapper?.active ?? false)"
         )
@@ -227,12 +226,40 @@ final class TrayApplication {
                 }
             }
             return 0
+        case displayReplyMessage:
+            guard !exiting, let request = displayQueue.active, let reply = displayMailbox.result.withLock({ value in defer { value = nil }; return value }) else { return 0 }
+            var displayError: Error?
+            do {
+                state = try reply.get()
+                lastApply = GetTickCount64()
+                updateTray()
+                dashboard?.update(brightness: displayQueue.hasBrightness ? displayQueue.level : state.level.percent)
+                if request.command == 1 { dashboard?.displayCompleted("Brightness updated.") }
+                if request.show { showOSD() }
+            } catch {
+                Diagnostics.write("display: \(error)")
+                if request.mode != nil { displayError = error }
+            }
+            if request.mode != nil {
+                if let latest = try? Settings() { settings = latest }
+                dashboard?.refreshBrightnessControl()
+                dashboard?.brightnessControlBusy(false)
+                if case .success = reply { dashboard?.displayCompleted(settings.ddcEnabled ? "DDC/CI enabled. Brightness controls the monitor backlight, including the cursor." : "DDC/CI disabled. Brightness uses software dimming; the monitor backlight stays unchanged.") }
+            }
+            if let next = displayQueue.finish(level: state.level.percent) { requestDisplay(next) }
+            if let displayError, let dashboard, let window = dashboard.window, IsWindowVisible(window) { dashboard.showActionError(displayError) }
+            return 0
         case brightnessMessage:
             guard !exiting else { return 0 }
             if value == 6 {
                 let modes = ["auto", "native", "amd", "hardware"]
-                guard modes.indices.contains(Int(data)) else { return 0 }
-                do { _ = try dashboardCommand(245, [modes[Int(data)]]); return LRESULT(state.level.percent + 1) }
+                guard displayQueue.active == nil, modes.indices.contains(Int(data)) else { return 0 }
+                do {
+                    state = try displayCommand(controller, command: 3, mode: modes[Int(data)])
+                    settings = try Settings(); displayQueue.level = state.level.percent
+                    dashboard?.refreshBrightnessControl(); dashboard?.update(brightness: state.level.percent); updateTray()
+                    return LRESULT(state.level.percent + 1)
+                }
                 catch { Diagnostics.write("brightness mode: \(error)"); return 0 }
             }
             if value == 5 {
@@ -261,9 +288,9 @@ final class TrayApplication {
             } else if value == 2 {
                 queue(-1)
             } else if value == 3 {
-                _ = apply(command: 1, value: 100, show: true)
+                requestDisplay(DisplayRequest(1, value: 100, show: true))
             } else if value == 4 {
-                _ = apply(command: 1, value: 0, show: true)
+                requestDisplay(DisplayRequest(1, value: 0, show: true))
             }
             return 0
         case UINT(WM_TIMER):
@@ -272,20 +299,17 @@ final class TrayApplication {
                 flushSteps()
             } else {
                 tools.tick()
-                _ = apply(command: 0, show: false)
-                queueHardwareMaximum()
+                requestDisplay(DisplayRequest(4))
             }
             return 0
         case UINT(WM_DISPLAYCHANGE):
             if !exiting {
-                _ = apply(command: 3, show: false)
-                queueHardwareMaximum()
+                requestDisplay(DisplayRequest(5))
             }
             return 0
         case UINT(WM_POWERBROADCAST):
             if value == WPARAM(PBT_APMRESUMEAUTOMATIC) || value == WPARAM(PBT_APMRESUMESUSPEND) {
-                _ = apply(command: settings.restoreOnResume ? 3 : 1, value: 100, show: false)
-                queueHardwareMaximum()
+                requestDisplay(DisplayRequest(settings.restoreOnResume ? 5 : 1, value: 100))
             }
             return 1
         case trayMessage:
@@ -322,9 +346,10 @@ final class TrayApplication {
     }
 
     private func apply(command: Int, value: Int = 0, show: Bool) -> Bool {
-        guard !exiting else { return false }
+        guard !exiting, displayQueue.active == nil else { return false }
         do {
             state = try displayCommand(controller, command: command, value: value)
+            displayQueue.level = state.level.percent
             lastApply = GetTickCount64()
             if command == 3 {
                 settings.indicator = try Settings().indicator
@@ -337,6 +362,22 @@ final class TrayApplication {
         } catch {
             Diagnostics.write("software: \(error)")
             return false
+        }
+    }
+
+    /// Keep one actor request in flight; retain only the latest slider/key intent.
+    private func requestDisplay(_ request: DisplayRequest) {
+        guard !exiting, let window else { return }
+        let start = displayQueue.enqueue(request)
+        if request.mode != nil { dashboard?.brightnessControlBusy(true) }
+        guard start else { return }
+        let mailbox = displayMailbox, controller = controller, destination = MessageDestination(window)
+        Task {
+            let reply: Result<DisplayState, WindowsError>
+            do { reply = .success(try await performDisplayCommand(controller, command: request.command, value: request.value, mode: request.mode)) }
+            catch { reply = .failure((error as? WindowsError) ?? .unsupported(String(describing: error))) }
+            mailbox.result.withLock { $0 = reply }
+            _ = destination.post(displayReplyMessage)
         }
     }
 
@@ -375,17 +416,15 @@ final class TrayApplication {
     private func dashboardCommand(_ id: Int, _ values: [String]) throws -> String {
         switch id {
         case 211:
-            guard let value = values.first.flatMap(Int.init), apply(command: 1, value: value, show: false) else {
-                throw WindowsError.unsupported("Could not apply brightness.")
-            }
+            guard let value = values.first.flatMap(Int.init), (0...100).contains(value) else { throw WindowsError.unsupported("Brightness must be 0–100%.") }
+            requestDisplay(DisplayRequest(1, value: value))
+            return "Applying brightness…"
         case 214:
             try settings.select(values[0])
-            guard apply(command: 3, show: false) else {
-                throw WindowsError.unsupported("Could not select this display.")
-            }
-            queueHardwareMaximum()
+            requestDisplay(DisplayRequest(3))
+            return "Reconnecting display…"
         case 240:
-            guard values.count == 8, let step = Int(values[1]), (1...25).contains(step) else {
+            guard values.count == 7, let step = Int(values[1]), (1...25).contains(step) else {
                 throw WindowsError.unsupported("Brightness step must be 1–25%.")
             }
             let keys = Array(values[3...6])
@@ -417,8 +456,8 @@ final class TrayApplication {
                 }
             }
             for (key, value) in zip(
-                ["osd", "step", "grabF1F2", "up", "down", "max", "min", "hardwareMaximum"],
-                [values[0] == "Windows" ? "system" : "custom", String(step), values[2]] + keys + [values[7]])
+                ["osd", "step", "grabF1F2", "up", "down", "max", "min"],
+                [values[0] == "Windows" ? "system" : "custom", String(step), values[2]] + keys)
             { try settings.setValue(value, forKey: key) }
             settings = try Settings()
             try reloadRemapper()
@@ -426,19 +465,11 @@ final class TrayApplication {
             systemIndicator = try SystemIndicator(
                 destination: MessageDestination(window!), custom: settings.indicator == .custom,
                 hardwareKeys: settings.grabFunctionKeys)
-        case 241: guard apply(command: 3, show: false) else { throw WindowsError.unsupported("Display unavailable.") }
+        case 241: requestDisplay(DisplayRequest(3)); return "Reconnecting display…"
         case 245:
             guard values.count == 1, ["auto", "native", "amd", "hardware"].contains(values[0]) else { throw WindowsError.unsupported("Invalid brightness mode.") }
-            let previous = settings.backend
-            try settings.setValue(values[0], forKey: "backend")
-            settings.backend = values[0]
-            guard apply(command: 3, show: false) else {
-                try settings.setValue(previous, forKey: "backend")
-                settings.backend = previous
-                _ = apply(command: 3, show: false)
-                throw WindowsError.unsupported("Brightness mode is unavailable. Previous mode restored.")
-            }
-            return "Brightness mode applied. Hardware mode dims the cursor with the display."
+            requestDisplay(DisplayRequest(3, mode: values[0]))
+            return "Applying brightness method…"
         case 313: try reloadRemapper()
         case 410:
             let minutes =
@@ -477,7 +508,7 @@ final class TrayApplication {
         if let window { KillTimer(window, 2) }
         let steps = pendingSteps
         pendingSteps = 0
-        if steps != 0 { _ = apply(command: 2, value: steps * settings.step, show: true) }
+        if steps != 0 { requestDisplay(DisplayRequest(1, value: max(0, min(100, displayQueue.level + steps * settings.step)), show: true)) }
     }
 
     private func updateTray() {
@@ -534,7 +565,7 @@ final class TrayApplication {
         } else if selected == 2 {
             queue(-1)
         } else if selected == 3 {
-            _ = apply(command: 3, show: false)
+            requestDisplay(DisplayRequest(3))
         } else if selected == 4 {
             PostMessageW(window, UINT(WM_CLOSE), 0, 0)
         } else if selected == 2001 || selected == 2002 {
@@ -544,7 +575,7 @@ final class TrayApplication {
                 if let osd { ShowWindow(osd, Int32(SW_HIDE)) }
             } catch { Diagnostics.write("indicator: \(error)") }
         } else if [10, 25, 50, 75, 100].contains(selected) {
-            _ = apply(command: 1, value: Int(selected), show: true)
+            requestDisplay(DisplayRequest(1, value: Int(selected), show: true))
         }
         PostMessageW(window, UINT(WM_NULL), 0, 0)
     }
@@ -612,33 +643,6 @@ final class TrayApplication {
         fill(bar, 0x0040_3A3A)
         bar.right = bar.left + (bar.right - bar.left) * Int32(state.level.percent) / 100
         fill(bar, 0x005A_B2F5)
-    }
-
-    private func queueHardwareMaximum() {
-        let now = GetTickCount64()
-        guard lastHardwareCheck == 0 || now - lastHardwareCheck >= 10000 else { return }
-        guard !exiting else { return }
-        lastHardwareCheck = now
-        guard let configuration = try? Settings(), configuration.hardwareMaximum, configuration.backend != "hardware",
-            let id = configuration.targetID
-        else { return }
-        let gate = hardwareGate
-        guard
-            gate.busy.withLock({
-                if $0 { return false }
-                $0 = true
-                return true
-            })
-        else { return }
-        do {
-            _ = try NativeThread(name: "SwiftyToys hardware brightness") {
-                defer { gate.busy.withLock { $0 = false } }
-                do { _ = try ensureHardwareMaximum(displayID: id) } catch { Diagnostics.write("hardware: \(error)") }
-            }
-        } catch {
-            gate.busy.withLock { $0 = false }
-            Diagnostics.write("hardware thread: \(error)")
-        }
     }
 
     func shutdown() {

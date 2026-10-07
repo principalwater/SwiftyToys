@@ -53,6 +53,16 @@ jobs:
         run: |
           $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-power' -Wait -PassThru -NoNewWindow
           if ($process.ExitCode -ne 0) { throw 'Native sleep permission check failed' }
+      - name: Check DDC opt-in and legacy migration
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-brightness-policy' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw 'Brightness policy check failed' }
+      - name: Check bounded asynchronous display requests
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-display-queue' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw 'Display request queue check failed' }
       - name: Check Mac preset migration and saved edits
         shell: pwsh
         run: |

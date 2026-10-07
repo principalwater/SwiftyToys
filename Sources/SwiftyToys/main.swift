@@ -11,6 +11,8 @@ func runCLI(_ args: [String]) throws -> Int32 {
     if command == "--test-wsl" { try WSLSetup.selfCheck(); return 0 }
     if command == "--test-errors" { try WindowsError.selfCheck(); return 0 }
     if command == "--test-power" { try DesktopPower.selfCheck(); return 0 }
+    if command == "--test-brightness-policy" { try Settings.selfCheck(); return 0 }
+    if command == "--test-display-queue" { try DisplayRequestQueue.selfCheck(); return 0 }
     if command == "--test-keyboard-config" { try KeyboardConfiguration.selfCheck(); return 0 }
     if command == "--wsl-info" {
         let setup = try WSLSetup.current()
@@ -111,7 +113,7 @@ func runCLI(_ args: [String]) throws -> Int32 {
             Console.writeLine("PASS: all 10 native settings pages, navigation, checkbox toggles and brightness synchronization")
             return 0
         }
-        preview.show()
+        try preview.showPreview(page: args.count > 1 ? Int(args[1]) ?? -1 : 0)
         var message = MSG()
         while BC_GetMessageW(&message, nil, 0, 0) > 0 {
             if !preview.dialogMessage(&message) {
@@ -233,10 +235,11 @@ func runCLI(_ args: [String]) throws -> Int32 {
         Console.writeLine("Target  : \(state.connected ? state.device : "disconnected; level saved")")
         Console.writeLine("Step    : \(settings.step)%")
         Console.writeLine("OSD     : \(settings.indicator.rawValue)")
+        Console.writeLine("DDC/CI  : \(settings.ddcEnabled ? "on" : "off (software dimming)")")
         if let id = settings.targetID {
             Console.writeLine("Hardware: \(try hardwareBrightnessInfo(displayID: id))")
         } else {
-            Console.writeLine("Hardware: maximum enforcement disabled")
+            Console.writeLine("Hardware: no physical display selected")
         }
     } else if operation != 4 {
         Console.writeLine(String(current))

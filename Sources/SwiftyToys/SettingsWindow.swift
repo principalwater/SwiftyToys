@@ -17,21 +17,65 @@ private func settingsProcedure(_ window: HWND?, _ message: UINT, _ value: WPARAM
     return DefWindowProcW(window, message, value, data)
 }
 
+private func viewportProcedure(_ window: HWND?, _ message: UINT, _ value: WPARAM, _ data: LPARAM) -> LRESULT {
+    guard let window, let parent = GetParent(window) else { return DefWindowProcW(window, message, value, data) }
+    switch message {
+    case UINT(WM_COMMAND), UINT(WM_DRAWITEM), UINT(WM_CTLCOLORSTATIC), UINT(WM_CTLCOLORBTN), UINT(WM_HSCROLL), UINT(WM_VSCROLL), UINT(WM_MOUSEWHEEL):
+        return SendMessageW(parent, message, value, data)
+    case UINT(WM_ERASEBKGND), UINT(WM_PRINTCLIENT):
+        if let context = UnsafeRawPointer(bitPattern: Int(GetWindowLongPtrW(parent, Int32(GWLP_USERDATA)))), let dc = HDC(bitPattern: UInt(value)) {
+            Unmanaged<SettingsWindow>.fromOpaque(context).takeUnretainedValue().paintViewport(dc, window)
+        }
+        return 1
+    case UINT(WM_PAINT):
+        var paint = PAINTSTRUCT()
+        if let dc = BeginPaint(window, &paint) {
+            _ = viewportProcedure(window, UINT(WM_PRINTCLIENT), WPARAM(UInt(bitPattern: dc)), 0)
+            EndPaint(window, &paint)
+        }
+        return 0
+    default: return DefWindowProcW(window, message, value, data)
+    }
+}
+
+private func settingsButtonProcedure(_ window: HWND?, _ message: UINT, _ value: WPARAM, _ data: LPARAM, _ id: UINT_PTR, _ context: DWORD_PTR) -> LRESULT {
+    if let window, let pointer = UnsafeRawPointer(bitPattern: UInt(context)) {
+        let owner = Unmanaged<SettingsWindow>.fromOpaque(pointer).takeUnretainedValue()
+        if message == UINT(WM_MOUSEMOVE) {
+            owner.hover(window, entered: true)
+            var tracking = TRACKMOUSEEVENT(cbSize: DWORD(MemoryLayout<TRACKMOUSEEVENT>.size), dwFlags: DWORD(TME_LEAVE), hwndTrack: window, dwHoverTime: 0)
+            TrackMouseEvent(&tracking)
+        } else if message == UINT(WM_MOUSELEAVE) { owner.hover(window, entered: false) }
+        else if message == UINT(WM_NCDESTROY) { RemoveWindowSubclass(window, settingsButtonProcedure, id) }
+    }
+    return DefSubclassProc(window, message, value, data)
+}
+
 /// Native accessible child controls, with a small painted shell. All state belongs to the UI thread.
 final class SettingsWindow {
     private(set) var window: HWND?
+    private var viewport: HWND?
     private var controls: [Int: HWND] = [:]
     private var content: [HWND] = []
     private var fonts: [HFONT] = []
     private var layout: [(HWND, Int, Int, Int, Int)] = []
+    private var fontRoles: [Int: Int] = [:]
+    private var hovered: HWND?
+    private var rendering = false
+    private var draftText: [Int: [Int: String]] = [:]
+    private var draftChecks: [Int: [Int: Bool]] = [:]
+    private var draftSelections: [Int: [Int: Int]] = [:]
+    private var pageOffsets: [Int: Int32] = [:]
     private var page = 0
     private var scrollOffset: Int32 = 0
+    private var wheelRemainder: Int32 = 0
     private var keyboard: KeyboardConfiguration
     private var presentingActionError = false
     private var distributions: [LinuxDistribution] = []
     private var ubuntuInstalled = false
     private var wslVirtualizationBlocked = false
     private let wslBootDiagnostic = WSLBootDiagnostic()
+    private let deviceReports = SettingsDeviceReports()
     private var displays: [DisplayOutput] = []
     private var languages: [UInt16] = []
     private let localization = Localization()
@@ -40,11 +84,19 @@ final class SettingsWindow {
     private var level: Int
     private var pendingBrightness: Int?
     private var selectedRule: Int?
+    private var draftRuleSelection: Int?
+    private var brightnessConfiguration: Settings?
+    private var modeBusy = false
+    private var lastFocusedControl: Int?
     private let preview: Bool
     private let command: (Int, [String]) throws -> String
-    private let background = CreateSolidBrush(0x00F8_F7F4)
-    private let white = CreateSolidBrush(0x00FF_FFFF)
-    private let dark = CreateSolidBrush(0x0033_2920)
+    private var highContrast = false
+    private var background: HBRUSH?
+    private var white: HBRUSH?
+    private var textColor: COLORREF { highContrast ? GetSysColor(Int32(COLOR_WINDOWTEXT)) : 0x0041_2F22 }
+    private var secondaryColor: COLORREF { highContrast ? textColor : 0x007A_6A5B }
+    private var accentColor: COLORREF { highContrast ? GetSysColor(Int32(COLOR_HIGHLIGHT)) : 0x00B0_6528 }
+    private var borderColor: COLORREF { highContrast ? textColor : 0x00E6_DDD5 }
     private let titles = [
         "Overview", "Brightness", "Keyboard", "Input languages", "Desktop", "Mouse", "Magic Trackpad", "Homebrew", "Boot Camp", "About SwiftyToys",
     ]
@@ -84,7 +136,7 @@ final class SettingsWindow {
             withWideString("SwiftyToys") {
                 CreateWindowExW(
                     DWORD(WS_EX_CONTROLPARENT), name, $0,
-                    DWORD(WS_OVERLAPPEDWINDOW) | DWORD(WS_CLIPCHILDREN | WS_VSCROLL), Int32(CW_USEDEFAULT),
+                    DWORD(WS_OVERLAPPEDWINDOW) | DWORD(WS_CLIPCHILDREN), Int32(CW_USEDEFAULT),
                     Int32(CW_USEDEFAULT), 1080, 790, nil, nil, GetModuleHandleW(nil),
                     Unmanaged.passUnretained(self).toOpaque())
             }
@@ -103,12 +155,20 @@ final class SettingsWindow {
                 )
             }
         }
+        type.lpfnWndProc = viewportProcedure
+        _ = withWideString("SwiftyToys.SettingsViewport") { type.lpszClassName = $0; return RegisterClassExW(&type) }
+        viewport = withWideString("SwiftyToys.SettingsViewport") {
+            CreateWindowExW(DWORD(WS_EX_CONTROLPARENT), $0, nil, DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_VSCROLL), 0, 0, 1, 1, window, nil, GetModuleHandleW(nil), nil)
+        }
+        guard viewport != nil else { throw WindowsError.api("Create settings viewport", GetLastError()) }
+        makeTheme()
         makeFonts()
-        label("SwiftyToys", 10, 25, 26, 190, 40, large: true, sidebar: true)
-        label("Mac habits. Windows power.", 11, 25, 78, 188, 50, sidebar: true)
-        control("STATIC", "ON WINDOWS", 13, 25, 117, 158, 27, style: DWORD(SS_OWNERDRAW), sidebar: true)
-        for index in titles.indices { button(titles[index], 100 + index, 18, 154 + index * 49, 206, 42, sidebar: true) }
-        label("Think Different.\nSwift. Native. Open source.", 12, 25, 642, 184, 48, sidebar: true)
+        button("←  Overview", 100, 32, 18, 172, 40, fixed: true)
+        control("STATIC", "ON WINDOWS", 13, 870, 26, 142, 28, style: DWORD(SS_OWNERDRAW), fixed: true)
+        label("SwiftyToys", 20, 32, 68, 920, 44, large: true, fixed: true)
+        label("", 21, 34, 114, 920, 36, fixed: true)
+        label("Swift. Native. Open source.", 12, 32, 708, 920, 30, fixed: true)
+        label("", 99, 32, 674, 920, 40, fixed: true)
         renderPage()
     }
     func show() {
@@ -117,13 +177,30 @@ final class SettingsWindow {
         ShowWindow(window, Int32(SW_RESTORE))
         SetForegroundWindow(window)
     }
+    func showPreview(page selected: Int) throws {
+        guard preview, titles.indices.contains(selected) else { throw WindowsError.unsupported("Preview page must be 0–9.") }
+        page = selected; renderPage(); show()
+    }
     func dialogMessage(_ message: inout MSG) -> Bool {
         guard let window, IsWindowVisible(window) else { return false }
+        if page != 0, message.message == UINT(WM_KEYDOWN), message.wParam == WPARAM(VK_ESCAPE) {
+            var focused = GetFocus()
+            var comboOpen = false
+            for _ in 0..<2 {
+                if let current = focused {
+                    var name = [WCHAR](repeating: 0, count: 32)
+                    GetClassNameW(current, &name, 32)
+                    if String(decoding: name.prefix(while: { $0 != 0 }), as: UTF16.self).lowercased() == "combobox" { comboOpen = SendMessageW(current, UINT(CB_GETDROPPEDSTATE), 0, 0) != 0; break }
+                    focused = GetParent(current)
+                }
+            }
+            if !comboOpen { navigate(to: 0); return true }
+        }
         let handled=IsDialogMessageW(window, &message)
         if handled, let focus=GetFocus(), content.contains(focus) {
             let previousOffset = scrollOffset
-            var area=RECT(); var client=RECT(); GetWindowRect(focus,&area); GetClientRect(window,&client)
-            _ = withUnsafeMutablePointer(to:&area) { $0.withMemoryRebound(to:POINT.self,capacity:2) { MapWindowPoints(nil,window,$0,2) } }
+            var area=RECT(); var client=RECT(); GetWindowRect(focus,&area); GetClientRect(viewport,&client)
+            _ = withUnsafeMutablePointer(to:&area) { $0.withMemoryRebound(to:POINT.self,capacity:2) { MapWindowPoints(nil,viewport,$0,2) } }
             if area.top < 0 { scrollOffset=max(0,scrollOffset+area.top) }
             else if area.bottom > client.bottom { scrollOffset += area.bottom-client.bottom+8 }
             if previousOffset != scrollOffset { arrange(); InvalidateRect(window,nil,false) }
@@ -146,12 +223,30 @@ final class SettingsWindow {
         }
         status(result)
     }
-    func refreshLanguages(result: String) { renderPage(); status(result) }
+    func refreshLanguages(result: String) { captureDraft(); renderPage(); restoreDraft(); status(result) }
+    func refreshBrightnessControl() {
+        brightnessConfiguration = try? Settings()
+        updateBrightnessMode()
+        if let tile = controls[121] { setText(tile, tileText(1)); InvalidateRect(tile, nil, false) }
+    }
+    func displayCompleted(_ message: String) { if page == 1 { status(message) } }
+    func brightnessControlBusy(_ busy: Bool) {
+        modeBusy = busy
+        if let control = controls[244] { EnableWindow(control, !busy) }
+        for id in [245, 246] { if let control = controls[id] { EnableWindow(control, !busy && !checked(244)) } }
+    }
+    private func updateBrightnessMode() {
+        let enabled = brightnessConfiguration?.ddcEnabled ?? false
+        if let control = controls[244] { SendMessageW(control, UINT(BM_SETCHECK), enabled ? WPARAM(BST_CHECKED) : WPARAM(BST_UNCHECKED), 0) }
+        for id in [245, 246] { if let control = controls[id] { EnableWindow(control, !enabled) } }
+        if let hint = controls[248] { setText(hint, localization.text(enabled ? "DDC/CI controls the monitor backlight, including the cursor. Turn off to use software dimming." : "Software dimming changes the image only. Monitor backlight stays unchanged; hardware cursors may remain brighter.")) }
+        brightnessControlBusy(modeBusy)
+    }
     /// Tests this application's own native controls without sending desktop input.
     func validateLayout() throws {
-        guard let window else { throw WindowsError.unsupported("Missing settings window.") }
+        guard let window, let viewport else { throw WindowsError.unsupported("Missing settings window.") }
         var client = RECT()
-        GetClientRect(window, &client)
+        GetClientRect(viewport, &client)
         let initialLanguage = localization.pack
         defer { try? localization.select(initialLanguage, persist: false) }
         for language in localization.available() {
@@ -160,21 +255,20 @@ final class SettingsWindow {
             page = index
             renderPage()
             var extent = SCROLLINFO(); extent.cbSize = UINT(MemoryLayout<SCROLLINFO>.size); extent.fMask = UINT(SIF_RANGE)
-            GetScrollInfo(window, Int32(SB_VERT), &extent)
-            for id in 100..<(100 + titles.count) {
-                guard let navigation = controls[id], IsWindow(navigation), !text(id).isEmpty else {
-                    throw WindowsError.unsupported("Missing native navigation control.")
-                }
-            }
+            GetScrollInfo(viewport, Int32(SB_VERT), &extent)
+            GetClientRect(viewport, &client)
+            guard let back = controls[100], IsWindow(back), controls[101] == nil, !text(20).isEmpty else { throw WindowsError.unsupported("Missing tile navigation or sidebar unexpectedly present.") }
+            if page == 0 { guard GetNextDlgTabItem(window, nil, false) == controls[121] else { throw WindowsError.unsupported("Tab cannot enter feature tiles.") } }
+            if page == 1 { guard GetNextDlgTabItem(window, back, false) == controls[211] else { throw WindowsError.unsupported("Tab cannot enter detail controls.") } }
             for handle in content {
                 var area = RECT()
                 guard GetWindowRect(handle, &area) else {
                     throw WindowsError.api("Read own control bounds", GetLastError())
                 }
                 _ = withUnsafeMutablePointer(to: &area) {
-                    $0.withMemoryRebound(to: POINT.self, capacity: 2) { MapWindowPoints(nil, window, $0, 2) }
+                    $0.withMemoryRebound(to: POINT.self, capacity: 2) { MapWindowPoints(nil, viewport, $0, 2) }
                 }
-                guard area.left >= 0, area.top >= 0, area.right <= client.right,
+                guard area.right - area.left >= Int32(30 * scale), area.bottom - area.top >= Int32(18 * scale), area.left >= 0, area.top >= 0, area.right <= client.right,
                     area.bottom <= max(client.bottom, extent.nMax)
                 else {
                     throw WindowsError.unsupported(
@@ -221,13 +315,60 @@ final class SettingsWindow {
             guard page == 1 else { throw WindowsError.unsupported("Feature tile did not navigate.") }
         }
         try localization.select(initialLanguage, persist: false)
+        page = 2; renderPage()
+        if let source = controls[303] { setText(source, "Cmd+K") }
+        navigate(to: 0); navigate(to: 2)
+        guard text(303) == "Cmd+K", GetFocus() == controls[100] else { throw WindowsError.unsupported("Back navigation lost edits or focus.") }
+        navigate(to: 0)
+        guard GetFocus() == controls[122] else { throw WindowsError.unsupported("Overview did not restore tile focus.") }
         page = 0; renderPage()
     }
     private var scale: Double { window.map { Double(GetDpiForWindow($0)) / 96 } ?? 1 }
+    private func makeTheme() {
+        var contrast = HIGHCONTRASTW()
+        contrast.cbSize = UINT(MemoryLayout<HIGHCONTRASTW>.size)
+        highContrast = SystemParametersInfoW(UINT(SPI_GETHIGHCONTRAST), contrast.cbSize, &contrast, 0) && contrast.dwFlags & DWORD(HCF_HIGHCONTRASTON) != 0
+        if let background { DeleteObject(background) }
+        if let white { DeleteObject(white) }
+        background = CreateSolidBrush(highContrast ? GetSysColor(Int32(COLOR_WINDOW)) : 0x00F9_F6F3)
+        white = CreateSolidBrush(highContrast ? GetSysColor(Int32(COLOR_WINDOW)) : 0x00FF_FFFF)
+    }
+
+    fileprivate func hover(_ control: HWND, entered: Bool) {
+        if entered, hovered != control { if let hovered { InvalidateRect(hovered, nil, false) }; hovered = control; InvalidateRect(control, nil, false) }
+        else if !entered, hovered == control { hovered = nil; InvalidateRect(control, nil, false) }
+    }
+
+    private func captureDraft() {
+        draftText[page] = [218, 230, 231, 232, 233, 303, 305, 307, 317, 348, 351].reduce(into: [:]) { values, id in if controls[id] != nil { values[id] = text(id) } }
+        draftChecks[page] = [219, 315, 346, 405, 422, 423].reduce(into: [:]) { values, id in if controls[id] != nil { values[id] = checked(id) } }
+        draftSelections[page] = [216, 341, 343, 345, 355, 404, 459].reduce(into: [:]) { values, id in if let control = controls[id] { values[id] = Int(SendMessageW(control, UINT(CB_GETCURSEL), 0, 0)) } }
+        pageOffsets[page] = scrollOffset
+        if page == 2 { draftRuleSelection = selectedRule }
+    }
+
+    private func restoreDraft() {
+        for (id, value) in draftText[page] ?? [:] { if let control = controls[id] { setText(control, value) } }
+        for (id, value) in draftChecks[page] ?? [:] { if let control = controls[id] { SendMessageW(control, UINT(BM_SETCHECK), value ? WPARAM(BST_CHECKED) : WPARAM(BST_UNCHECKED), 0) } }
+        for (id, value) in draftSelections[page] ?? [:] { if value >= 0, let control = controls[id] { SendMessageW(control, UINT(CB_SETCURSEL), WPARAM(value), 0) } }
+        if page == 2, let selection = draftRuleSelection, keyboard.rules.indices.contains(selection), let list = controls[301] { selectedRule = selection; SendMessageW(list, UINT(LB_SETCURSEL), WPARAM(selection), 0) }
+        scrollOffset = pageOffsets[page] ?? 0
+        arrange()
+    }
+
+    private func navigate(to destination: Int) {
+        guard titles.indices.contains(destination) else { return }
+        let previous = page
+        captureDraft()
+        page = destination
+        renderPage()
+        restoreDraft()
+        if let focus = controls[page == 0 ? 120 + max(1, previous) : 100] { SetFocus(focus) }
+    }
     private func makeFonts() {
         for font in fonts { DeleteObject(font) }
         fonts.removeAll()
-        for (index, definition) in [(15, 400), (27, 600), (18, 600), (27, 400)].enumerated() {
+        for (index, definition) in [(14, 400), (28, 600), (18, 600), (24, 400)].enumerated() {
             let (size, weight) = definition
             let font = withWideString(index == 3 ? "Segoe MDL2 Assets" : "Segoe UI") {
                 CreateFontW(
@@ -240,21 +381,23 @@ final class SettingsWindow {
     }
     @discardableResult private func control(
         _ type: String, _ text: String, _ id: Int, _ x: Int, _ y: Int, _ width: Int, _ height: Int, style: DWORD = 0,
-        sidebar: Bool = false, font: Int = 0
+        fixed: Bool = false, font: Int = 0
     ) -> HWND? {
         guard let window else { return nil }
         let handle = withWideString(type) { name in
             withWideString(type == "STATIC" || type == "BUTTON" ? localization.text(text) : text) {
                 CreateWindowExW(
                     type == "EDIT" || type == "LISTBOX" ? DWORD(WS_EX_CLIENTEDGE) : 0, name, $0,
-                    DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS) | style, 0, 0, 1, 1, window, HMENU(bitPattern: id),
+                    DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS) | style, 0, 0, 1, 1, fixed ? window : viewport, HMENU(bitPattern: id),
                     GetModuleHandleW(nil), nil)
             }
         }
         if let handle {
             controls[id] = handle
-            layout.append((handle, x, y, width, height))
-            if !sidebar { content.append(handle) }
+            layout.append((handle, fixed ? x : x - 272, fixed ? y : y - 144, width, height))
+            fontRoles[id] = font
+            if !fixed { content.append(handle) }
+            if type == "BUTTON", style & DWORD(BS_OWNERDRAW) != 0 { SetWindowSubclass(handle, settingsButtonProcedure, 1, DWORD_PTR(UInt(bitPattern: Unmanaged.passUnretained(self).toOpaque()))) }
             if font < fonts.count { SendMessageW(handle, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: fonts[font])), 1) }
             if type == "EDIT" { SendMessageW(handle, UINT(EM_SETLIMITTEXT), 512, 0) }
         }
@@ -262,12 +405,12 @@ final class SettingsWindow {
     }
     private func label(
         _ text: String, _ id: Int, _ x: Int, _ y: Int, _ width: Int, _ height: Int, large: Bool = false,
-        sidebar: Bool = false
-    ) { _ = control("STATIC", text, id, x, y, width, height, sidebar: sidebar, font: large ? 1 : 0) }
+        fixed: Bool = false
+    ) { _ = control("STATIC", text, id, x, y, width, height, fixed: fixed, font: large ? 1 : 0) }
     private func button(
-        _ text: String, _ id: Int, _ x: Int, _ y: Int, _ width: Int, _ height: Int = 36, sidebar: Bool = false
+        _ text: String, _ id: Int, _ x: Int, _ y: Int, _ width: Int, _ height: Int = 40, fixed: Bool = false
     ) {
-        _ = control("BUTTON", text, id, x, y, width, height, style: DWORD(WS_TABSTOP | BS_OWNERDRAW), sidebar: sidebar)
+        _ = control("BUTTON", text, id, x, y, width, height, style: DWORD(WS_TABSTOP | BS_OWNERDRAW), fixed: fixed)
     }
     private func edit(_ text: String, _ id: Int, _ x: Int, _ y: Int, _ width: Int) {
         _ = control("EDIT", text, id, x, y, width, 32, style: DWORD(WS_TABSTOP | ES_AUTOHSCROLL))
@@ -328,7 +471,7 @@ final class SettingsWindow {
     }
     private func tileState(_ page: Int) -> String {
         switch page {
-        case 1: return "\(level)%"
+        case 1: return "\(level)%  ·  " + localization.text(brightnessConfiguration?.ddcEnabled == true ? "DDC/CI" : "Software")
         case 2: return keyboard.enabled ? "On" : "Paused"
         case 3: return keyboard.smartCaps ? "Caps Lock on" : "Ctrl + Space"
         case 4: return "On demand"
@@ -344,9 +487,13 @@ final class SettingsWindow {
     }
     private func renderPage() {
         guard let window else { return }
+        rendering = true
+        hovered = nil
+        brightnessConfiguration = try? Settings()
         let visible = IsWindowVisible(window)
         if visible { SendMessageW(window, UINT(WM_SETREDRAW), 0, 0) }
         defer {
+            rendering = false
             if visible { SendMessageW(window, UINT(WM_SETREDRAW), 1, 0) }
             RedrawWindow(window, nil, nil, UINT(RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_ERASE))
         }
@@ -356,11 +503,8 @@ final class SettingsWindow {
         controls = controls.filter { !content.contains($0.value) }
         content.removeAll()
         comboValues.removeAll()
-        for index in titles.indices {
-            if let navigation = controls[100 + index] { setText(navigation, localization.text(titles[index])) }
-        }
-        if let tagline = controls[11] { setText(tagline, localization.text("Mac habits. Windows capabilities.")) }
-        label(titles[page], 20, 276, 30, 720, 48, large: true)
+        if let back = controls[100] { ShowWindow(back, Int32(page == 0 ? SW_HIDE : SW_SHOW)); setText(back, localization.text("←  Overview")) }
+        if let title = controls[20] { setText(title, localization.text(page == 0 ? "SwiftyToys" : titles[page])) }
         let subtitles = [
             "Small tools for comfortable everyday work.",
             "Precise control of the selected display, preserving calibration.",
@@ -372,50 +516,48 @@ final class SettingsWindow {
             "Native driver diagnostics for Apple hardware running Windows.",
             "Made for Mac users and those who've switched to Windows.",
         ]
-        label(subtitles[page], 21, 278, 88, 718, 45)
+        if let subtitle = controls[21] { setText(subtitle, localization.text(page == 0 ? "Mac habits. Windows capabilities." : subtitles[page])) }
+        if let footer = controls[12] { setText(footer, localization.text("Think Different.  •  Swift. Native. Open source.")) }
         switch page {
         case 0:
             for feature in 1..<titles.count {
                 let index = feature - 1
-                button(tileText(feature), 120 + feature, 278 + (index % 2) * 352, 148 + (index / 2) * 128, 334, 112)
+                button(tileText(feature), 120 + feature, 272, 144 + index * 172, 300, 154)
             }
         case 1:
-            label("Display brightness", 210, 300, 172, 300, 40, large: true)
-            setText(controls[210]!, "\(level)%")
-            if let slider = control(
-                "msctls_trackbar32", "Brightness", 211, 300, 229, 650, 40, style: DWORD(WS_TABSTOP | TBS_AUTOTICKS))
-            {
-                SendMessageW(slider, UINT(TBM_SETRANGEMIN), 0, 0)
-                SendMessageW(slider, UINT(TBM_SETRANGEMAX), 0, 100)
+            let settings = brightnessConfiguration
+            label("Display brightness", 209, 300, 168, 650, 25)
+            label("\(level)%", 210, 300, 202, 300, 42, large: true)
+            if let slider = control("msctls_trackbar32", "Brightness", 211, 300, 254, 650, 40, style: DWORD(WS_TABSTOP | TBS_AUTOTICKS)) {
+                SendMessageW(slider, UINT(TBM_SETRANGEMIN), 0, 0); SendMessageW(slider, UINT(TBM_SETRANGEMAX), 0, 100)
                 SendMessageW(slider, UINT(TBM_SETPOS), 1, LPARAM(level))
             }
+            check("Hardware brightness (DDC/CI)", 244, 300, 318, 650, on: settings?.ddcEnabled ?? false)
+            label("", 248, 300, 361, 650, 66)
+            label("Software compatibility", 247, 300, 444, 650, 25)
+            combo(["Automatic", "Windows color controls", "AMD display controls"], 246, 300, 479, 450)
+            if let control = controls[246], let selected = ["auto", "native", "amd"].firstIndex(of: settings?.softwareBackend ?? "auto") { SendMessageW(control, UINT(CB_SETCURSEL), WPARAM(selected), 0) }
+            button("Apply software method", 245, 770, 477, 180)
+            updateBrightnessMode()
             displays = ((try? discoverDisplays()) ?? []).filter { $0.isPhysical && !$0.isCloned && !$0.isHDR }
-            label("Display", 212, 300, 294, 200, 25)
-            combo(displays.map(\.name), 213, 300, 324, 444)
-            button("Select", 214, 764, 322, 170)
-            label("Brightness indicator", 215, 300, 378, 250, 25)
-            combo(["SwiftyToys", "Windows"], 216, 300, 410, 210)
-            label("Step, %", 217, 538, 378, 100, 25)
-            edit("5", 218, 538, 410, 90)
-            check("F1 / F2 without Fn", 219, 660, 410, 274, on: (try? Settings().grabFunctionKeys) ?? false)
-            check(
-                "Keep physical brightness at 100% (DDC)", 244, 300, 442, 630,
-                on: (try? Settings().hardwareMaximum) ?? true)
-            let hotkeys =
-                (try? Settings().hotkeys) ?? ["Ctrl+Alt+Up", "Ctrl+Alt+Down", "Ctrl+Alt+PageUp", "Ctrl+Alt+PageDown"]
+            label("Display", 212, 300, 547, 200, 25)
+            combo(displays.map(\.name), 213, 300, 579, 444)
+            if let selected = displays.firstIndex(where: { $0.id == settings?.targetID }), let combo = controls[213] { SendMessageW(combo, UINT(CB_SETCURSEL), WPARAM(selected), 0) }
+            button("Select", 214, 764, 577, 170)
+            label("Keys and indicator", 249, 300, 649, 650, 30, large: true)
+            label("Brightness indicator", 215, 300, 697, 250, 25)
+            combo(["SwiftyToys", "Windows"], 216, 300, 729, 210)
+            if settings?.indicator == .system, let combo = controls[216] { SendMessageW(combo, UINT(CB_SETCURSEL), 1, 0) }
+            label("Step, %", 217, 538, 697, 100, 25)
+            edit(String(settings?.step ?? 5), 218, 538, 729, 90)
+            check("F1 / F2 without Fn", 219, 660, 729, 274, on: settings?.grabFunctionKeys ?? false)
+            let hotkeys = settings?.hotkeys ?? ["Ctrl+Alt+Up", "Ctrl+Alt+Down", "Ctrl+Alt+PageUp", "Ctrl+Alt+PageDown"]
             for index in 0..<4 {
-                label(
-                    ["Increase", "Decrease", "Maximum", "Minimum"][index], 220 + index, 300 + index * 166, 472, 156,
-                    25)
-                edit(hotkeys[index], 230 + index, 300 + index * 166, 504, 156)
+                label(["Increase", "Decrease", "Maximum", "Minimum"][index], 220 + index, 300 + index * 166, 797, 156, 25)
+                edit(hotkeys[index], 230 + index, 300 + index * 166, 829, 156)
             }
-            button("Save settings", 240, 300, 559, 242)
-            button("Reconnect display", 241, 566, 559, 250)
-            label("Brightness mode", 247, 300, 603, 620, 26)
-            combo(["Software (automatic)", "Software (WDDM gamma)", "Software (AMD)", "Hardware (DDC/CI, includes cursor)"], 246, 300, 633, 450)
-            let modes = ["auto", "native", "amd", "hardware"]
-            if let control = controls[246], let selected = modes.firstIndex(of: (try? Settings().backend) ?? "auto") { SendMessageW(control, UINT(CB_SETCURSEL), WPARAM(selected), 0) }
-            button("Apply mode", 245, 770, 632, 180)
+            button("Save settings", 240, 300, 895, 242)
+            button("Reconnect display", 241, 566, 895, 250)
         case 2:
             check("Enable remapping", 315, 300, 152, 350, on: keyboard.enabled)
             if let list = control(
@@ -517,9 +659,9 @@ final class SettingsWindow {
                 }
             }
         case 6:
-            let trackpad = TrackpadStatus.current(localization: localization)
             label("Apple Magic Trackpad", 450, 300, 170, 650, 40, large: true)
-            label(trackpad.summary, 451, 300, 212, 650, 82)
+            label(deviceReports.text(6, locale: localization.pack.locale) ?? "Reading device information…", 451, 300, 212, 650, 82)
+            if !preview { deviceReports.load(6, language: localization.pack, destination: MessageDestination(window)) }
             label("Driver source", 458, 300, 298, 350, 24)
             combo(["Apple Boot Camp (USB + Bluetooth)", "Open source: imbushuo (experimental Bluetooth)"], 459, 300, 326, 578)
             button("Install Precision driver", 452, 300, 380, 350)
@@ -567,8 +709,9 @@ final class SettingsWindow {
             label("Installed versions are shown below. Update through Windows Update or Apple Software Update; compatibility must match your Mac model.", 704, 300, 218, 650, 64)
             if let report = control("EDIT", "", 701, 300, 294, 650, 282, style: DWORD(WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)) {
                 SendMessageW(report, UINT(EM_SETLIMITTEXT), 65536, 0)
-                setText(report, (try? BootCampInventory.current().summary) ?? "Driver inventory unavailable.")
+                setText(report, deviceReports.text(8, locale: localization.pack.locale) ?? localization.text("Reading device information…"))
             }
+            if !preview { deviceReports.load(8, language: localization.pack, destination: MessageDestination(window)) }
             button("Windows Update", 702, 300, 594, 214)
             button("Device Manager", 703, 534, 594, 214)
             button("Refresh drivers", 705, 768, 594, 182)
@@ -589,35 +732,71 @@ final class SettingsWindow {
                 SendMessageW(control, UINT(CB_SETCURSEL), WPARAM(selected), 0)
             }
         }
-        label(preview ? "Interface preview — changes are disabled." : "", 99, 278, page == 0 ? 148 + ((titles.count - 2) / 2) * 128 + 124 : 676, 700, 46)
+        status(preview ? "Interface preview — changes are disabled." : "")
         arrange()
         InvalidateRect(window, nil, true)
     }
     private func arrange() {
-        guard let window else { return }
-        var area = RECT()
-        GetClientRect(window, &area)
-        var scroll = SCROLLINFO()
-        scroll.cbSize = UINT(MemoryLayout<SCROLLINFO>.size)
-        scroll.fMask = UINT(SIF_RANGE | SIF_PAGE | SIF_POS)
-        scroll.nMin = 0
-        scroll.nMax = Int32(Double(max(730, layout.filter { $0.1 >= 276 }.map { $0.2 + $0.4 }.max() ?? 730)) * scale)
-        scroll.nPage = UINT(max(0, area.bottom))
-        scroll.nPos = scrollOffset
-        SetScrollInfo(window, Int32(SB_VERT), &scroll, true)
-        scrollOffset = GetScrollPos(window, Int32(SB_VERT))
-        let extra = max(0, Int(Double(area.right) / scale) - 1030)
-        for (handle, x, y, width, height) in layout {
-            let top = Int32(Double(y) * scale) - (x >= 276 ? scrollOffset : 0)
-            let footer = handle == controls[12] ? max(Int32(598 * scale), min(top, area.bottom - Int32(54 * scale))) : top
-            MoveWindow(
-                handle, Int32(Double(x) * scale), footer,
-                Int32(Double(width + (x >= 276 && width >= 600 ? extra : 0)) * scale), Int32(Double(height) * scale),
-                true)
+        guard let window, let viewport else { return }
+        var area = RECT(); GetClientRect(window, &area)
+        let width = max(1, Int(Double(area.right) / scale))
+        let height = max(1, Int(Double(area.bottom) / scale))
+        let bodyWidth = page == 0 ? width - 64 : min(960, width - 64)
+        let bodyTop = page == 0 ? 132 : 170
+        let bodyHeight = max(1, height - bodyTop - 88)
+        let bodyLeft = (width - bodyWidth) / 2
+        MoveWindow(viewport, Int32(Double(bodyLeft) * scale), Int32(Double(bodyTop) * scale), Int32(Double(bodyWidth) * scale), Int32(Double(bodyHeight) * scale), false)
+        let columns = bodyWidth >= 900 ? 3 : 2
+        let tileWidth = (bodyWidth - (columns - 1) * 18 - 18) / columns
+        let extent = page == 0 ? ((titles.count - 2) / columns + 1) * 172 - 18 : max(1, layout.filter { content.contains($0.0) }.map { $0.2 + $0.4 }.max() ?? 1) + 24
+        var scroll = SCROLLINFO(); scroll.cbSize = UINT(MemoryLayout<SCROLLINFO>.size)
+        scroll.fMask = UINT(SIF_RANGE | SIF_PAGE | SIF_POS); scroll.nMax = Int32(Double(extent) * scale)
+        scroll.nPage = UINT(Double(bodyHeight) * scale); scroll.nPos = scrollOffset
+        SetScrollInfo(viewport, Int32(SB_VERT), &scroll, true)
+        scrollOffset = GetScrollPos(viewport, Int32(SB_VERT))
+        var viewportArea = RECT(); GetClientRect(viewport, &viewportArea)
+        let usableWidth = Int(Double(viewportArea.right) / scale)
+        var positions: [(HWND, Int32, Int32, Int32, Int32, Bool)] = []
+        for (handle, originalX, originalY, originalWidth, originalHeight) in layout {
+            let id = Int(GetDlgCtrlID(handle))
+            var x = originalX, y = originalY, w = originalWidth, h = originalHeight
+            let scrolling = content.contains(handle)
+            if (121..<(120 + titles.count)).contains(id) {
+                let index = id - 121
+                x = (index % columns) * (tileWidth + 18); y = (index / columns) * 172; w = tileWidth; h = 154
+            } else if scrolling, w >= 600 { w += max(0, usableWidth - 704) }
+            if id == 13 { x = width - 182 }
+            if id == 20 { y = page == 0 ? 26 : 68; w = width - 64 }
+            if id == 21 { y = page == 0 ? 80 : 116; w = width - 64 }
+            if id == 99 { y = height - 78; w = width - 64 }
+            if id == 12 { y = height - 34; w = width - 64 }
+            let top = Int32(Double(y) * scale) - (scrolling ? scrollOffset : 0)
+            positions.append((handle, Int32(Double(x) * scale), top, Int32(Double(w) * scale), Int32(Double(h) * scale), scrolling))
         }
+        // Win32 requires every HWND in a deferred batch to share one parent.
+        for scrolling in [false, true] {
+            let group = positions.filter { $0.5 == scrolling }
+            guard !group.isEmpty else { continue }
+            var batch = BeginDeferWindowPos(Int32(group.count))
+            for (handle, x, y, w, h, _) in group {
+                guard let current = batch else { break }
+                batch = DeferWindowPos(current, handle, nil, x, y, w, h, UINT(SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOREDRAW))
+            }
+            let applied = batch.map { EndDeferWindowPos($0) } ?? false
+            if !applied { for (handle, x, y, w, h, _) in group { MoveWindow(handle, x, y, w, h, false) } }
+        }
+        RedrawWindow(viewport, nil, nil, UINT(RDW_INVALIDATE | RDW_ALLCHILDREN))
     }
+
     fileprivate func handle(_ window: HWND, _ message: UINT, _ value: WPARAM, _ data: LPARAM) -> LRESULT {
         switch message {
+        case deviceReportMessage:
+            let reported = Int(value)
+            if page == reported {
+                if let text = deviceReports.text(page, locale: localization.pack.locale), let control = controls[page == 6 ? 451 : 701] { setText(control, text); status("Device information updated.") }
+                else { deviceReports.load(page, language: localization.pack, destination: MessageDestination(window)) }
+            }
+            return 0
         case wslBootResultMessage:
             if page == 7, IsWindowVisible(window) {
                 do {
@@ -640,17 +819,22 @@ final class SettingsWindow {
             return 0
         case UINT(WM_SIZE):
             arrange()
+            RedrawWindow(window, nil, nil, UINT(RDW_INVALIDATE | RDW_ALLCHILDREN))
+            return 0
+        case UINT(WM_ACTIVATE):
+            if value & 0xFFFF == WPARAM(WA_INACTIVE) { lastFocusedControl = GetFocus().map { Int(GetDlgCtrlID($0)) } }
+            else if let id = lastFocusedControl, let control = controls[id], IsWindowVisible(control), IsWindowEnabled(control) { SetFocus(control) }
             return 0
         case UINT(WM_GETMINMAXINFO):
             if let info = UnsafeMutablePointer<MINMAXINFO>(bitPattern: Int(data)) {
-                info.pointee.ptMinTrackSize = POINT(x: Int32(1048 * scale), y: Int32(620 * scale))
+                info.pointee.ptMinTrackSize = POINT(x: Int32(780 * scale), y: Int32(620 * scale))
             }
             return 0
         case UINT(WM_VSCROLL):
             var info = SCROLLINFO()
             info.cbSize = UINT(MemoryLayout<SCROLLINFO>.size)
             info.fMask = UINT(SIF_RANGE | SIF_PAGE | SIF_POS | SIF_TRACKPOS)
-            GetScrollInfo(window, Int32(SB_VERT), &info)
+            GetScrollInfo(viewport, Int32(SB_VERT), &info)
             switch Int(value & 0xFFFF) {
             case Int(SB_LINEUP): scrollOffset -= Int32(32 * scale)
             case Int(SB_LINEDOWN): scrollOffset += Int32(32 * scale)
@@ -661,46 +845,68 @@ final class SettingsWindow {
             }
             scrollOffset = max(0, min(scrollOffset, info.nMax - Int32(info.nPage) + 1))
             arrange()
-            InvalidateRect(window, nil, true)
+            InvalidateRect(viewport, nil, false)
             return 0
         case UINT(WM_MOUSEWHEEL):
             let delta=Int32(Int16(bitPattern:UInt16(truncatingIfNeeded:value >> 16)))
-            scrollOffset=max(0,scrollOffset-delta*Int32(40*scale)/120); arrange(); InvalidateRect(window,nil,true); return 0
+            let units = wheelRemainder + delta * Int32(40 * scale)
+            scrollOffset = max(0, scrollOffset - units / 120); wheelRemainder = units % 120
+            arrange(); InvalidateRect(viewport,nil,false); return 0
         case UINT(WM_DPICHANGED):
+            let focus = GetFocus().map { Int(GetDlgCtrlID($0)) }
+            captureDraft()
             if let area = UnsafePointer<RECT>(bitPattern: Int(data))?.pointee {
                 SetWindowPos(
                     window, nil, area.left, area.top, area.right - area.left, area.bottom - area.top,
                     UINT(SWP_NOZORDER | SWP_NOACTIVATE))
             }
             makeFonts()
-            for handle in controls.values {
-                if !fonts.isEmpty { SendMessageW(handle, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: fonts[0])), 1) }
+            for (id, handle) in controls {
+                let role = fontRoles[id] ?? 0
+                if fonts.indices.contains(role) { SendMessageW(handle, UINT(WM_SETFONT), WPARAM(UInt(bitPattern: fonts[role])), 1) }
             }
             renderPage()
+            restoreDraft()
+            if let focus, let control = controls[focus] { SetFocus(control) }
+            return 0
+        case UINT(WM_SETTINGCHANGE), UINT(WM_SYSCOLORCHANGE):
+            makeTheme()
+            RedrawWindow(window, nil, nil, UINT(RDW_INVALIDATE | RDW_ALLCHILDREN))
             return 0
         case UINT(WM_COMMAND):
             let id = Int(value & 0xFFFF)
             let notification = Int((value >> 16) & 0xFFFF)
+            if [453, 705].contains(id), notification == Int(BN_CLICKED), !preview {
+                deviceReports.load(page, language: localization.pack, destination: MessageDestination(window), refresh: true)
+                status("Reading device information…")
+                return 0
+            }
             if id == 502, notification == Int(CBN_SELCHANGE) { updateHomebrewAvailability(); return 0 }
+            if id == 244, notification == Int(BN_CLICKED) {
+                brightnessControlBusy(false)
+                if !preview {
+                    let choice = checked(244) ? "hardware" : ["auto", "native", "amd"][max(0, min(2, Int(controls[246].map { SendMessageW($0, UINT(CB_GETCURSEL), 0, 0) } ?? 0)))]
+                    do { status(try command(245, [choice])) } catch { refreshBrightnessControl(); showActionError(error) }
+                }
+                return 0
+            }
             if id == 621, notification == Int(CBN_SELCHANGE), let control = controls[621] {
                 let index = Int(SendMessageW(control, UINT(CB_GETCURSEL), 0, 0))
                 if languagePacks.indices.contains(index) {
                     do {
-                        try localization.select(languagePacks[index], persist: !preview); renderPage()
+                        captureDraft(); try localization.select(languagePacks[index], persist: !preview); renderPage(); restoreDraft()
                         if let control = controls[621] { SetFocus(control) }
                     }
                     catch { showActionError(error) }
                 }
                 return 0
             }
-            if (100..<(100 + titles.count)).contains(id), notification == Int(BN_CLICKED) {
-                page = id - 100
-                renderPage()
+            if id == 100, notification == Int(BN_CLICKED) {
+                navigate(to: 0)
                 return 0
             }
             if (121..<(120 + titles.count)).contains(id), notification == Int(BN_CLICKED) {
-                page = id - 120
-                renderPage()
+                navigate(to: id - 120)
                 return 0
             }
             if id == 301, notification == Int(LBN_SELCHANGE), let list = controls[301] {
@@ -738,18 +944,30 @@ final class SettingsWindow {
                     } else {
                         guard keyboard.rules.count < 64 else { throw WindowsError.unsupported("Maximum 64 rules.") }
                         keyboard.rules.append(rule)
+                        selectedRule = keyboard.rules.count - 1
                     }
+                    captureDraft()
                     renderPage()
+                    restoreDraft()
+                    if let control = controls[303] { SetFocus(control) }
                     return 0
                 }
                 if id == 312, let index = selectedRule {
+                    captureDraft()
                     keyboard.rules.remove(at: index)
+                    for key in [303, 305, 307] { draftText[2]?.removeValue(forKey: key) }
+                    draftRuleSelection = nil
                     renderPage()
+                    restoreDraft()
                     return 0
                 }
                 if id == 314 {
+                    captureDraft()
                     keyboard.rules = RemapRule.macPreset
+                    for key in [303, 305, 307] { draftText[2]?.removeValue(forKey: key) }
+                    draftRuleSelection = nil
                     renderPage()
+                    restoreDraft()
                     status("Profile restored. Click “Save”.")
                     return 0
                 }
@@ -820,9 +1038,7 @@ final class SettingsWindow {
                     status(
                         try command(
                             id,
-                            [text(216), text(218), checked(219) ? "1" : "0"] + (230...233).map { text($0) } + [
-                                checked(244) ? "1" : "0"
-                            ]))
+                            [text(216), text(218), checked(219) ? "1" : "0"] + (230...233).map { text($0) }))
                 } else if id == 410 {
                     status(try command(id, [text(404), checked(405) ? "1" : "0"]))
                 } else if id == 430 {
@@ -860,7 +1076,7 @@ final class SettingsWindow {
                 } else if id == 241 || id == 411 {
                     status(try command(id, []))
                 } else if id == 245 {
-                    let modes = ["auto", "native", "amd", "hardware"]
+                    let modes = ["auto", "native", "amd"]
                     let selected = controls[246].map { Int(SendMessageW($0, UINT(CB_GETCURSEL), 0, 0)) } ?? -1
                     guard modes.indices.contains(selected) else { throw WindowsError.unsupported("Invalid brightness mode.") }
                     status(try command(id, [modes[selected]]))
@@ -890,11 +1106,10 @@ final class SettingsWindow {
             SetBkMode(dc, Int32(TRANSPARENT))
             let child = HWND(bitPattern: Int(data))
             let id = child.map { Int(GetDlgCtrlID($0)) } ?? 0
-            let sidebar = id > 0 && id < 20
-            let outside = [20, 21, 99].contains(id)
-            SetTextColor(dc, sidebar ? 0x00C9_C8C3 : 0x0036_2B24)
-            SetBkColor(dc, sidebar ? 0x0033_2920 : outside ? 0x00F8_F7F4 : 0x00FF_FFFF)
-            return LRESULT(Int(bitPattern: sidebar ? dark : outside ? background : white))
+            let outside = child.map { GetParent($0) == self.window } ?? false
+            SetTextColor(dc, [12, 21, 99, 248].contains(id) ? secondaryColor : textColor)
+            SetBkColor(dc, highContrast ? GetSysColor(Int32(COLOR_WINDOW)) : outside ? 0x00F9_F6F3 : 0x00FF_FFFF)
+            return LRESULT(Int(bitPattern: outside || page == 0 ? background : white))
         case UINT(WM_DRAWITEM):
             if let item = UnsafePointer<DRAWITEMSTRUCT>(bitPattern: Int(data))?.pointee { drawButton(item) }
             return 1
@@ -915,85 +1130,72 @@ final class SettingsWindow {
         paintBackground(dc, window)
     }
     private func paintBackground(_ dc: HDC, _ window: HWND) {
-        var area = RECT()
-        GetClientRect(window, &area)
+        var area = RECT(); GetClientRect(window, &area)
         FillRect(dc, &area, background)
-        let brush = CreateSolidBrush(0x0033_2920)
-        defer { DeleteObject(brush) }
-        var sidebar = area
-        sidebar.right = Int32(242 * scale)
-        FillRect(dc, &sidebar, brush)
-        guard page != 0 else { return }
-        let previous = SelectObject(dc, white)
-        let pen = CreatePen(Int32(PS_SOLID), 1, 0x00EA_E6E0)
-        let oldPen = SelectObject(dc, pen)
-        RoundRect(
-            dc, Int32(278 * scale), Int32(142 * scale) - scrollOffset, area.right - Int32(30 * scale),
-            Int32(649 * scale) - scrollOffset, Int32(16 * scale), Int32(16 * scale))
-        SelectObject(dc, previous)
-        SelectObject(dc, oldPen)
-        DeleteObject(pen)
+        if page != 0, let viewport {
+            var panel = RECT(); GetWindowRect(viewport, &panel)
+            _ = withUnsafeMutablePointer(to: &panel) { $0.withMemoryRebound(to: POINT.self, capacity: 2) { MapWindowPoints(nil, window, $0, 2) } }
+            InflateRect(&panel, 1, 1)
+            let brush = SelectObject(dc, white)
+            let pen = CreatePen(Int32(PS_SOLID), 1, borderColor); let previous = SelectObject(dc, pen)
+            Rectangle(dc, panel.left, panel.top, panel.right, panel.bottom)
+            SelectObject(dc, previous); SelectObject(dc, brush); DeleteObject(pen)
+        }
+    }
+    fileprivate func paintViewport(_ dc: HDC, _ window: HWND) {
+        var area = RECT(); GetClientRect(window, &area)
+        FillRect(dc, &area, page == 0 ? background : white)
     }
     private func drawButton(_ item: DRAWITEMSTRUCT) {
         guard let dc = item.hDC else { return }
         let id = Int(item.CtlID)
-        let nav = (100..<(100 + titles.count)).contains(id)
         let tile = (121..<(120 + titles.count)).contains(id)
         let badge = id == 13
-        let selected = nav && id == page + 100
         let pressed = item.itemState & UINT(ODS_SELECTED) != 0
-        let color: COLORREF = badge ? 0x008C_5A32 : nav ? (selected ? 0x0056_4434 : 0x0033_2920) : tile ? (pressed ? 0x00FA_F4EC : 0x00FF_FFFF) : (pressed ? 0x00D9_CAB9 : 0x00F0_E9E1)
-        let brush = CreateSolidBrush(color)
-        let oldBrush = SelectObject(dc, brush)
-        let pen = CreatePen(Int32(PS_SOLID), 1, tile ? 0x00EA_E6E0 : color)
-        let oldPen = SelectObject(dc, pen)
-        RoundRect(
-            dc, item.rcItem.left, item.rcItem.top, item.rcItem.right, item.rcItem.bottom, Int32(10 * scale),
-            Int32(10 * scale))
-        SelectObject(dc, oldBrush)
-        SelectObject(dc, oldPen)
-        DeleteObject(brush)
-        DeleteObject(pen)
+        let hot = hovered == item.hwndItem
+        let disabled = item.itemState & UINT(ODS_DISABLED) != 0
+        var itemArea = item.rcItem
+        FillRect(dc, &itemArea, page == 0 || id < 120 ? background : white)
+        let color: COLORREF = highContrast ? GetSysColor(Int32(COLOR_WINDOW)) : badge ? 0x00FB_F4EC : pressed ? 0x00F8_EEE6 : hot ? 0x00FF_FAF4 : 0x00FF_FFFF
+        let brush = CreateSolidBrush(color); let previousBrush = SelectObject(dc, brush)
+        let pen = CreatePen(Int32(PS_SOLID), 1, hot && !disabled ? accentColor : borderColor); let previousPen = SelectObject(dc, pen)
+        RoundRect(dc, item.rcItem.left + 1, item.rcItem.top + 1, item.rcItem.right - 1, item.rcItem.bottom - 1, Int32(14 * scale), Int32(14 * scale))
+        SelectObject(dc, previousBrush); SelectObject(dc, previousPen); DeleteObject(brush); DeleteObject(pen)
         SetBkMode(dc, Int32(TRANSPARENT))
-        SetTextColor(dc, item.itemState & UINT(ODS_DISABLED) != 0 ? GetSysColor(Int32(COLOR_GRAYTEXT)) : nav || badge ? 0x00FF_FFFF : 0x0036_2B24)
-        let font = fonts.first.map { SelectObject(dc, $0) }
-        defer { if let font { SelectObject(dc, font) } }
+        SetTextColor(dc, disabled ? GetSysColor(Int32(COLOR_GRAYTEXT)) : textColor)
+        let previousFont = fonts.first.map { SelectObject(dc, $0) }
+        defer { if let previousFont { SelectObject(dc, previousFont) } }
         var rect = item.rcItem
         if tile {
             let feature = id - 120
-            rect.left += Int32(20 * scale); rect.right -= Int32(16 * scale)
-            rect.top += Int32(16 * scale); rect.bottom = rect.top + Int32(32 * scale)
+            rect.left += Int32(20 * scale); rect.top += Int32(22 * scale); rect.bottom = rect.top + Int32(30 * scale)
             if fonts.count > 3 { SelectObject(dc, fonts[3]) }
-            SetTextColor(dc, 0x00A0_6330)
+            SetTextColor(dc, accentColor)
             _ = withWideString(tileGlyphs[feature - 1]) { DrawTextW(dc, $0, -1, &rect, UINT(DT_LEFT | DT_SINGLELINE)) }
-            rect.left += Int32(46 * scale)
+            rect.left += Int32(42 * scale); rect.right -= Int32(18 * scale)
             if fonts.count > 2 { SelectObject(dc, fonts[2]) }
-            SetTextColor(dc, 0x0036_2B24)
-            _ = withWideString(localization.text(titles[feature])) { DrawTextW(dc, $0, -1, &rect, UINT(DT_LEFT | DT_SINGLELINE)) }
-            rect.top += Int32(33 * scale); rect.bottom = rect.top + Int32(36 * scale)
-            rect.left = item.rcItem.left + Int32(20 * scale)
+            SetTextColor(dc, textColor)
+            _ = withWideString(localization.text(titles[feature])) { DrawTextW(dc, $0, -1, &rect, UINT(DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS)) }
+            rect.left = item.rcItem.left + Int32(20 * scale); rect.top = item.rcItem.top + Int32(67 * scale); rect.bottom = item.rcItem.bottom - Int32(40 * scale)
             if !fonts.isEmpty { SelectObject(dc, fonts[0]) }
-            _ = withWideString(localization.text(tileDetails[feature - 1])) { DrawTextW(dc, $0, -1, &rect, UINT(DT_LEFT | DT_WORDBREAK)) }
-            rect.top = item.rcItem.bottom - Int32(25 * scale); rect.bottom = item.rcItem.bottom - Int32(4 * scale)
-            SetTextColor(dc, 0x00A0_6330)
-            _ = withWideString(localization.text(tileState(feature))) { DrawTextW(dc, $0, -1, &rect, UINT(DT_LEFT | DT_SINGLELINE)) }
+            SetTextColor(dc, secondaryColor)
+            _ = withWideString(localization.text(tileDetails[feature - 1])) { DrawTextW(dc, $0, -1, &rect, UINT(DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS)) }
+            rect.top = item.rcItem.bottom - Int32(30 * scale); rect.bottom = item.rcItem.bottom - Int32(9 * scale)
+            SetTextColor(dc, accentColor)
+            _ = withWideString(localization.text(tileState(feature))) { DrawTextW(dc, $0, -1, &rect, UINT(DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS)) }
+            var arrow = item.rcItem; arrow.left = arrow.right - Int32(38 * scale); arrow.top = rect.top
+            _ = withWideString("→") { DrawTextW(dc, $0, -1, &arrow, UINT(DT_SINGLELINE)) }
         } else {
-        if nav { rect.left += Int32(16 * scale) }
-        _ = withWideString(text(id)) {
-            DrawTextW(dc, $0, -1, &rect, UINT(DT_SINGLELINE | DT_VCENTER) | UINT(nav ? DT_LEFT : DT_CENTER))
+            InflateRect(&rect, -Int32(8 * scale), 0)
+            SetTextColor(dc, disabled ? GetSysColor(Int32(COLOR_GRAYTEXT)) : id == 100 || badge ? accentColor : textColor)
+            _ = withWideString(text(id)) { DrawTextW(dc, $0, -1, &rect, UINT(DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_END_ELLIPSIS)) }
         }
-        }
-        if item.itemState & UINT(ODS_FOCUS) != 0 {
-            var focus = item.rcItem
-            InflateRect(&focus, -4, -4)
-            DrawFocusRect(dc, &focus)
-        }
+        if item.itemState & UINT(ODS_FOCUS) != 0 { var focus = item.rcItem; InflateRect(&focus, -4, -4); DrawFocusRect(dc, &focus) }
     }
     deinit {
         if let window, IsWindow(window) { DestroyWindow(window) }
         for font in fonts { DeleteObject(font) }
         DeleteObject(background)
         DeleteObject(white)
-        DeleteObject(dark)
     }
 }

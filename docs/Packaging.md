@@ -16,7 +16,7 @@ scripts, documentation and licenses. Driver downloads are separate from that arc
 Build uses -Osize, -static-stdlib, -use-static-resource-dir, /OPT:REF and /OPT:ICF.
 Official dispatch.lib and BlocksRuntime.lib satisfy the static Swift concurrency
 archive. Native threads are CRT initialized; driver work runs on its serial Swift
-actor executor. The build rejects accidental dynamic Swift imports and has a 6.5 MB
+actor executor. The build rejects accidental dynamic Swift imports and has a 6.6 MB
 exe / 3 MB ZIP regression budget. These budgets can be revised when an explicit
 feature or a measured improvement justifies larger distribution; they are not a
 reason to remove requested functionality or correctness checks.
