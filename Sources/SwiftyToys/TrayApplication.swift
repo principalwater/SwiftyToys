@@ -253,7 +253,8 @@ final class TrayApplication {
             guard !exiting else { return 0 }
             if value == 6 {
                 let modes = ["auto", "native", "amd", "hardware"]
-                guard displayQueue.active == nil, modes.indices.contains(Int(data)) else { return 0 }
+                guard displayQueue.active == nil else { return brightnessBusyReply }
+                guard modes.indices.contains(Int(data)) else { return 0 }
                 do {
                     state = try displayCommand(controller, command: 3, mode: modes[Int(data)])
                     settings = try Settings(); displayQueue.level = state.level.percent
@@ -277,6 +278,7 @@ final class TrayApplication {
                 PostMessageW(window, UINT(WM_CLOSE), 0, 0)
                 return 1
             }
+            guard displayQueue.active == nil else { return brightnessBusyReply }
             return apply(command: Int(value), value: Int(data), show: value == 1 || value == 2)
                 ? LRESULT(state.level.percent + 1) : 0
         case keyStepMessage:

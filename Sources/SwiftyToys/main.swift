@@ -250,10 +250,10 @@ private func sendResident(_ window: HWND, command: Int, value: Int = 0) throws -
     var result: DWORD_PTR = 0
     let sent = SendMessageTimeoutW(
         window, brightnessMessage, WPARAM(command), LPARAM(value), UINT(SMTO_ABORTIFHUNG | SMTO_BLOCK), 16000, &result)
-    guard sent != 0, result > 0 else {
+    guard sent != 0 else {
         throw WindowsError.unsupported("Resident did not apply the requested brightness.")
     }
-    return Int(result) - 1
+    return try decodeBrightnessReply(result)
 }
 do {
     let args = Array(CommandLine.arguments.dropFirst())

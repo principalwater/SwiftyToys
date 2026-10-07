@@ -8,6 +8,7 @@ import WinSDK
 let instanceMutex = "Local\\BrightnessCtl.SingleInstance"
 let controlWindowTitle = "SwiftyToys.Software.v2"
 let brightnessMessage: UINT = 0x8001
+let brightnessBusyReply: LRESULT = 102 // Successful level replies are 1...101.
 let keyStepMessage: UINT = 0x8002
 struct InstanceLock: ~Copyable {
     let handle: OwnedHandle

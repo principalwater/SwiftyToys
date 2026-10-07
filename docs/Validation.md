@@ -18,6 +18,17 @@ is 6,510,592 bytes, SHA-256
 - Real own-window previews verify the 3-column overview, 2-column compact overview
   and brightness details. Captures contain this app only; an overview preview is
   public. Header/viewport batches share their respective parents and Tab enters content.
+- Cursor compatibility probes were separate from the application. On this output,
+  AMD color gain and the documented disabled-trail setting did not dim the cursor.
+  A windowed Magnification prototype hid the cursor in League of Legends; it was
+  stopped and normal cursor visibility was confirmed by Windows and the user.
+  A repeat test also showed a frozen viewport. The registered rescue shortcut
+  successfully stopped it and restored the original pointer and brightness.
+  The prototype is rejected and is not part of the source or release package.
+  Software cursor dimming remains unresolved; DDC is still explicit opt-in.
+- A follow-up candidate distinguishes a busy brightness worker from a failed
+  driver operation and validates the complete reply range. All 15 native checks
+  pass on that candidate; installation and release remain pending.
 - Watchdog/recovery, target identity, HDR/clone/virtual exclusions and signed trackpad
   input are preserved. Failed enable/disable, cable removal, abrupt-crash recovery,
   sleep/resume, screen-reader and additional DPI/device combinations remain physical

@@ -3,6 +3,16 @@
 import Synchronization
 import WinSDK
 
+func decodeBrightnessReply(_ reply: DWORD_PTR) throws(WindowsError) -> Int {
+    if reply == DWORD_PTR(brightnessBusyReply) {
+        throw .unsupported("SwiftyToys is applying another brightness change. Retry in a moment.")
+    }
+    guard (1...101).contains(reply) else {
+        throw .unsupported("Resident did not apply the requested brightness.")
+    }
+    return Int(reply) - 1
+}
+
 /// Kernel events are thread-safe; ownership lasts through any delayed completion.
 private final class ReplyEvent: @unchecked Sendable {
     let handle: OwnedHandle
@@ -62,6 +72,14 @@ struct DisplayRequestQueue {
         return nil
     }
     static func selfCheck() throws {
+        guard try decodeBrightnessReply(1) == 0, try decodeBrightnessReply(101) == 100 else {
+            throw WindowsError.unsupported("Brightness reply range check failed.")
+        }
+        for invalid in [DWORD_PTR(0), DWORD_PTR(brightnessBusyReply), DWORD_PTR.max] {
+            var rejected = false
+            do { _ = try decodeBrightnessReply(invalid) } catch { rejected = true }
+            guard rejected else { throw WindowsError.unsupported("Invalid brightness reply was accepted.") }
+        }
         var queue = DisplayRequestQueue(level: 50)
         guard queue.enqueue(DisplayRequest(4)), !queue.enqueue(DisplayRequest(1, value: 60)),
             !queue.enqueue(DisplayRequest(1, value: 70)), !queue.enqueue(DisplayRequest(3, mode: "hardware")),
