@@ -3,7 +3,7 @@ import BrightnessCore
 import WinSDK
 
 /// A data-only, bounded UTF-8 language pack. English source text is the fallback key.
-struct LanguagePack {
+struct LanguagePack: Sendable {
     let locale: String
     let name: String
     let strings: [String: String]
@@ -43,6 +43,7 @@ struct LanguagePack {
 /// UI-thread-owned localization; no files are read from an input hook or paint callback.
 final class Localization {
     private(set) var pack = LanguagePack.english
+    init(pack: LanguagePack) { self.pack = pack }
     init() {
         if let path = try? NativeFiles.path("language.txt"), let locale = try? NativeFiles.text(path),
             let saved = available().first(where: { $0.locale == locale.trimmingWhitespace() }) { pack = saved }

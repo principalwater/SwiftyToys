@@ -53,6 +53,16 @@ jobs:
         run: |
           $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-power' -Wait -PassThru -NoNewWindow
           if ($process.ExitCode -ne 0) { throw 'Native sleep permission check failed' }
+      - name: Check DDC opt-in and legacy migration
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-brightness-policy' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw 'Brightness policy check failed' }
+      - name: Check bounded asynchronous display requests
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-display-queue' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw 'Display request queue check failed' }
       - name: Check Mac preset migration and saved edits
         shell: pwsh
         run: |
@@ -79,6 +89,11 @@ jobs:
           $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-worker-wait' -Wait -PassThru -NoNewWindow
           if ($process.ExitCode -ne 0) { throw 'Worker wait check failed' }
       # Native settings check creates only this app's own controls; no display or input hook.
+      - name: Check cursor composition policy without changing the display
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-cursor-policy' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw 'Cursor composition policy check failed' }
       - name: Check native settings layout
         shell: pwsh
         run: |

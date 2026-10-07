@@ -8,7 +8,7 @@ private struct MonitorSearch {
     var device: String
     var monitor: HMONITOR?
 }
-/// Serializes native DDC writes from the display executor and maximum-backlight worker.
+/// Serializes native DDC operations from the display executor and explicit diagnostics.
 private func withDDCLock<Result>(_ body: () throws -> Result) throws -> Result {
     let lock = try OwnedHandle(withWideString("Local\\SwiftyToys.DDC") { CreateMutexW(nil, false, $0) })
     let result = WaitForSingleObject(lock.raw, 2000)
@@ -65,6 +65,7 @@ final class HardwareBrightnessSession {
         let value = level.hardwareValue(in: minimum...maximum)
         if value != applied { try write(value) }
     }
+    func invalidate() { applied = nil }
     func restore() throws { try write(original) }
     func restoreSaved(_ value: DWORD) throws { try write(value) }
 }
@@ -93,6 +94,7 @@ func monitorForDevice(_ device: String) -> HMONITOR? {
 }
 /// Read-only DDC capability check; never changes physical brightness.
 func hardwareBrightnessInfo(displayID: String) throws -> String {
+    return try withDDCLock {
     guard let output = try discoverDisplays().first(where: { $0.id == displayID && $0.isPhysical && !$0.isCloned }),
         let monitor = monitorForDevice(output.device) else { return "Selected physical output disconnected" }
     var count: DWORD = 0
@@ -105,57 +107,5 @@ func hardwareBrightnessInfo(displayID: String) throws -> String {
         let read = GetMonitorBrightness(physical.hPhysicalMonitor, &minimum, &current, &maximum)
         return wideString(physical.szPhysicalMonitorDescription) + (read ? ": brightness \(current), range \(minimum)...\(maximum)" : ": brightness query unsupported")
     }.joined(separator: "\n")
-}
-/// Short-lived DDC handles are acquired only for the selected, physical output.
-/// This runs on a separate thread from UI, keyboard input and gamma updates.
-func ensureHardwareMaximum(displayID: String) throws -> String {
-    return try withDDCLock {
-    guard try Settings().backend != "hardware" else { return "Native hardware brightness mode" }
-    guard let output = try discoverDisplays().first(where: { $0.id == displayID && $0.isPhysical && !$0.isCloned }),
-        let monitor = monitorForDevice(output.device)
-    else { return "Selected output disconnected" }
-    var count: DWORD = 0
-    guard GetNumberOfPhysicalMonitorsFromHMONITOR(monitor, &count), count > 0, count <= 16 else {
-        return "DDC/CI unavailable"
-    }
-    var monitors = Array(repeating: PHYSICAL_MONITOR(), count: Int(count))
-    guard GetPhysicalMonitorsFromHMONITOR(monitor, count, &monitors) else { return "DDC/CI unavailable" }
-    defer { DestroyPhysicalMonitors(count, &monitors) }
-    var allMaximum = true
-    for physical in monitors {
-        var minimum: DWORD = 0
-        var current: DWORD = 0
-        var maximum: DWORD = 0
-        var read = false
-        for _ in 0..<3 {
-            if GetMonitorBrightness(physical.hPhysicalMonitor, &minimum, &current, &maximum) {
-                read = true
-                break
-            }
-            Sleep(40)
-        }
-        guard read, maximum > minimum else {
-            allMaximum = false
-            continue
-        }
-        if current != maximum {
-            var set = false
-            for _ in 0..<3 {
-                if SetMonitorBrightness(physical.hPhysicalMonitor, maximum) {
-                    set = true
-                    break
-                }
-                Sleep(40)
-            }
-            if !set { set = SetVCPFeature(physical.hPhysicalMonitor, 0x10, maximum) }
-            Sleep(80)
-            if !set || !GetMonitorBrightness(physical.hPhysicalMonitor, &minimum, &current, &maximum)
-                || current != maximum
-            {
-                allMaximum = false
-            }
-        }
-    }
-    return allMaximum ? "100% physical backlight" : "DDC/CI maximum not confirmed"
     }
 }

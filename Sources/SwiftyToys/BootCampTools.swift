@@ -1,6 +1,30 @@
 // SPDX-License-Identifier: MIT
 import WinSDK
 import WindowsDisplayABI
+import Synchronization
+
+let deviceReportMessage: UINT = 0x8034
+/// At most one read-only scan per device page; returning to a page uses its cache.
+final class SettingsDeviceReports: Sendable {
+    private let state = Mutex((busy: Set<Int>(), reports: [Int: (locale: String, text: String)]()))
+    func text(_ page: Int, locale: String) -> String? { state.withLock { $0.reports[page].flatMap { $0.locale == locale ? $0.text : nil } } }
+    func load(_ page: Int, language: LanguagePack, destination: MessageDestination, refresh: Bool = false) {
+        guard state.withLock({ value in
+            if value.busy.contains(page) { return false }
+            if !refresh, value.reports[page]?.locale == language.locale { return false }
+            value.busy.insert(page); return true
+        }) else { return }
+        do {
+            _ = try NativeThread(name: "SwiftyToys device report") { [self] in
+                let report: String
+                do { report = page == 6 ? TrackpadStatus.current(localization: Localization(pack: language)).summary : try BootCampInventory.current().summary }
+                catch { report = String(describing: error) }
+                state.withLock { $0.busy.remove(page); $0.reports[page] = (language.locale, report) }
+                _ = destination.post(deviceReportMessage, value: page)
+            }
+        } catch { state.withLock { $0.busy.remove(page) }; Diagnostics.write("device report: \(error)") }
+    }
+}
 
 /// Read-only Boot Camp driver inventory. It reports installed metadata only: no signature check,
 /// no latest-version or compatibility claim, and nothing is modified.

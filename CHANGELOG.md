@@ -1,5 +1,41 @@
 # Changelog
 
+## SwiftyToys 0.1.6 — 2026-10-07
+
+- Keep the brightness percentage popup behind the active software viewport from
+  its first visible frame; repaint without clearing the composition background.
+- Add an experimental native software method including the cursor and ordinary
+  tooltips on one active physical SDR display. Use one coefficient without a gamma
+  overlay, retain the viewport between adjacent values, and stop it at 100%.
+  Preserve cursor visibility recovery and add Ctrl+Alt+Shift+F10 emergency reset.
+- Repeat held F1/F2 through shared keyboard/HID state and Windows delay/speed;
+  cancel on release, focus, device, session and power changes. Restore native repeat
+  for configured up/down hotkeys, keeping maximum/minimum shortcuts one-shot.
+- Distinguish a busy brightness worker from a failed driver operation and validate
+  the complete IPC reply range before conversion.
+- Replace conflicting maximum-backlight/mode settings with explicit DDC/CI opt-in.
+  Off uses software dimming; leaving hardware mode restores the original backlight
+  once. Remove the periodic maximum-backlight worker. Legacy maximum=on + hardware
+  preferences migrate to software; explicit new preferences take precedence.
+- Serialize asynchronous display work, keep the latest slider/key intent, and
+  keep UI navigation available during driver operations. Failed disables remain off
+  with recovery retained; failed enables/software-method changes restore the previous
+  preference and report whether device recovery succeeded. Idle ticks avoid pending
+  physical recovery while retaining software retries.
+- Replace the sidebar with responsive feature tiles, a fixed Overview/Esc return,
+  a clipped detail viewport and retained drafts, focus and scroll positions. Add
+  high-contrast colours, native hover/focus cues and precise wheel accumulation.
+- Load device reports in bounded background workers. Serialize config mutations
+  between native UI, worker and CLI callers. Extend native navigation/geometry and
+  brightness-policy/queue checks; preserve input, calibration, leases and watchdog.
+- Add native CNG/WinTrust driver-file verification from the preparatory source PR;
+  native installation remains a separate future step with catalog/staging requirements.
+- Restructure README around utilities, installation and compatibility, with a real
+  native UI preview and complete linked guide. Apply lossless compression after
+  restructuring. Keep compression reports and personal plugin configuration private.
+- Raise the EXE budget from 6.5 to 6.6 MB for the native UI/driver-responsiveness work;
+  retain the 3 MB ZIP budget, static Swift runtime and System32-only DLL imports.
+
 ## SwiftyToys 0.1.5 — 2026-10-06
 
 - Add editable Command+Ctrl+Q → Lock screen and Command+Ctrl+S → Sleep defaults.

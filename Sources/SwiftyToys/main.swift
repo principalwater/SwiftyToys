@@ -11,6 +11,9 @@ func runCLI(_ args: [String]) throws -> Int32 {
     if command == "--test-wsl" { try WSLSetup.selfCheck(); return 0 }
     if command == "--test-errors" { try WindowsError.selfCheck(); return 0 }
     if command == "--test-power" { try DesktopPower.selfCheck(); return 0 }
+    if command == "--test-brightness-policy" { try Settings.selfCheck(); return 0 }
+    if command == "--test-display-queue" { try DisplayRequestQueue.selfCheck(); return 0 }
+    if command == "--test-cursor-policy" { try SoftwareCursorDimmingSession.selfCheck(); return 0 }
     if command == "--test-keyboard-config" { try KeyboardConfiguration.selfCheck(); return 0 }
     if command == "--wsl-info" {
         let setup = try WSLSetup.current()
@@ -51,10 +54,10 @@ func runCLI(_ args: [String]) throws -> Int32 {
         Console.writeLine(try hardwareBrightnessInfo(displayID: id)); return 0
     }
     if command == "backend" {
-        let modes = ["auto", "native", "amd", "hardware"]
+        let modes = Settings.modes
         guard args.count == 2, let index = modes.firstIndex(of: args[1]),
             let window = withWideString(controlWindowTitle, { FindWindowW(nil, $0) }) else {
-            throw WindowsError.unsupported("Use backend auto|native|amd|hardware with SwiftyToys running.")
+            throw WindowsError.unsupported("Use backend auto|native|amd|hardware|compositor with SwiftyToys running.")
         }
         _ = try sendResident(window, command: 6, value: index); Console.writeLine("Brightness mode: " + args[1]); return 0
     }
@@ -111,7 +114,7 @@ func runCLI(_ args: [String]) throws -> Int32 {
             Console.writeLine("PASS: all 10 native settings pages, navigation, checkbox toggles and brightness synchronization")
             return 0
         }
-        preview.show()
+        try preview.showPreview(page: args.count > 1 ? Int(args[1]) ?? -1 : 0)
         var message = MSG()
         while BC_GetMessageW(&message, nil, 0, 0) > 0 {
             if !preview.dialogMessage(&message) {
@@ -233,10 +236,11 @@ func runCLI(_ args: [String]) throws -> Int32 {
         Console.writeLine("Target  : \(state.connected ? state.device : "disconnected; level saved")")
         Console.writeLine("Step    : \(settings.step)%")
         Console.writeLine("OSD     : \(settings.indicator.rawValue)")
+        Console.writeLine("DDC/CI  : \(settings.ddcEnabled ? "on" : "off (software dimming)")")
         if let id = settings.targetID {
             Console.writeLine("Hardware: \(try hardwareBrightnessInfo(displayID: id))")
         } else {
-            Console.writeLine("Hardware: maximum enforcement disabled")
+            Console.writeLine("Hardware: no physical display selected")
         }
     } else if operation != 4 {
         Console.writeLine(String(current))
@@ -247,10 +251,10 @@ private func sendResident(_ window: HWND, command: Int, value: Int = 0) throws -
     var result: DWORD_PTR = 0
     let sent = SendMessageTimeoutW(
         window, brightnessMessage, WPARAM(command), LPARAM(value), UINT(SMTO_ABORTIFHUNG | SMTO_BLOCK), 16000, &result)
-    guard sent != 0, result > 0 else {
+    guard sent != 0 else {
         throw WindowsError.unsupported("Resident did not apply the requested brightness.")
     }
-    return Int(result) - 1
+    return try decodeBrightnessReply(result)
 }
 do {
     let args = Array(CommandLine.arguments.dropFirst())

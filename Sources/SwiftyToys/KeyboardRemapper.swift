@@ -46,6 +46,7 @@ private func cacheForegroundApplication() {
     let window = GetForegroundWindow()
     if window != context.pointee.lastForeground {
         context.pointee.caps.cancel()
+        _ = context.pointee.destination.post(brightnessKeyCancelMessage, data: -context.pointee.generation)
         context.pointee.lastForeground = window
     }
     var pid: DWORD = 0
@@ -125,10 +126,14 @@ private func remappingCallback(_ code: Int32, _ message: WPARAM, _ data: LPARAM)
         let held = context.pointee.brightnessSwallowed & bit != 0
         if !down, held {
             context.pointee.brightnessSwallowed &= ~bit
+            _ = context.pointee.destination.post(brightnessKeyStateMessage,
+                value: Int(context.pointee.brightnessSwallowed), data: -context.pointee.generation)
             return 1
         }
-        if down, held || context.pointee.engine.physicalModifiers == 0 {
-            if context.pointee.destination.post(keyStepMessage, value: event.vkCode == 113 ? 1 : -1) || held {
+        if down, held { return 1 } // Shared repeat owns the rate; ignore Windows auto-repeat.
+        if down, context.pointee.engine.physicalModifiers == 0 {
+            if context.pointee.destination.post(brightnessKeyStateMessage,
+                value: Int(context.pointee.brightnessSwallowed | bit), data: -context.pointee.generation) {
                 context.pointee.brightnessSwallowed |= bit
                 return 1
             }
@@ -152,6 +157,7 @@ private func remappingCallback(_ code: Int32, _ message: WPARAM, _ data: LPARAM)
     syncCapsTimer(context)
     if !deliverCaps(caps, context: context) {
         context.pointee.failed = true
+        _ = context.pointee.destination.post(brightnessKeyStateMessage, data: -context.pointee.generation)
         _ = context.pointee.destination.post(toyActionMessage, value: 3, data: context.pointee.generation)
         return CallNextHookEx(nil, code, message, data)
     }
@@ -162,6 +168,7 @@ private func remappingCallback(_ code: Int32, _ message: WPARAM, _ data: LPARAM)
     if !emitTransitions(result.events) {
         _ = emitTransitions(context.pointee.engine.release())
         context.pointee.failed = true
+        _ = context.pointee.destination.post(brightnessKeyStateMessage, data: -context.pointee.generation)
         _ = context.pointee.destination.post(toyActionMessage, value: 3, data: context.pointee.generation)
         return CallNextHookEx(nil, code, message, data)
     }
@@ -257,6 +264,7 @@ final class KeyboardRemapper: @unchecked Sendable {
                 DWORD(EVENT_SYSTEM_FOREGROUND), DWORD(EVENT_SYSTEM_FOREGROUND), nil, foregroundChanged, 0, 0,
                 DWORD(WINEVENT_OUTOFCONTEXT))
             defer {
+                _ = destination.post(brightnessKeyStateMessage, data: -generation)
                 if let focusHook { UnhookWinEvent(focusHook) }
                 if let hook = pointer.pointee.hook { UnhookWindowsHookEx(hook) }
                 remappingState = nil
@@ -295,6 +303,7 @@ final class KeyboardRemapper: @unchecked Sendable {
                             pointer.pointee.caps.tick(time: GetTickCount64(), enabled: enabled), context: pointer)
                         {
                             pointer.pointee.failed = true
+                            _ = destination.post(brightnessKeyStateMessage, data: -generation)
                             _ = destination.post(toyActionMessage, value: 3, data: generation)
                         }
                         syncCapsTimer(pointer)

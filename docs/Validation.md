@@ -1,4 +1,80 @@
-# Validation snapshot: 0.1.5
+# Validation snapshot: 0.1.6
+
+## Cursor and held-key follow-up candidate
+
+The installed full package is 6,534,656 bytes, SHA-256
+`1DEF251C33CB878F9F454A09140864FB7D8B9366B7D0A7DD84A3A2FBCB3C5F56`;
+31 portable tests and all 16 native checks pass on the packaged binary.
+The native cursor policy check creates no viewport and changes no cursor state.
+The input check captures F2 in its own hook before, during and after a 2.4-second
+blocked test UI. It constructs no display controller.
+
+The private refreshed prototype was confirmed to show a dimmed, controllable cursor
+and dim ordinary tooltips. Its fixed 60% coefficient above the old gamma caused
+double dimming and did not follow the application slider; the production candidate
+uses one coefficient and releases the viewport at 100%. The installed software mode
+reads 80%, Windows compositor, DDC off and physical backlight 100%. Physical
+the user confirms adjacent changes without popup flashes, held F1/F2 repetition
+and normal brightness at 100%. Release preparation remains pending.
+
+The user narrowed the remaining flash to the application's percentage popup.
+Source review identified its unconditional TOPMOST promotion above the compositor;
+the installed follow-up inserts it behind the visible, process-owned viewport.
+Non-erasing invalidation also avoids clearing the composition background. These
+changes passed all 16 packaged native checks. The user confirms the popup flash is
+gone and the held-key/100% checks work.
+
+A 15.02-second interactive prototype sample used 2.7% of one CPU core, 33.65 MiB
+private bytes and 21.95 MiB working set. This is not an idle, latency, GPU or
+weakest-hardware benchmark; it does not establish production resource usage.
+
+A separate 15.01-second installed interactive sample recorded 2.705% of one core,
+34.96 MiB private bytes and 26.19 MiB working set. Foreground workload was not
+controlled; this is not an idle, input-latency or comparable before/after benchmark.
+
+## Previously installed tile-navigation candidate
+
+2026-10-07, Windows 10 build 19045 / MacPro6,1. The installed packaged executable
+is 6,510,592 bytes, SHA-256
+`8891B654DB6AB4CEE0B126D44E3965687C90F43DB1A30CC890B7EB5DBB71BFAF`.
+
+- 30 portable Swift tests and 15 native checks pass. Native tests cover DDC opt-in,
+  legacy conflict migration, bounded request coalescing, Tab traversal through the
+  clipped viewport, usable control sizes, back navigation, drafts/focus, English/Russian
+  pages, ABI, storage, keyboard/worker ownership, driver trust and input-profile APIs.
+- On the selected physical SDR monitor, software levels 50%, 40% and 45% all read
+  back physical backlight 100%; 7 seconds of idle ticks retain 100%. Enabling DDC
+  and setting 50% reads back physical 50%. Disabling DDC restores 100% once; saved
+  software level 45% is restored. Tests finish with DDC off and software dimming.
+- The actual installed GUI's DDC checkbox switches both ways with verified monitor
+  readback. WM_NULL responds within the 500-ms probe limit during each request;
+  this bounded check is not a latency benchmark. Overview return works afterwards.
+- Real own-window previews verify the 3-column overview, 2-column compact overview
+  and brightness details. Captures contain this app only; an overview preview is
+  public. Header/viewport batches share their respective parents and Tab enters content.
+- Cursor compatibility probes were separate from the application. On this output,
+  AMD color gain and the documented disabled-trail setting did not dim the cursor.
+  A windowed Magnification prototype hid the cursor in League of Legends; it was
+  stopped and normal cursor visibility was confirmed by Windows and the user.
+  A repeat test also showed a frozen viewport. The registered rescue shortcut
+  successfully stopped it and restored the original pointer and brightness.
+  The prototype is rejected and is not part of the source or release package.
+  Software cursor dimming remains unresolved; DDC is still explicit opt-in.
+- A follow-up candidate distinguishes a busy brightness worker from a failed
+  driver operation and validates the complete reply range. All 15 native checks
+  pass on that candidate; installation and release remain pending.
+- Watchdog/recovery, target identity, HDR/clone/virtual exclusions and signed trackpad
+  input are preserved. Failed enable/disable, cable removal, abrupt-crash recovery,
+  sleep/resume, screen-reader and additional DPI/device combinations remain physical
+  acceptance checks; the existing earlier user confirmations below remain evidence.
+- GUI brightness/method requests and cold device reports are asynchronous. Legacy
+  synchronous CLI IPC retains a bounded wait and can report busy during UI driver work;
+  GUI completion is not claimed to eliminate every synchronous compatibility path.
+- Static Swift runtime, System32 DLL imports and 3 MB ZIP budget are preserved.
+  The EXE ceiling is now 6.6 MB for the added native UI/responsiveness work. Size
+  growth does not establish CPU/RSS, battery or weakest-hardware improvements.
+
+## Previously verified 0.1.5 behavior
 
 2026-10-06 release checks on Windows 10 build 19045 / MacPro6,1:
 

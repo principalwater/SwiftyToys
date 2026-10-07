@@ -56,5 +56,5 @@ if (Test-Path -LiteralPath $manifest) {
 }
 [IO.File]::WriteAllText($manifest, '', [Text.UTF8Encoding]::new($false))
 $size = (Get-Item -LiteralPath (Join-Path $OutputDirectory 'SwiftyToys.exe')).Length
-if ($size -gt 6500000) { throw "Executable exceeds the 6.5 MB size budget: $size bytes." }
+if ($size -gt 6600000) { throw "Executable exceeds the 6.6 MB size budget: $size bytes." }
 Write-Host "Built one executable: $size bytes; no Swift DLLs."
