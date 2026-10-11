@@ -1,5 +1,16 @@
 # Changelog
 
+## SwiftyToys 0.1.9 — 2026-10-11
+
+- Resolve the current foreground application before the first keyboard chord when
+  the asynchronous focus notification has not arrived. Cmd+H/Tab no longer depend
+  on opening Task View or waiting for a later notification to refresh stale context.
+- Preserve application exclusions and scoped overrides; unknown executable names
+  pass through and retry with backoff. Recheck the foreground snapshot before
+  delivering actions. Cache successful lookups and use a fixed native query buffer.
+- Add foreground/engine regressions and a native lookup check that sends no input.
+  Keep native cursor visibility, DDC preferences and physical wheel/trackpad input.
+
 ## SwiftyToys 0.1.8 — 2026-10-11
 
 - Remove global cursor hiding and magnified cursor replacement from software

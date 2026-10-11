@@ -28,6 +28,8 @@ Run --abi-check and --test-storage without a display controller. --test-input ch
 an isolated brightness hook with injected F2 taps and a blocked UI, without adjusting
 a monitor. The complete remap algorithm is covered by KeyboardCoreTests; native
 physical-key/UIPI/AltGr and application-specific integration need interactive checks.
+--test-foreground verifies native executable lookup, cache reuse and unresolved
+context rejection without sending keys, changing focus or constructing a display controller.
 
 Storage uses bounded strict UTF-8 reads and adjacent atomic replace with flush,
 close and MoveFileExW. Failed commits preserve the previous destination. Gamma

@@ -1,6 +1,37 @@
-# Validation snapshot: 0.1.8
+# Validation snapshot: 0.1.9
 
-## Native cursor visibility in games and system menus
+## First keyboard chord after a foreground change
+
+The previous adapter passed through when the current PID differed from the cached
+PID. Its asynchronous foreground callback or 60-second timer could refresh that
+cache later. The user reports repeated Cmd+H misses followed by native Task View
+on the first Cmd+Tab, then normal remapping. This is consistent with the source
+race; silent hook removal and other integration failures are not ruled out solely
+by that observation.
+
+The candidate resolves current HWND/PID context before processing the event,
+rechecks focus and retains that snapshot for actions. Successful lookups are
+cached; unresolved contexts fail closed with one-second retry backoff. Regression
+checks exercise first Cmd+H/Tab without a foreground notification, exclusions,
+scoped overrides, failure/retry, window changes and release while Command is held.
+34 portable tests and all 17 packaged native checks pass. The native lookup check
+sends no keys or window actions and verifies one process lookup across 1,000
+unchanged-context accesses. The static executable is 6,538,240 bytes (2,560 bytes
+above 0.1.8), SHA-256
+`09ED71A8354BE72D410B6AA9FB3E2C3EF5EBEC37AD1F0C0B3F1ED9B22DF0B595`.
+The complete package is installed with that exact hash; DDC remains off and the
+user's software level is preserved. The preceding candidate differs only in PE
+timestamp/checksum fields, and also passed all 17 native checks.
+
+A private metadata-only microbenchmark on Windows 10 / MacPro6,1 sampled 500
+lookups per implementation and target. Previous array/current temporary-buffer
+p95 values were 0.0788/0.0795 ms for the test process and 0.0822/0.0814 ms for the
+sampled foreground process; all queries succeeded. This measures the resolver
+alone, outside the hook. It proves neither an input-latency improvement nor a
+worst-case timing guarantee; native calls and scheduling can still exceed hook
+timeouts. Installed first-chord checks and release verification remain pending.
+
+## Previously released 0.1.8 native cursor visibility
 
 2026-10-11, Windows 10 / MacPro6,1. Full installed package EXE: 6,535,680 bytes,
 SHA-256 `80635AA4D2F6FABDFAEF35E7DE6E9BC633FCFE0F24DFAC27187C3A223F52E941`.
@@ -21,6 +52,15 @@ cursor calls, copy viewport, input transform or gamma writes, also leaves the
 cursor brighter according to the user. Its independent guard restored original
 color and the saved 80%; neither probe process remains active. No probe is shipped.
 DXGI pointer-separation metadata alone does not establish physical cursor luminance.
+
+Source comparison: MonitorControl uses macOS gamma tables or a shade window;
+Windows tools LightBulb and Twinkle Tray use GDI gamma ramps. Their implementations
+do not establish hardware-cursor dimming on this output. A separate two-minute
+direct GDI probe retained the original LUT, used no cursor/overlay/DDC calls and
+restored calibration with exact readback. The user reports a visible but still
+brighter cursor. No GDI backend or probe is shipped. [MonitorControl](https://github.com/MonitorControl/MonitorControl/blob/84ac2d72bfb53b653536e484946f6ed027e4229c/MonitorControl/Model/Display.swift),
+[LightBulb](https://github.com/Tyrrrz/LightBulb/blob/e4c1aefa26e78828c0af0f794e0e5a23c4d90d3d/LightBulb.PlatformInterop/DeviceContext.cs),
+[Twinkle Tray](https://github.com/xanderfrangos/twinkle-tray/blob/fec2ef0e7a3ad94092f230faa4d6d7b87a0cf188/src/modules/tt-windows-utils/windows_display_brightness.cc).
 
 Further read-only research found no documented baseline getter for the monitor
 3x4 color-space setter; it was not called. Windows documents MHC ICC profiles as

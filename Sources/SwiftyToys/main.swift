@@ -15,6 +15,7 @@ func runCLI(_ args: [String]) throws -> Int32 {
     if command == "--test-display-queue" { try DisplayRequestQueue.selfCheck(); return 0 }
     if command == "--test-cursor-policy" { try SoftwareCursorDimmingSession.selfCheck(); return 0 }
     if command == "--test-keyboard-config" { try KeyboardConfiguration.selfCheck(); return 0 }
+    if command == "--test-foreground" { try KeyboardRemapper.selfCheck(); return 0 }
     if command == "--wsl-info" {
         let setup = try WSLSetup.current()
         Console.writeLine(setup.title + "\n" + setup.detail)

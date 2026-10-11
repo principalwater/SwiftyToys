@@ -27,9 +27,17 @@ stay within scoped closures. Release `--abi-check` verifies native SDK layouts.
 Gamma storage uses `InlineArray` and scoped `Span` access. A dedicated serial actor
 executor owns blocking driver calls. Win32 UI and low-level input own separate
 message threads. The original brightness hook avoids allocation. The general remap
-engine uses bounded Swift collections (64 rules) and emits small input batches;
-no file/process-path queries, actor hops or driver calls occur inside its hook.
-Foreground executable lookup runs in a WinEvent callback on the input thread. Mutexes
+engine uses bounded Swift collections (64 rules) and emits small input batches.
+WinEvent prewarms the executable cache. If focus changes before that asynchronous
+event arrives, the hook resolves the current HWND/PID with one limited-access
+process-image query using a fixed 1,024-character buffer before deciding the first
+chord. Unchanged resolved focus performs no process lookup; failures pass through
+and retry at most once per second for that context. The foreground snapshot is
+rechecked before enabling rules and dispatching actions. No file reads, UI waits,
+actor hops or explicit display/device operations occur inside the hook. Native
+process calls have no documented latency ceiling; this is not a hard real-time
+guarantee. The dedicated input thread and existing periodic rearm remain.
+Mutexes
 protect shared completion state; unchecked Sendable declarations explain their
 ownership invariant.
 
