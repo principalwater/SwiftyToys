@@ -211,6 +211,8 @@
   "DDC/CI controls the monitor backlight, including the cursor. Turn off to use software dimming.": "DDC/CI управляет подсветкой монитора, включая курсор. Отключите для программного затемнения.",
   "Software dimming changes the image only. Monitor backlight stays unchanged; hardware cursors may remain brighter.": "Программное затемнение меняет только изображение. Подсветка не меняется; аппаратный курсор может оставаться ярче.",
   "Software": "Программно",
+  "Software composition (experimental)": "Программная композиция (экспериментально)",
+  "Windows composition dims the image; the native cursor may stay brighter. Backlight stays unchanged. The effect stops at 100%.": "Композиция Windows затемняет изображение; системный курсор может оставаться ярче. Подсветка не меняется. При 100% эффект отключается.",
   "Reading device information…": "Чтение сведений об устройствах…",
   "Device information updated.": "Сведения об устройствах обновлены.",
   "Applying brightness…": "Применяется яркость…",

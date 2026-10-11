@@ -211,6 +211,8 @@
   "DDC/CI controls the monitor backlight, including the cursor. Turn off to use software dimming.": "DDC/CI controls the monitor backlight, including the cursor. Turn off to use software dimming.",
   "Software dimming changes the image only. Monitor backlight stays unchanged; hardware cursors may remain brighter.": "Software dimming changes the image only. Monitor backlight stays unchanged; hardware cursors may remain brighter.",
   "Software": "Software",
+  "Software composition (experimental)": "Software composition (experimental)",
+  "Windows composition dims the image; the native cursor may stay brighter. Backlight stays unchanged. The effect stops at 100%.": "Windows composition dims the image; the native cursor may stay brighter. Backlight stays unchanged. The effect stops at 100%.",
   "Reading device information…": "Reading device information…",
   "Device information updated.": "Device information updated.",
   "Applying brightness…": "Applying brightness…",

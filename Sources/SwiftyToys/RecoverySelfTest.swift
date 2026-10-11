@@ -4,6 +4,14 @@ import BrightnessCore
 
 /// Pure mapping checks: never reads a local lease or calls a display API.
 func testRecoveryStateMapping() throws {
+    for backend in ["compositor", "composition"] {
+        let lease = ColorLease(owner: 1, started: 1, displayID: "physical", backend: backend,
+            amdID: nil, brightness: nil, contrast: nil, gamma: nil)
+        let decoded = try ColorLease.decode(lease.encoded())
+        guard decoded == lease, decoded.restoresCursorVisibility == (backend == "compositor") else {
+            throw WindowsError.unsupported("Legacy/new composition cursor-ownership recovery check failed.")
+        }
+    }
     let native = ColorLease(
         owner: UInt32.max, started: UInt64.max, displayID: "display/🍎\\\"",
         backend: "native", amdID: nil, brightness: nil, contrast: nil, gamma: GammaRamp().array)
@@ -27,7 +35,7 @@ func testRecoveryStateMapping() throws {
     }
     for (key, value) in [
         ("owner", StateField.unsigned(UInt64(UInt32.max) + 1)),
-        ("version", .unsigned(2)), ("brightness", .string("5")),
+        ("version", .unsigned(2)), ("brightness", .string("5")), ("backend", .string("unknown")),
     ] {
         var invalid = fields
         invalid[key] = value

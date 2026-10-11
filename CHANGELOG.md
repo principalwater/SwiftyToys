@@ -1,5 +1,18 @@
 # Changelog
 
+## SwiftyToys 0.1.8 — 2026-10-11
+
+- Remove global cursor hiding and magnified cursor replacement from software
+  composition: Windows retains native rendering and app-controlled visibility,
+  including games and system menus. In software mode, native cursors may remain brighter; DDC/CI
+  still dims the entire physical monitor.
+- Keep existing composition preferences, image/tooltip dimming, OSD stacking,
+  topology checks and no-flash viewport reuse. Remove the visible-cursor startup
+  requirement so applications can hide their own native cursor normally.
+- Distinguish new image-only recovery leases from legacy cursor-owning leases;
+  only legacy recovery restores global cursor visibility. Correct UI/help labels
+  and add native style/lease-policy regression checks.
+
 ## SwiftyToys 0.1.7 — 2026-10-07
 
 - Keep software brightness through generic device, settings and power-status
