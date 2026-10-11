@@ -22,14 +22,17 @@ or Apple.
   leaving DDC restores the original backlight once. The old maximum-backlight worker
   is removed. Conflicting legacy maximum=on + hardware preferences migrate to software.
   Failed disables stay off and preserve pending recovery; failed enables keep the
-  previous method. Automatic/Windows/AMD software methods may leave hardware cursors brighter.
-  **Software with cursor (experimental)** uses the native Windows Magnification control
+  previous method. Software methods may leave native cursors brighter.
+  **Software composition (experimental)** uses the native Windows Magnification control
   at 1x, with one absolute coefficient and an unchanged calibrated gamma baseline.
-  It includes the pointer and ordinary tooltips; requires exactly one active physical
+  It dims the image and ordinary tooltips; requires exactly one active physical
   SDR output, including no active virtual outputs; and stops its viewport at 100%.
   Adjacent levels reuse the viewport. It costs additional CPU/GPU composition and
   memory; protected/system surfaces and exclusive fullscreen remain acceptance checks.
-  Cursor visibility has a durable recovery lease and the existing watchdog.
+  Windows retains native cursor rendering and visibility. Global cursor hiding and
+  the unreliable magnified replacement are removed after LoL and system-menu failures.
+  Existing `compositor` settings remain compatible; new image-only recovery leases
+  never change cursor visibility. Legacy cursor-owning leases retain restoration.
   Ctrl+Alt+Shift+F10 requests 100% for emergency restoration. F1/F2 hold repetition
   follows Windows keyboard delay/speed; release, focus, device, session and power
   changes cancel repetition. No mouse-wheel interception is added.

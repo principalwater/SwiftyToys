@@ -28,7 +28,7 @@ private func cursorDimmingProcedure(_ window: HWND?, _ message: UINT, _ value: W
 }
 
 /// A 1x, windowed Magnification viewport owned entirely by the display executor.
-/// It scales the composed image and cursor together; it never writes display gamma.
+/// It scales the composed image; Windows retains native cursor rendering and visibility.
 /// Protected surfaces and exclusive fullscreen applications require physical validation.
 final class SoftwareCursorDimmingSession {
     private static let windowClass = "SwiftyToys.SoftwareCursorDimming"
@@ -42,6 +42,7 @@ final class SoftwareCursorDimmingSession {
         return owner == GetCurrentProcessId() ? window : nil
     }
     private static let frameTimer: UINT_PTR = 1
+    private static let controlStyle = DWORD(WS_CHILD | WS_VISIBLE)
     // Documented GUID_DEVINTERFACE_MONITOR; no device identity or payload name is retained.
     private static let monitorInterface = GUID(Data1: 0xe6f07b5f, Data2: 0xee97, Data3: 0x4a90,
         Data4: (0xb0, 0x76, 0x33, 0xf5, 0x7b, 0xf4, 0xea, 0xa7))
@@ -55,7 +56,6 @@ final class SoftwareCursorDimmingSession {
     private var sessionNotifications = false
     private var monitorNotifications: HDEVNOTIFY?
     private var needsTopologyValidation = false
-    private var cursorRestoreNeeded = false
     private var appliedPercent: Int?
     private var invalidationMessage: UINT?
     private var traceCount = 0
@@ -67,7 +67,6 @@ final class SoftwareCursorDimmingSession {
         self.output = output
         do throws(WindowsError) {
             source = try Self.checkedBounds(output)
-            try Self.requireVisibleCursor()
             guard MagInitialize() else { throw WindowsError.api("Initialize magnification", GetLastError()) }
             initialized = true
             try checkMagnifierState()
@@ -81,7 +80,7 @@ final class SoftwareCursorDimmingSession {
     /// Call only after the controller durably saves its lease and starts recovery.
     func apply(_ level: BrightnessLevel) throws(WindowsError) {
         precondition(GetCurrentThreadId() == threadID)
-        if !Self.requiresViewport(level.percent) { try restore(); return }
+        if !Self.requiresViewport(level.percent) { restore(); return }
         if !isActive || appliedPercent != level.percent { trace("apply \(level.percent)%") }
         guard isValid else {
             throw failure ?? .unsupported("Software cursor dimming was invalidated. Select the display again.")
@@ -93,7 +92,6 @@ final class SoftwareCursorDimmingSession {
                 guard Self.sameRect(bounds, source) else {
                     throw WindowsError.unsupported("Display bounds changed. Select the display again.")
                 }
-                try Self.requireVisibleCursor()
                 try checkMagnifierState()
                 if host == nil { try createWindows() }
             }
@@ -119,16 +117,6 @@ final class SoftwareCursorDimmingSession {
                 guard isValid else {
                     throw failure ?? WindowsError.unsupported("Software cursor dimming was invalidated.")
                 }
-                // Record intent before the global call, so partial failure still restores it.
-                cursorRestoreNeeded = true
-                guard MagShowSystemCursor(false) else {
-                    throw WindowsError.api("Show magnified cursor", GetLastError())
-                }
-                guard isValid else {
-                    // A sent session/display message may invalidate during a native call.
-                    cursorRestoreNeeded = true
-                    throw failure ?? WindowsError.unsupported("Software cursor dimming was invalidated.")
-                }
                 isActive = true
             }
             appliedPercent = level.percent
@@ -138,13 +126,12 @@ final class SoftwareCursorDimmingSession {
         }
     }
 
-    /// Restore visibility before destroying the viewport; release its native buffers at 100%.
-    func restore() throws(WindowsError) {
+    /// Release the viewport at 100%; never override an application's cursor visibility.
+    func restore() {
         precondition(GetCurrentThreadId() == threadID)
-        if host != nil || cursorRestoreNeeded || !isValid { trace("restore") }
-        let error = deactivate()
+        if host != nil || !isValid { trace("restore") }
+        deactivate()
         closeWindows()
-        if let error { throw error }
     }
 
     /// Generic device/settings broadcasts are hints, not proof of a display change.
@@ -165,27 +152,19 @@ final class SoftwareCursorDimmingSession {
         }
     }
 
-    private func deactivate() -> WindowsError? {
-        var error: WindowsError?
-        if cursorRestoreNeeded {
-            if MagShowSystemCursor(true) {
-                cursorRestoreNeeded = false
-            } else {
-                error = .api("Restore system cursor visibility", GetLastError())
-            }
-        }
+    private func deactivate() {
         if let host {
             KillTimer(host, Self.frameTimer)
             ShowWindow(host, SW_HIDE)
         }
         isActive = false
         appliedPercent = nil
-        return error
     }
 
     private func invalidate(_ error: WindowsError) {
         isValid = false
-        failure = deactivate() ?? error
+        failure = error
+        deactivate()
     }
 
     fileprivate func handle(_ window: HWND, _ message: UINT, _ value: WPARAM, _ data: LPARAM) -> LRESULT {
@@ -252,7 +231,7 @@ final class SoftwareCursorDimmingSession {
             throw .api("Configure software cursor viewport", GetLastError())
         }
         control = withWideString("Magnifier") {
-            CreateWindowExW(0, $0, nil, DWORD(WS_CHILD | WS_VISIBLE) | DWORD(MS_SHOWMAGNIFIEDCURSOR),
+            CreateWindowExW(0, $0, nil, Self.controlStyle,
                 0, 0, width, height, host, nil, instance, nil)
         }
         guard let control else { throw .api("Create magnified cursor", GetLastError()) }
@@ -320,14 +299,6 @@ final class SoftwareCursorDimmingSession {
             info.rcMonitor.bottom > info.rcMonitor.top
         else { throw .api("Read software cursor display bounds", GetLastError()) }
         return info.rcMonitor
-    }
-
-    private static func requireVisibleCursor() throws(WindowsError) {
-        var cursor = CURSORINFO()
-        cursor.cbSize = DWORD(MemoryLayout.size(ofValue: cursor))
-        guard GetCursorInfo(&cursor), cursor.flags & DWORD(CURSOR_SHOWING) != 0 else {
-            throw .unsupported("Software cursor dimming needs the original Windows cursor to be visible.")
-        }
     }
 
     private func checkMagnifierState() throws(WindowsError) {
@@ -400,6 +371,9 @@ final class SoftwareCursorDimmingSession {
                 source: 0, target: 1, isPhysical: physical, isCloned: cloned, isHDR: hdr)
         }
         let output = fixture()
+        guard controlStyle & DWORD(MS_SHOWMAGNIFIEDCURSOR) == 0 else {
+            throw .unsupported("Software composition must preserve native cursor rendering.")
+        }
         // Generic hints share one policy, independent of the device/vendor/action.
         for value in [WPARAM(0), WPARAM(DBT_DEVNODES_CHANGED), WPARAM(DBT_DEVICEARRIVAL),
             WPARAM(DBT_DEVICEREMOVECOMPLETE), WPARAM(SPI_SETMOUSE), WPARAM(SPI_SETMOUSESPEED), WPARAM.max] {
@@ -434,18 +408,18 @@ final class SoftwareCursorDimmingSession {
             }
             guard correct else { throw .unsupported("Software cursor color-matrix check failed.") }
         }
-        Console.writeLine("PASS: software cursor event scope, idle resources, single-output SDR policy and absolute color scaling; no cursor/display changes")
+        Console.writeLine("PASS: native-cursor composition style, event scope, idle resources, single-output SDR policy and absolute color scaling; no cursor/display changes")
     }
 
     deinit {
         // Normal shutdown calls restore on the executor; this is a final native cleanup only.
-        _ = deactivate()
+        deactivate()
         closeWindows()
         if initialized { MagUninitialize() }
     }
 }
 
-/// Recovery does not require a connected display. This restores Magnification's global
+/// Legacy cursor-owning lease recovery does not require a connected display. Restore the global
 /// cursor visibility flag only; it does not alter another application's ShowCursor count.
 func restoreSoftwareCursorVisibility() throws(WindowsError) {
     guard MagInitialize() else { throw .api("Initialize cursor visibility recovery", GetLastError()) }

@@ -57,7 +57,7 @@ actor DisplayController {
         guard let output else { throw WindowsError.unsupported("Output is disconnected.") }
         return ColorLease(
             owner: GetCurrentProcessId(), started: try processStartTicks(GetCurrentProcess()), displayID: output.id,
-            backend: compositor != nil ? "compositor" : hardware != nil ? "hardware" : native == nil ? "amd" : "native", amdID: amdOutput?.legacyID,
+            backend: compositor != nil ? "composition" : hardware != nil ? "hardware" : native == nil ? "amd" : "native", amdID: amdOutput?.legacyID,
             brightness: hardware.map { Int($0.original) } ?? (native == nil && compositor == nil ? baselineBrightness : nil),
             contrast: hardware == nil && native == nil && compositor == nil ? baselineContrast : nil, gamma: native?.session.original.array)
     }
@@ -69,7 +69,7 @@ actor DisplayController {
         do {
             let hadBackend = compositor != nil || hardware != nil || native != nil || (amd != nil && amdOutput != nil)
             if let compositor {
-                try compositor.restore()
+                compositor.restore()
             } else if let hardware {
                 try hardware.restore()
             } else if let native {
@@ -170,7 +170,7 @@ actor DisplayController {
     }
 
     private var backendName: String {
-        compositor != nil ? "Windows compositor (cursor included)" : hardware != nil ? "native DDC/CI" : native == nil ? "AMD RGB gain" : "native WDDM gamma"
+        compositor != nil ? "Windows composition (native cursor)" : hardware != nil ? "native DDC/CI" : native == nil ? "AMD RGB gain" : "native WDDM gamma"
     }
 
     private func apply(_ target: BrightnessLevel) throws {

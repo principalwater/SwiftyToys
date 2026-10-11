@@ -241,7 +241,7 @@ final class SettingsWindow {
         for id in [245, 246] { if let control = controls[id] { EnableWindow(control, !enabled) } }
         let hintText = enabled ? "DDC/CI controls the monitor backlight, including the cursor. Turn off to use software dimming."
             : brightnessConfiguration?.softwareBackend == "compositor"
-                ? "Software with cursor uses Windows composition on one physical SDR display. Backlight stays unchanged. At 100%, the effect turns off."
+                ? "Windows composition dims the image; the native cursor may stay brighter. Backlight stays unchanged. The effect stops at 100%."
                 : "Software dimming changes the image only. Monitor backlight stays unchanged; hardware cursors may remain brighter."
         if let hint = controls[248] { setText(hint, localization.text(hintText)) }
         brightnessControlBusy(modeBusy)
@@ -539,7 +539,7 @@ final class SettingsWindow {
             check("Hardware brightness (DDC/CI)", 244, 300, 318, 650, on: settings?.ddcEnabled ?? false)
             label("", 248, 300, 361, 650, 66)
             label("Software compatibility", 247, 300, 444, 650, 25)
-            combo(["Automatic", "Windows color controls", "AMD display controls", "Software with cursor (experimental)"], 246, 300, 479, 450)
+            combo(["Automatic", "Windows color controls", "AMD display controls", "Software composition (experimental)"], 246, 300, 479, 450)
             if let control = controls[246], let selected = Settings.softwareModes.firstIndex(of: settings?.softwareBackend ?? "auto") { SendMessageW(control, UINT(CB_SETCURSEL), WPARAM(selected), 0) }
             button("Apply software method", 245, 770, 477, 180)
             updateBrightnessMode()

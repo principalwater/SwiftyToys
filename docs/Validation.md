@@ -1,6 +1,41 @@
-# Validation snapshot: 0.1.7
+# Validation snapshot: 0.1.8
 
-## Brightness notification stability
+## Native cursor visibility in games and system menus
+
+2026-10-11, Windows 10 / MacPro6,1. Full installed package EXE: 6,535,680 bytes,
+SHA-256 `80635AA4D2F6FABDFAEF35E7DE6E9BC633FCFE0F24DFAC27187C3A223F52E941`.
+31 portable tests and all 16 packaged native checks pass. Cursor policy checks
+reject the magnified-cursor style; recovery checks distinguish legacy cursor-owning
+leases from new image-only leases and reject unknown backends.
+
+The live owned viewport has no magnified-cursor style and writes an image-only
+`composition` lease. Windows reports a visible cursor in the sampled surface.
+The user confirms cursor visibility in League of Legends and the audio-output
+tray menu, but also confirms it remains brighter than the dimmed image. This fixes
+disappearance, not native cursor luminance. Software remains 80%, DDC off;
+physical backlight reads 100%. A notification burst preserves the same visible
+viewport/session/level without restore, recreation or color reapply.
+
+A separate guarded native Swift fullscreen-color probe at exactly 1x, with no
+cursor calls, copy viewport, input transform or gamma writes, also leaves the
+cursor brighter according to the user. Its independent guard restored original
+color and the saved 80%; neither probe process remains active. No probe is shipped.
+DXGI pointer-separation metadata alone does not establish physical cursor luminance.
+
+Further read-only research found no documented baseline getter for the monitor
+3x4 color-space setter; it was not called. Windows documents MHC ICC profiles as
+the supported application interface to that calibration pipeline. The documented
+MHC2 capability-query export is absent on this Windows 10 installation; this does
+not prove all hardware/profile support is absent. Native cursor dimming without
+DDC remains an open requirement. [Gamma cursor limitations](https://learn.microsoft.com/en-us/windows/desktop/direct3ddxgi/using-gamma-correction),
+[hardware calibration contract](https://learn.microsoft.com/en-us/windows/win32/wcs/display-calibration-mhc).
+
+Global hiding/copying, cursor-theme mutation, input hooks and undocumented driver
+changes are absent. Legacy cursor restoration is retained for recovery only.
+No dependencies or ISA requirements were added; the EXE size is unchanged from
+0.1.7. No controlled CPU/GPU, latency or weakest-hardware improvement is claimed.
+
+## Previously released 0.1.7 brightness notification stability
 
 2026-10-07, Windows 10 / MacPro6,1. The full installed package's executable is
 6,535,680 bytes, SHA-256

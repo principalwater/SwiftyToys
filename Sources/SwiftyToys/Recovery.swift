@@ -45,6 +45,7 @@ struct ColorLease: Sendable, Equatable {
     let brightness: Int?
     let contrast: Int?
     let gamma: [UInt16]?
+    var restoresCursorVisibility: Bool { backend == "compositor" }
 
     static func read() throws -> Self? {
         let path = try NativeFiles.path("scanout-lease.json")
@@ -67,14 +68,14 @@ struct ColorLease: Sendable, Equatable {
             owner: owner, started: started, displayID: id, backend: backend,
             amdID: try optional("amdID", { $0.string }), brightness: try optional("brightness", { $0.integer }),
             contrast: try optional("contrast", { $0.integer }), gamma: try optional("gamma", { $0.words }))
-        guard lease.version == 1, lease.displayID.count < 4096, ["amd", "native", "hardware", "compositor"].contains(lease.backend),
+        guard lease.version == 1, lease.displayID.count < 4096, ["amd", "native", "hardware", "compositor", "composition"].contains(lease.backend),
             lease.backend != "hardware" || lease.brightness.flatMap(DWORD.init(exactly:)) != nil else {
             throw WindowsError.unsupported("Unsupported output recovery state.")
         }
         return lease
     }
     func encoded() throws -> [UInt8] {
-        guard version == 1, displayID.count < 4096, ["amd", "native", "hardware", "compositor"].contains(backend),
+        guard version == 1, displayID.count < 4096, ["amd", "native", "hardware", "compositor", "composition"].contains(backend),
             backend != "hardware" || brightness.flatMap(DWORD.init(exactly:)) != nil else {
             throw WindowsError.unsupported("Unsupported output recovery state.")
         }
@@ -98,10 +99,10 @@ struct ColorLease: Sendable, Equatable {
 func recoverOutput(owner: UInt32? = nil, started: UInt64? = nil) throws -> Bool {
     if let lease = try ColorLease.read() {
         if let owner, let started, owner != lease.owner || started != lease.started { return false }
-        if lease.backend == "compositor" {
-            // Cursor visibility is global and must recover even after disconnection.
+        if lease.restoresCursorVisibility {
+            // Older releases hid the global cursor; new image-only leases never own it.
             try restoreSoftwareCursorVisibility()
-        } else {
+        } else if lease.backend != "composition" {
         let outputs = try discoverDisplays()
         guard
             let output = outputs.first(where: { $0.id == lease.displayID && $0.isPhysical && !$0.isHDR && !$0.isCloned }
