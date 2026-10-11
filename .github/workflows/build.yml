@@ -68,6 +68,11 @@ jobs:
         run: |
           $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-keyboard-config' -Wait -PassThru -NoNewWindow
           if ($process.ExitCode -ne 0) { throw 'Mac preset migration check failed' }
+      - name: Check native foreground executable lookup without sending input
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-foreground' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw 'Foreground executable lookup check failed' }
       - name: Check native driver-file verification primitives
         shell: pwsh
         run: |

@@ -10,6 +10,7 @@ physical validation. A source change is not an installed fix.
 | Apple Russian/English layouts, native installation | Installed signed Apple RU/US/UK DLLs verified; native API applied Apple RU/UK, confirmed in Windows profiles/Substitutes and physically by the user | Preserve scoped recovery and US/UK choice in GUI |
 | Ctrl+Space input language switching | Physically confirmed by the user | Preserve configured pair/cycle, AltGr and IME behavior |
 | Command/Win+Tab with held Command | Physically confirmed by the user | Preserve forward/reverse cycling after menu-mask changes |
+| Cmd+H/Tab intermittently pass through after changing focus | 0.1.9 resolves current context before processing input, preserves exclusions/scoped overrides and retries unknown names with backoff; regression checks added | Installed first-chord checks after focus changes remain pending |
 | Editable remaps and switching settings in the GUI | Native rule editor, actions, application scope, pause/exclusions, smart Caps Lock and language mode | Keep settings responsive while saving/reloading |
 | PowerToys-style feature tiles and attractive native UI | 0.1.6 has responsive tiles, Overview/Esc return, retained drafts/focus, clipped viewport, native Tab navigation and high-contrast colours; real own-window previews checked | Continue physical multi-DPI/high-contrast/screen-reader checks |
 | About: author GitHub, Apple inspiration, Think Different., ON WINDOWS | Implemented in About, header/footer and README | Preserve English branding and working links |

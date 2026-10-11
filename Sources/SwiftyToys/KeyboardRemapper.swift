@@ -16,8 +16,8 @@ private struct RemappingState {
     let generation: Int
     var hook: HHOOK?
     var failed = false
-    var lastPID: DWORD = 0
-    var application = ""
+    var foreground = ForegroundApplication()
+    var application: String { foreground.application ?? "" }
     let brightnessKeys: Bool
     let allowInjectedBrightness: Bool
     var brightnessSwallowed: UInt8 = 0
@@ -41,37 +41,44 @@ nonisolated(unsafe) private var remappingState: UnsafeMutablePointer<RemappingSt
     }
     return SendInput(UINT(inputs.count), &inputs, Int32(MemoryLayout<INPUT>.size)) == inputs.count
 }
-private func cacheForegroundApplication() {
-    guard let context = remappingState else { return }
+private func processApplication(_ pid: DWORD) -> String? {
+    guard pid != 0, let process = OpenProcess(DWORD(PROCESS_QUERY_LIMITED_INFORMATION), false, pid) else { return nil }
+    defer { CloseHandle(process) }
+    return withUnsafeTemporaryAllocation(of: WCHAR.self, capacity: 1024) { buffer -> String? in
+        var count = DWORD(buffer.count)
+        guard QueryFullProcessImageNameW(process, 0, buffer.baseAddress, &count), count > 0, count < buffer.count else {
+            return nil
+        }
+        return String(decoding: buffer.prefix(Int(count)), as: UTF16.self).split(separator: "\\").last.map {
+            String($0).lowercased()
+        }
+    }
+}
+@discardableResult private func cacheForegroundApplication() -> Bool {
+    guard let context = remappingState else { return false }
     let window = GetForegroundWindow()
     if window != context.pointee.lastForeground {
         context.pointee.caps.cancel()
         _ = context.pointee.destination.post(brightnessKeyCancelMessage, data: -context.pointee.generation)
         context.pointee.lastForeground = window
     }
+    guard context.pointee.configuration.enabled else { return false }
     var pid: DWORD = 0
     GetWindowThreadProcessId(window, &pid)
-    guard pid != context.pointee.lastPID else { return }
-    context.pointee.lastPID = pid
-    context.pointee.application = ""
-    if let process = OpenProcess(DWORD(PROCESS_QUERY_LIMITED_INFORMATION), false, pid) {
-        defer { CloseHandle(process) }
-        var buffer = Array(repeating: WCHAR(0), count: 1024)
-        var count = DWORD(buffer.count)
-        if QueryFullProcessImageNameW(process, 0, &buffer, &count) {
-            context.pointee.application =
-                String(decoding: buffer.prefix(Int(count)), as: UTF16.self).split(separator: "\\").last.map {
-                    String($0).lowercased()
-                } ?? ""
-        }
-    }
+    let resolved = context.pointee.foreground.resolve(
+        processID: pid, windowID: window.map { UInt(bitPattern: $0) } ?? 0, time: GetTickCount64(),
+        lookup: processApplication) != nil
+    let currentWindow = GetForegroundWindow()
+    var currentPID: DWORD = 0
+    GetWindowThreadProcessId(currentWindow, &currentPID)
+    return resolved && currentWindow == window && currentPID == pid
 }
 private func foregroundChanged(
     _ hook: HWINEVENTHOOK?, _ event: DWORD, _ window: HWND?, _ object: LONG, _ child: LONG, _ thread: DWORD,
     _ time: DWORD
-) { cacheForegroundApplication() }
-private func deliverAction(_ action: String, context: UnsafeMutablePointer<RemappingState>) -> Bool {
-    let foreground = GetForegroundWindow()
+) { _ = cacheForegroundApplication() }
+private func deliverAction(_ action: String, context: UnsafeMutablePointer<RemappingState>, foreground: HWND?) -> Bool {
+    guard foreground != nil, foreground == GetForegroundWindow() else { return false }
     if action == "switch language" {
         do {
             try requestLanguage(
@@ -97,7 +104,7 @@ private func deliverCaps(_ decision: CapsDecision, context: UnsafeMutablePointer
         let down = context.pointee.engine.process(key: 20, down: true, application: context.pointee.application)
         let up = context.pointee.engine.process(key: 20, down: false, application: context.pointee.application)
         guard emitTransitions(down.events + up.events) else { return false }
-        if let action = down.action { return deliverAction(action, context: context) }
+        if let action = down.action { return deliverAction(action, context: context, foreground: context.pointee.lastForeground) }
     }
     return true
 }
@@ -140,14 +147,14 @@ private func remappingCallback(_ code: Int32, _ message: WPARAM, _ data: LPARAM)
         }
     }
     guard event.flags & DWORD(LLKHF_INJECTED) == 0 else { return CallNextHookEx(nil, code, message, data) }
-    // Foreground executable is cached by a WinEvent callback outside this keyboard callback.
-    var pid: DWORD = 0
-    GetWindowThreadProcessId(GetForegroundWindow(), &pid)
+    // WinEvent prewarms the cache; a focus miss resolves the executable before the first chord, without waiting for an event.
+    let resolved = cacheForegroundApplication()
+    let foreground = context.pointee.lastForeground
     let enabled =
-        context.pointee.configuration.enabled && pid == context.pointee.lastPID
+        context.pointee.configuration.enabled && resolved
         && !context.pointee.configuration.excluded.contains(context.pointee.application)
     let language =
-        GetKeyboardLayout(GetWindowThreadProcessId(GetForegroundWindow(), nil)).map {
+        GetKeyboardLayout(GetWindowThreadProcessId(foreground, nil)).map {
             UInt16(truncatingIfNeeded: UInt(bitPattern: $0)) & 0x03FF
         } ?? 0
     let capsEnabled = enabled && context.pointee.configuration.smartCaps && ![UInt16(4), 17, 18].contains(language)
@@ -173,7 +180,7 @@ private func remappingCallback(_ code: Int32, _ message: WPARAM, _ data: LPARAM)
         return CallNextHookEx(nil, code, message, data)
     }
     if let action = result.action {
-        if !deliverAction(action, context: context) {
+        if !deliverAction(action, context: context, foreground: foreground) {
             return CallNextHookEx(nil, code, message, data)
         }
     }
@@ -182,6 +189,24 @@ private func remappingCallback(_ code: Int32, _ message: WPARAM, _ data: LPARAM)
 
 /// The dedicated hook thread owns the engine and all injection. UI updates restart this small worker.
 final class KeyboardRemapper: @unchecked Sendable {
+    static func selfCheck() throws {
+        var foreground = ForegroundApplication()
+        var queries = 0
+        for _ in 0..<1000 {
+            let application = foreground.resolve(processID: GetCurrentProcessId(), windowID: 1, time: GetTickCount64()) { pid in
+                queries += 1
+                return processApplication(pid)
+            }
+            guard application == "swiftytoys.exe" else {
+                throw WindowsError.unsupported("Foreground executable lookup failed.")
+            }
+        }
+        guard queries == 1, processApplication(0) == nil,
+            foreground.resolve(processID: 0, windowID: 0, time: GetTickCount64(), lookup: processApplication) == nil else {
+            throw WindowsError.unsupported("Foreground cache validation failed.")
+        }
+        Console.writeLine("PASS: native executable lookup, cached input context and unresolved foreground rejection")
+    }
     private struct Status {
         var threadID: DWORD = 0
         var active = false
@@ -294,10 +319,9 @@ final class KeyboardRemapper: @unchecked Sendable {
             while BC_GetMessageW(&message, nil, 0, 0) > 0 {
                 if message.message == UINT(WM_TIMER) {
                     if message.wParam == pointer.pointee.capsTimer {
-                        var pid: DWORD = 0
-                        GetWindowThreadProcessId(GetForegroundWindow(), &pid)
+                        let resolved = cacheForegroundApplication()
                         let enabled =
-                            configuration.enabled && pid == pointer.pointee.lastPID
+                            configuration.enabled && resolved
                             && !configuration.excluded.contains(pointer.pointee.application)
                         if !deliverCaps(
                             pointer.pointee.caps.tick(time: GetTickCount64(), enabled: enabled), context: pointer)
