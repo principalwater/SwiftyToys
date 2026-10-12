@@ -1,4 +1,5 @@
 <h1 align="center">SwiftyToys</h1>
+<p align="center"><img src="resources/SwiftyToys.svg" width="80" height="80" alt="SwiftyToys Swift Ember logo"></p>
 <p align="center">Mac habits. Windows capabilities.</p>
 <p align="center">
   <a href="https://github.com/principalwater/SwiftyToys/actions/workflows/build.yml"><img alt="Build and test" src="https://github.com/principalwater/SwiftyToys/actions/workflows/build.yml/badge.svg"></a>
@@ -94,7 +95,7 @@ Portable BrightnessCore/KeyboardCore tests use Swift Testing; native interop is 
 [Contributor guide](CONTRIBUTING.md) · [Packaging](docs/Packaging.md) ·
 [Windows interop](docs/WindowsInterop.md) · [Performance](docs/Performance.md) ·
 [Security](SECURITY.md). CI verifies Windows and macOS core checks. External changes
-use reviewed PRs; the maintainer controls merges. Size budgets are 6.6 MB EXE / 3 MB ZIP;
+use reviewed PRs; the maintainer controls merges. Size budgets are 6.7 MB EXE / 3 MB ZIP;
 performance advantages require reproducible measurements.
 
 ## Credits and license

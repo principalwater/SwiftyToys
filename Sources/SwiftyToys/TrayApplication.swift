@@ -37,6 +37,7 @@ final class TrayApplication {
     private let sleepGate = SleepGate()
     private var systemIndicator: SystemIndicator?
     private var tray = NOTIFYICONDATAW()
+    private var trayIcon: ApplicationIcon?
     private var trayAdded = false
     private var trayText = ""
     private var exiting = false
@@ -79,7 +80,8 @@ final class TrayApplication {
         tray.uID = 1
         tray.uFlags = UINT(NIF_MESSAGE | NIF_ICON | NIF_TIP)
         tray.uCallbackMessage = trayMessage
-        tray.hIcon = LoadIconW(nil, UnsafePointer<WCHAR>(bitPattern: 32516))
+        trayIcon = try ApplicationIcon(size: max(32, GetSystemMetricsForDpi(Int32(SM_CXICON), GetDpiForWindow(window))))
+        tray.hIcon = trayIcon?.handle
         updateTray()
         for (index, hotkey) in settings.hotkeys.enumerated() {
             if let combo = parseHotkey(hotkey),
@@ -754,6 +756,8 @@ final class TrayApplication {
         }
         let restored = stopDisplay(controller)
         Shell_NotifyIconW(DWORD(NIM_DELETE), &tray)
+        tray.hIcon = nil
+        trayIcon = nil
         if let osd { DestroyWindow(osd) }
         Diagnostics.write(restored ? "exit: output restored" : "exit: output recovery pending; watchdog and lease retained")
     }

@@ -42,9 +42,10 @@ private func settingsButtonProcedure(_ window: HWND?, _ message: UINT, _ value: 
     if let window, let pointer = UnsafeRawPointer(bitPattern: UInt(context)) {
         let owner = Unmanaged<SettingsWindow>.fromOpaque(pointer).takeUnretainedValue()
         if message == UINT(WM_MOUSEMOVE) {
-            owner.hover(window, entered: true)
-            var tracking = TRACKMOUSEEVENT(cbSize: DWORD(MemoryLayout<TRACKMOUSEEVENT>.size), dwFlags: DWORD(TME_LEAVE), hwndTrack: window, dwHoverTime: 0)
-            TrackMouseEvent(&tracking)
+            if owner.hover(window, entered: true) {
+                var tracking = TRACKMOUSEEVENT(cbSize: DWORD(MemoryLayout<TRACKMOUSEEVENT>.size), dwFlags: DWORD(TME_LEAVE), hwndTrack: window, dwHoverTime: 0)
+                TrackMouseEvent(&tracking)
+            }
         } else if message == UINT(WM_MOUSELEAVE) { owner.hover(window, entered: false) }
         else if message == UINT(WM_NCDESTROY) { RemoveWindowSubclass(window, settingsButtonProcedure, id) }
     }
@@ -58,6 +59,9 @@ final class SettingsWindow {
     private var controls: [Int: HWND] = [:]
     private var content: [HWND] = []
     private var fonts: [HFONT] = []
+    private var smallIcon: ApplicationIcon?
+    private var largeIcon: ApplicationIcon?
+    private var brandIcon: ApplicationIcon?
     private var layout: [(HWND, Int, Int, Int, Int)] = []
     private var fontRoles: [Int: Int] = [:]
     private var hovered: HWND?
@@ -94,10 +98,11 @@ final class SettingsWindow {
     private var highContrast = false
     private var background: HBRUSH?
     private var white: HBRUSH?
-    private var textColor: COLORREF { highContrast ? GetSysColor(Int32(COLOR_WINDOWTEXT)) : 0x0041_2F22 }
-    private var secondaryColor: COLORREF { highContrast ? textColor : 0x007A_6A5B }
-    private var accentColor: COLORREF { highContrast ? GetSysColor(Int32(COLOR_HIGHLIGHT)) : 0x00B0_6528 }
-    private var borderColor: COLORREF { highContrast ? textColor : 0x00E6_DDD5 }
+    private var textColor: COLORREF { highContrast ? GetSysColor(Int32(COLOR_WINDOWTEXT)) : 0x002D_2525 }
+    private var secondaryColor: COLORREF { highContrast ? textColor : 0x006E_6162 }
+    private var accentColor: COLORREF { highContrast ? textColor : 0x0024_37B6 }
+    private var borderColor: COLORREF { highContrast ? textColor : 0x00E8_E3E2 }
+    private var backgroundColor: COLORREF { highContrast ? GetSysColor(Int32(COLOR_WINDOW)) : 0x00F9_F7F7 }
     private let titles = [
         "Overview", "Brightness", "Keyboard", "Input languages", "Desktop", "Mouse", "Magic Trackpad", "Homebrew", "Boot Camp", "About SwiftyToys",
     ]
@@ -143,6 +148,7 @@ final class SettingsWindow {
             }
         }
         guard window != nil else { throw WindowsError.api("Create settings window", GetLastError()) }
+        try updateIcons()
         if let window {
             var monitor = MONITORINFO()
             monitor.cbSize = DWORD(MemoryLayout<MONITORINFO>.size)
@@ -164,7 +170,7 @@ final class SettingsWindow {
         guard viewport != nil else { throw WindowsError.api("Create settings viewport", GetLastError()) }
         makeTheme()
         makeFonts()
-        button("←  Overview", 100, 32, 18, 172, 40, fixed: true)
+        button("←  Overview", 100, 80, 20, 172, 40, fixed: true)
         control("STATIC", "ON WINDOWS", 13, 870, 26, 142, 28, style: DWORD(SS_OWNERDRAW), fixed: true)
         label("SwiftyToys", 20, 32, 68, 920, 44, large: true, fixed: true)
         label("", 21, 34, 114, 920, 36, fixed: true)
@@ -248,6 +254,10 @@ final class SettingsWindow {
     /// Tests this application's own native controls without sending desktop input.
     func validateLayout() throws {
         guard let window, let viewport else { throw WindowsError.unsupported("Missing settings window.") }
+        guard let smallIcon, let largeIcon,
+            SendMessageW(window, UINT(WM_GETICON), WPARAM(ICON_SMALL), 0) == LRESULT(Int(bitPattern: smallIcon.handle)),
+            SendMessageW(window, UINT(WM_GETICON), WPARAM(ICON_BIG), 0) == LRESULT(Int(bitPattern: largeIcon.handle))
+        else { throw WindowsError.unsupported("Application icons are missing from the native window.") }
         var client = RECT()
         GetClientRect(viewport, &client)
         let initialLanguage = localization.pack
@@ -327,19 +337,30 @@ final class SettingsWindow {
         page = 0; renderPage()
     }
     private var scale: Double { window.map { Double(GetDpiForWindow($0)) / 96 } ?? 1 }
+    private func updateIcons() throws {
+        guard let window else { return }
+        let dpi = GetDpiForWindow(window)
+        let small = try ApplicationIcon(size: GetSystemMetricsForDpi(Int32(SM_CXSMICON), dpi))
+        let large = try ApplicationIcon(size: GetSystemMetricsForDpi(Int32(SM_CXICON), dpi))
+        let brand = try ApplicationIcon(size: Int32(64 * scale))
+        SendMessageW(window, UINT(WM_SETICON), WPARAM(ICON_SMALL), LPARAM(Int(bitPattern: small.handle)))
+        SendMessageW(window, UINT(WM_SETICON), WPARAM(ICON_BIG), LPARAM(Int(bitPattern: large.handle)))
+        smallIcon = small; largeIcon = large; brandIcon = brand
+    }
     private func makeTheme() {
         var contrast = HIGHCONTRASTW()
         contrast.cbSize = UINT(MemoryLayout<HIGHCONTRASTW>.size)
         highContrast = SystemParametersInfoW(UINT(SPI_GETHIGHCONTRAST), contrast.cbSize, &contrast, 0) && contrast.dwFlags & DWORD(HCF_HIGHCONTRASTON) != 0
         if let background { DeleteObject(background) }
         if let white { DeleteObject(white) }
-        background = CreateSolidBrush(highContrast ? GetSysColor(Int32(COLOR_WINDOW)) : 0x00F9_F6F3)
+        background = CreateSolidBrush(backgroundColor)
         white = CreateSolidBrush(highContrast ? GetSysColor(Int32(COLOR_WINDOW)) : 0x00FF_FFFF)
     }
 
-    fileprivate func hover(_ control: HWND, entered: Bool) {
-        if entered, hovered != control { if let hovered { InvalidateRect(hovered, nil, false) }; hovered = control; InvalidateRect(control, nil, false) }
-        else if !entered, hovered == control { hovered = nil; InvalidateRect(control, nil, false) }
+    @discardableResult fileprivate func hover(_ control: HWND, entered: Bool) -> Bool {
+        if entered, hovered != control { if let hovered { InvalidateRect(hovered, nil, false) }; hovered = control; InvalidateRect(control, nil, false); return true }
+        if !entered, hovered == control { hovered = nil; InvalidateRect(control, nil, false); return true }
+        return false
     }
 
     private func captureDraft() {
@@ -371,7 +392,7 @@ final class SettingsWindow {
     private func makeFonts() {
         for font in fonts { DeleteObject(font) }
         fonts.removeAll()
-        for (index, definition) in [(14, 400), (28, 600), (18, 600), (24, 400)].enumerated() {
+        for (index, definition) in [(14, 400), (30, 600), (18, 600), (24, 400)].enumerated() {
             let (size, weight) = definition
             let font = withWideString(index == 3 ? "Segoe MDL2 Assets" : "Segoe UI") {
                 CreateFontW(
@@ -746,7 +767,7 @@ final class SettingsWindow {
         let width = max(1, Int(Double(area.right) / scale))
         let height = max(1, Int(Double(area.bottom) / scale))
         let bodyWidth = page == 0 ? width - 64 : min(960, width - 64)
-        let bodyTop = page == 0 ? 132 : 170
+        let bodyTop = page == 0 ? 148 : 180
         let bodyHeight = max(1, height - bodyTop - 88)
         let bodyLeft = (width - bodyWidth) / 2
         MoveWindow(viewport, Int32(Double(bodyLeft) * scale), Int32(Double(bodyTop) * scale), Int32(Double(bodyWidth) * scale), Int32(Double(bodyHeight) * scale), false)
@@ -770,8 +791,8 @@ final class SettingsWindow {
                 x = (index % columns) * (tileWidth + 18); y = (index / columns) * 172; w = tileWidth; h = 154
             } else if scrolling, w >= 600 { w += max(0, usableWidth - 704) }
             if id == 13 { x = width - 182 }
-            if id == 20 { y = page == 0 ? 26 : 68; w = width - 64 }
-            if id == 21 { y = page == 0 ? 80 : 116; w = width - 64 }
+            if id == 20 { x = page == 0 ? 104 : 32; y = page == 0 ? 28 : 76; w = width - (page == 0 ? 310 : 64) }
+            if id == 21 { x = page == 0 ? 106 : 34; y = page == 0 ? 78 : 128; w = width - (page == 0 ? 140 : 68) }
             if id == 99 { y = height - 78; w = width - 64 }
             if id == 12 { y = height - 34; w = width - 64 }
             let top = Int32(Double(y) * scale) - (scrolling ? scrollOffset : 0)
@@ -878,6 +899,7 @@ final class SettingsWindow {
                     window, nil, area.left, area.top, area.right - area.left, area.bottom - area.top,
                     UINT(SWP_NOZORDER | SWP_NOACTIVATE))
             }
+            do { try updateIcons() } catch { Diagnostics.write("UI: application icon resize failed") }
             makeFonts()
             for (id, handle) in controls {
                 let role = fontRoles[id] ?? 0
@@ -887,7 +909,7 @@ final class SettingsWindow {
             restoreDraft()
             if let focus, let control = controls[focus] { SetFocus(control) }
             return 0
-        case UINT(WM_SETTINGCHANGE), UINT(WM_SYSCOLORCHANGE):
+        case UINT(WM_SETTINGCHANGE), UINT(WM_SYSCOLORCHANGE), UINT(WM_THEMECHANGED):
             makeTheme()
             RedrawWindow(window, nil, nil, UINT(RDW_INVALIDATE | RDW_ALLCHILDREN))
             return 0
@@ -1126,7 +1148,7 @@ final class SettingsWindow {
             let id = child.map { Int(GetDlgCtrlID($0)) } ?? 0
             let outside = child.map { GetParent($0) == self.window } ?? false
             SetTextColor(dc, [12, 21, 99, 248].contains(id) ? secondaryColor : textColor)
-            SetBkColor(dc, highContrast ? GetSysColor(Int32(COLOR_WINDOW)) : outside ? 0x00F9_F6F3 : 0x00FF_FFFF)
+            SetBkColor(dc, outside ? backgroundColor : highContrast ? GetSysColor(Int32(COLOR_WINDOW)) : 0x00FF_FFFF)
             return LRESULT(Int(bitPattern: outside || page == 0 ? background : white))
         case UINT(WM_DRAWITEM):
             if let item = UnsafePointer<DRAWITEMSTRUCT>(bitPattern: Int(data))?.pointee { drawButton(item) }
@@ -1150,13 +1172,17 @@ final class SettingsWindow {
     private func paintBackground(_ dc: HDC, _ window: HWND) {
         var area = RECT(); GetClientRect(window, &area)
         FillRect(dc, &area, background)
+        if let brandIcon {
+            let size = Int32((page == 0 ? 56 : 32) * scale)
+            DrawIconEx(dc, Int32(32 * scale), Int32((page == 0 ? 28 : 24) * scale), brandIcon.handle, size, size, 0, nil, UINT(DI_NORMAL))
+        }
         if page != 0, let viewport {
             var panel = RECT(); GetWindowRect(viewport, &panel)
             _ = withUnsafeMutablePointer(to: &panel) { $0.withMemoryRebound(to: POINT.self, capacity: 2) { MapWindowPoints(nil, window, $0, 2) } }
             InflateRect(&panel, 1, 1)
             let brush = SelectObject(dc, white)
             let pen = CreatePen(Int32(PS_SOLID), 1, borderColor); let previous = SelectObject(dc, pen)
-            Rectangle(dc, panel.left, panel.top, panel.right, panel.bottom)
+            RoundRect(dc, panel.left - Int32(8 * scale), panel.top - Int32(8 * scale), panel.right + Int32(8 * scale), panel.bottom + Int32(8 * scale), Int32(28 * scale), Int32(28 * scale))
             SelectObject(dc, previous); SelectObject(dc, brush); DeleteObject(pen)
         }
     }
@@ -1174,10 +1200,12 @@ final class SettingsWindow {
         let disabled = item.itemState & UINT(ODS_DISABLED) != 0
         var itemArea = item.rcItem
         FillRect(dc, &itemArea, page == 0 || id < 120 ? background : white)
-        let color: COLORREF = highContrast ? GetSysColor(Int32(COLOR_WINDOW)) : badge ? 0x00FB_F4EC : pressed ? 0x00F8_EEE6 : hot ? 0x00FF_FAF4 : 0x00FF_FFFF
+        let primary = [240, 245, 313, 350, 410, 430, 510, 511].contains(id) && !tile && !badge
+        let color: COLORREF = highContrast ? GetSysColor(Int32(COLOR_WINDOW)) : primary && !disabled ? (pressed ? 0x0024_37B6 : 0x002B_41C8) : badge || pressed ? 0x00EF_F2FE : hot ? 0x00F9_FAFF : 0x00FF_FFFF
         let brush = CreateSolidBrush(color); let previousBrush = SelectObject(dc, brush)
         let pen = CreatePen(Int32(PS_SOLID), 1, hot && !disabled ? accentColor : borderColor); let previousPen = SelectObject(dc, pen)
-        RoundRect(dc, item.rcItem.left + 1, item.rcItem.top + 1, item.rcItem.right - 1, item.rcItem.bottom - 1, Int32(14 * scale), Int32(14 * scale))
+        let radius = Int32((tile ? 28 : 20) * scale)
+        RoundRect(dc, item.rcItem.left + 1, item.rcItem.top + 1, item.rcItem.right - 1, item.rcItem.bottom - 1, radius, radius)
         SelectObject(dc, previousBrush); SelectObject(dc, previousPen); DeleteObject(brush); DeleteObject(pen)
         SetBkMode(dc, Int32(TRANSPARENT))
         SetTextColor(dc, disabled ? GetSysColor(Int32(COLOR_GRAYTEXT)) : textColor)
@@ -1186,6 +1214,11 @@ final class SettingsWindow {
         var rect = item.rcItem
         if tile {
             let feature = id - 120
+            let glyphBrush = CreateSolidBrush(highContrast ? GetSysColor(Int32(COLOR_WINDOW)) : 0x00F0_F2FE)
+            let glyphPrevious = SelectObject(dc, glyphBrush)
+            let glyphPen = SelectObject(dc, GetStockObject(Int32(NULL_PEN)))
+            RoundRect(dc, item.rcItem.left + Int32(14 * scale), item.rcItem.top + Int32(16 * scale), item.rcItem.left + Int32(54 * scale), item.rcItem.top + Int32(56 * scale), Int32(18 * scale), Int32(18 * scale))
+            SelectObject(dc, glyphPen); SelectObject(dc, glyphPrevious); DeleteObject(glyphBrush)
             rect.left += Int32(20 * scale); rect.top += Int32(22 * scale); rect.bottom = rect.top + Int32(30 * scale)
             if fonts.count > 3 { SelectObject(dc, fonts[3]) }
             SetTextColor(dc, accentColor)
@@ -1194,21 +1227,32 @@ final class SettingsWindow {
             if fonts.count > 2 { SelectObject(dc, fonts[2]) }
             SetTextColor(dc, textColor)
             _ = withWideString(localization.text(titles[feature])) { DrawTextW(dc, $0, -1, &rect, UINT(DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS)) }
-            rect.left = item.rcItem.left + Int32(20 * scale); rect.top = item.rcItem.top + Int32(67 * scale); rect.bottom = item.rcItem.bottom - Int32(40 * scale)
+            rect.left = item.rcItem.left + Int32(20 * scale); rect.top = item.rcItem.top + Int32(67 * scale); rect.right = item.rcItem.right - Int32(20 * scale); rect.bottom = item.rcItem.bottom - Int32(40 * scale)
             if !fonts.isEmpty { SelectObject(dc, fonts[0]) }
             SetTextColor(dc, secondaryColor)
             _ = withWideString(localization.text(tileDetails[feature - 1])) { DrawTextW(dc, $0, -1, &rect, UINT(DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS)) }
-            rect.top = item.rcItem.bottom - Int32(30 * scale); rect.bottom = item.rcItem.bottom - Int32(9 * scale)
+            rect.top = item.rcItem.bottom - Int32(32 * scale); rect.bottom = item.rcItem.bottom - Int32(9 * scale)
+            let state = localization.text(tileState(feature))
+            var stateSize = SIZE()
+            _ = withWideString(state) { GetTextExtentPoint32W(dc, $0, Int32(state.utf16.count), &stateSize) }
+            let pillRight = min(rect.right - Int32(28 * scale), rect.left + stateSize.cx + Int32(20 * scale))
+            if !highContrast {
+                let pillBrush = CreateSolidBrush(0x00EF_F2FE)
+                let oldBrush = SelectObject(dc, pillBrush); let oldPen = SelectObject(dc, GetStockObject(Int32(NULL_PEN)))
+                RoundRect(dc, rect.left, rect.top, pillRight, rect.bottom, Int32(22 * scale), Int32(22 * scale))
+                SelectObject(dc, oldPen); SelectObject(dc, oldBrush); DeleteObject(pillBrush)
+            }
+            rect.left += Int32(10 * scale); rect.right = pillRight - Int32(8 * scale)
             SetTextColor(dc, accentColor)
-            _ = withWideString(localization.text(tileState(feature))) { DrawTextW(dc, $0, -1, &rect, UINT(DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS)) }
+            _ = withWideString(state) { DrawTextW(dc, $0, -1, &rect, UINT(DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS)) }
             var arrow = item.rcItem; arrow.left = arrow.right - Int32(38 * scale); arrow.top = rect.top
             _ = withWideString("→") { DrawTextW(dc, $0, -1, &arrow, UINT(DT_SINGLELINE)) }
         } else {
             InflateRect(&rect, -Int32(8 * scale), 0)
-            SetTextColor(dc, disabled ? GetSysColor(Int32(COLOR_GRAYTEXT)) : id == 100 || badge ? accentColor : textColor)
+            SetTextColor(dc, disabled ? GetSysColor(Int32(COLOR_GRAYTEXT)) : primary && !highContrast ? 0x00FF_FFFF : id == 100 || badge ? accentColor : textColor)
             _ = withWideString(text(id)) { DrawTextW(dc, $0, -1, &rect, UINT(DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_END_ELLIPSIS)) }
         }
-        if item.itemState & UINT(ODS_FOCUS) != 0 { var focus = item.rcItem; InflateRect(&focus, -4, -4); DrawFocusRect(dc, &focus) }
+        if item.itemState & UINT(ODS_FOCUS) != 0, item.itemState & UINT(ODS_NOFOCUSRECT) == 0 { var focus = item.rcItem; InflateRect(&focus, -4, -4); DrawFocusRect(dc, &focus) }
     }
     deinit {
         if let window, IsWindow(window) { DestroyWindow(window) }

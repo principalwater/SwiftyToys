@@ -67,7 +67,7 @@ foreach ($name in $previousRuntimeFiles) {
 }
 Copy-Item -LiteralPath $runtimeManifest -Destination $directory -Force
 $documentationRoot = if (Test-Path -LiteralPath (Join-Path $sourceDirectory 'LICENSE')) { $sourceDirectory } else { Split-Path $PSScriptRoot -Parent }
-foreach ($name in @('README.md','CHANGELOG.md','LICENSE','THIRD_PARTY_NOTICES.md','Licenses','docs','Languages')) {
+foreach ($name in @('README.md','CHANGELOG.md','LICENSE','THIRD_PARTY_NOTICES.md','Licenses','docs','Languages','resources')) {
     $path = Join-Path $documentationRoot $name
     if (Test-Path -LiteralPath $path) { Copy-Item -LiteralPath $path -Destination $directory -Recurse -Force }
 }
