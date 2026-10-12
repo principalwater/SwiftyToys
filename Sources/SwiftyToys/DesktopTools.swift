@@ -134,32 +134,55 @@ final class DesktopTools {
 func switchLanguage(in foreground: HWND?) throws {
     try requestLanguage(in: foreground, layouts: configuredLayouts(), mode: "cycle", pair: [])
 }
-func configuredLayouts() -> [HKL] {
+func configuredLayouts(resolveNames: Bool = false) -> [HKL] {
+    var handles = Array<HKL?>(repeating: nil, count: 64)
+    let count = GetKeyboardLayoutList(Int32(handles.count), &handles)
+    var loaded = Array(handles.prefix(Int(max(0, count))).compactMap { $0 })
+    guard resolveNames, let previous = GetKeyboardLayout(0) else { return loaded }
+    // Only the windowless resolver opts in: identify loaded HKLs on its own thread, then restore it.
+    defer { _ = ActivateKeyboardLayout(previous, 0) }
+    var named: [String: HKL] = [:]
+    for layout in loaded {
+        guard ActivateKeyboardLayout(layout, 0) != nil else { continue }
+        var name = Array(repeating: WCHAR(0), count: 9)
+        if GetKeyboardLayoutNameW(&name) {
+            named[String(decoding: name.prefix(8), as: UTF16.self).lowercased()] = layout
+        }
+    }
     var registry: HKEY?
     let opened = withWideString("Keyboard Layout\\Preload") {
         RegOpenKeyExW(HKEY_CURRENT_USER, $0, 0, REGSAM(0x20019), &registry)
     }
     var layouts: [HKL] = []
+    var substitutes: HKEY?
+    _ = withWideString("Keyboard Layout\\Substitutes") {
+        RegOpenKeyExW(HKEY_CURRENT_USER, $0, 0, REGSAM(KEY_QUERY_VALUE), &substitutes)
+    }
+    defer { if let substitutes { RegCloseKey(substitutes) } }
+    func read(_ key: HKEY, _ name: String) -> String? {
+        var buffer = Array(repeating: WCHAR(0), count: 32)
+        var size = DWORD(buffer.count * 2)
+        var type: DWORD = 0
+        let status = withWideString(name) { name in
+            buffer.withUnsafeMutableBytes {
+                RegQueryValueExW(key, name, nil, &type, $0.baseAddress?.assumingMemoryBound(to: BYTE.self), &size)
+            }
+        }
+        guard status == ERROR_SUCCESS, type == DWORD(REG_SZ), size >= 2, size <= buffer.count * 2,
+            size % 2 == 0, buffer[Int(size / 2) - 1] == 0 else { return nil }
+        let value = String(decoding: buffer.prefix(while: { $0 != 0 }), as: UTF16.self).lowercased()
+        guard value.utf8.count == 8, UInt32(value, radix: 16) != nil else { return nil }
+        return value
+    }
     if opened == ERROR_SUCCESS, let registry {
         defer { RegCloseKey(registry) }
         for index in 1...16 {
-            var buffer = Array(repeating: WCHAR(0), count: 32)
-            var size = DWORD(buffer.count * 2)
-            let status = withWideString(String(index)) { name in
-                buffer.withUnsafeMutableBytes {
-                    RegQueryValueExW(
-                        registry, name, nil, nil, $0.baseAddress?.assumingMemoryBound(to: BYTE.self), &size)
-                }
-            }
-            if status != ERROR_SUCCESS { break }
-            if let layout = buffer.withUnsafeBufferPointer({
-                LoadKeyboardLayoutW($0.baseAddress, UINT(KLF_SUBSTITUTE_OK | KLF_NOTELLSHELL))
-            }) {
-                layouts.append(layout)
-            }
+            guard var id = read(registry, String(index)) else { break }
+            if let substitutes, let substitute = read(substitutes, id) { id = substitute }
+            if let layout = named[id], !layouts.contains(layout) { layouts.append(layout) }
         }
     }
-    return layouts
+    return layouts.isEmpty ? loaded : layouts
 }
 func requestLanguage(in foreground: HWND?, layouts: [HKL], mode: String, pair: [UInt16]) throws {
     guard let foreground else { throw WindowsError.unsupported("No active application.") }

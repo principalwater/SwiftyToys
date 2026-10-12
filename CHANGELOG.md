@@ -1,5 +1,22 @@
 # Changelog
 
+## SwiftyToys 0.1.10 — 2026-10-12
+
+- Remove the full-screen Magnification copy and 16-ms frame loop after desktop
+  freeze reports. Migrate saved compositor settings to calibrated native software
+  controls while preserving explicit DDC opt-in, brightness and legacy recovery.
+- Move executable/layout queries off the keyboard hook owner to one bounded,
+  shared resolver. Reuse known process names across window changes; unknown
+  applications pass through while resolving. Do not load keyboard layouts.
+- Coalesce Shell observation and HID batches, retain failed notifications for
+  retry, preserve cross-source repeat/release behavior and guard observer lifetime.
+- Bound display-command admission through timeouts, service sent messages during
+  joins, verify complete display/lease identity and report pending restoration.
+  Skip unchanged brightness writes after binding validation.
+- Scan display choices outside settings UI and save brightness preferences in one
+  atomic transaction. Keep physical mouse/Precision Touchpad input and native
+  cursor visibility unchanged; software cursor luminance remains a limitation.
+
 ## SwiftyToys 0.1.9 — 2026-10-11
 
 - Resolve the current foreground application before the first keyboard chord when

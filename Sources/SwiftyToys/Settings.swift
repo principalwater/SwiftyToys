@@ -5,8 +5,8 @@ import WinSDK
 
 /// Portable user settings. Hardware identities remain only in the local file.
 struct Settings: Sendable {
-    static let softwareModes = ["auto", "native", "amd", "compositor"]
-    static let modes = ["auto", "native", "amd", "hardware", "compositor"]
+    static let softwareModes = ["auto", "native", "amd"]
+    static let modes = ["auto", "native", "amd", "hardware"]
     var targetID: String?
     var legacyTarget: String?
     var step = 5
@@ -46,7 +46,17 @@ struct Settings: Sendable {
         let saved =
             try NativeFiles.exists(brightnessFile)
             ? try NativeFiles.text(brightnessFile) : ""
-        try self.init(contents: NativeFiles.text(configuration), brightness: Int(saved.trimmingWhitespace()) ?? 100)
+        let content = try NativeFiles.text(configuration)
+        try self.init(contents: content, brightness: Int(saved.trimmingWhitespace()) ?? 100)
+        if Self.usesRetiredBackend(content) { try setValue("auto", forKey: "backend") }
+    }
+
+    private static func usesRetiredBackend(_ content: String) -> Bool {
+        content.split(whereSeparator: \.isNewline).contains { line in
+            let parts = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            return parts.count == 2 && parts[0].trimmingWhitespace().lowercased() == "backend"
+                && parts[1].trimmingWhitespace().lowercased() == "compositor"
+        }
     }
 
     init(contents content: String, brightness percentage: Int = 100) throws {
@@ -74,7 +84,8 @@ struct Settings: Sendable {
             case "max": hotkeys[2] = value
             case "min": hotkeys[3] = value
             case "backend":
-                backend = Self.modes.contains(value.lowercased()) ? value.lowercased() : "auto"
+                let migrated = value.lowercased() == "compositor" ? "auto" : value.lowercased()
+                backend = Self.modes.contains(migrated) ? migrated : "auto"
             case "osd": indicator = IndicatorMode(rawValue: value.lowercased()) ?? .custom
             default: break
             }
@@ -111,7 +122,7 @@ struct Settings: Sendable {
         try setValues(["ddcEnabled": mode == "hardware" ? "1" : "0", "backend": mode == "hardware" ? softwareBackend : mode])
     }
 
-    private func setValues(_ values: [String: String]) throws {
+    func setValues(_ values: [String: String]) throws {
         guard values.values.allSatisfy({ !$0.contains(where: { $0.isNewline || $0 == "\0" }) }) else {
             throw WindowsError.unsupported("Invalid setting value.")
         }
@@ -131,13 +142,17 @@ struct Settings: Sendable {
     }
 
     static func selfCheck() throws {
+        guard usesRetiredBackend(" BACKEND = Compositor \nddcEnabled=0"),
+            !usesRetiredBackend("# backend=compositor\nbackend=auto") else {
+            throw WindowsError.unsupported("Retired backend persistence check failed.")
+        }
         for (contents, expected) in [
             ("", "auto"), ("backend=hardware\nhardwareMaximum=1", "auto"),
             ("backend=hardware\nhardwareMaximum=0", "hardware"),
             ("backend=hardware\nddcEnabled=0", "auto"),
             ("backend=native\nddcEnabled=1\nhardwareMaximum=1", "hardware"),
             ("backend=amd\nddcEnabled=0", "amd"),
-            ("backend=compositor\nddcEnabled=0", "compositor"),
+            ("backend=compositor\nddcEnabled=0", "auto"),
             ("backend=compositor\nddcEnabled=1", "hardware"),
         ] {
             guard try Settings(contents: contents).backend == expected else { throw WindowsError.unsupported("DDC/software brightness policy check failed.") }

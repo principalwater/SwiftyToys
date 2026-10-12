@@ -51,7 +51,7 @@ not an isolated optimization gain, input-latency or low-end-hardware benchmark.
 
 - RemapEngine handles physical keyboard events; its rule scan is capped at 64.
 - Native keyboard injection handles only remapped key transitions; no mouse hook exists.
-- Foreground executable names are cached by a separate WinEvent callback.
+- Foreground executable names/layouts are resolved by one independent worker; the hook consumes a bounded live-process cache.
 - GammaRamp contains 768 fixed UInt16 values and uses InlineArray/Span for native calls.
 - ColorLease arrays are serialized for recovery, outside the input callback.
 - DisplayController owns driver state on a dedicated serial executor.
@@ -93,5 +93,26 @@ or change CPU target/ownership/concurrency based on guesswork.
 
 For deeper Windows profiling, use WPR/WPA CPU sampling and precise context switches,
 native process/GDI/USER counters and diagnostic QPC timing around physical input.
+
+## 0.1.10 freeze-related work elimination
+
+The copied-desktop renderer and 16-ms refresh/Z-order loop are removed, rather than
+moved to another high-frequency worker. Native brightness retains its validated
+binding and skips unchanged writes. Slow executable/layout queries are isolated
+from the hook owner; repeated requests coalesce. See [runtime architecture](RuntimeArchitecture.md).
+
+A 120-second installed observation recorded resident CPU about 0.081% of one core,
+4.40 MiB private bytes, 15.03 MiB working set, 9 threads and 258 handles; watchdog
+showed no counter-resolution CPU increment, 2.34 MiB private and 9.75 MiB working
+set. Historical composition samples had different workload/lifecycle states, so
+no numerical speedup or memory reduction is attributed solely to these changes.
+No old frozen renderer was relaunched for comparison, and no GPU or weakest-device
+claim follows from this sample. Physical users confirmed the repaired runtime
+continues updating the desktop and input during their short check.
+A separate ten-minute interactive observation recorded about 0.016% of one core,
+4.39 MiB resident private bytes and 14.48 MiB working set at its last sample.
+Watchdog private bytes ended at 2.34 MiB, working set 9.75 MiB, with no measured
+CPU increment. This is an observation of this workload, not a controlled benchmark
+or proof of long-session stability.
 Measure cold/warm startup separately, retain executable hashes, and compare p50/p95/
 p99 under the same workload. Preserve watchdog recovery and input validation.

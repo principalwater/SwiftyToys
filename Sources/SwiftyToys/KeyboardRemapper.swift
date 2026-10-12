@@ -10,14 +10,13 @@ private let remappingWorker = Mutex((owned: false, generation: 0))
 private struct RemappingState {
     var engine: RemapEngine
     var caps: SmartCapsLock
-    var layouts: [HKL]
+    let resolver: ForegroundResolver
     let configuration: KeyboardConfiguration
     let destination: MessageDestination
     let generation: Int
     var hook: HHOOK?
     var failed = false
-    var foreground = ForegroundApplication()
-    var application: String { foreground.application ?? "" }
+    var application = ""
     let brightnessKeys: Bool
     let allowInjectedBrightness: Bool
     var brightnessSwallowed: UInt8 = 0
@@ -41,19 +40,6 @@ nonisolated(unsafe) private var remappingState: UnsafeMutablePointer<RemappingSt
     }
     return SendInput(UINT(inputs.count), &inputs, Int32(MemoryLayout<INPUT>.size)) == inputs.count
 }
-private func processApplication(_ pid: DWORD) -> String? {
-    guard pid != 0, let process = OpenProcess(DWORD(PROCESS_QUERY_LIMITED_INFORMATION), false, pid) else { return nil }
-    defer { CloseHandle(process) }
-    return withUnsafeTemporaryAllocation(of: WCHAR.self, capacity: 1024) { buffer -> String? in
-        var count = DWORD(buffer.count)
-        guard QueryFullProcessImageNameW(process, 0, buffer.baseAddress, &count), count > 0, count < buffer.count else {
-            return nil
-        }
-        return String(decoding: buffer.prefix(Int(count)), as: UTF16.self).split(separator: "\\").last.map {
-            String($0).lowercased()
-        }
-    }
-}
 @discardableResult private func cacheForegroundApplication() -> Bool {
     guard let context = remappingState else { return false }
     let window = GetForegroundWindow()
@@ -65,13 +51,12 @@ private func processApplication(_ pid: DWORD) -> String? {
     guard context.pointee.configuration.enabled else { return false }
     var pid: DWORD = 0
     GetWindowThreadProcessId(window, &pid)
-    let resolved = context.pointee.foreground.resolve(
-        processID: pid, windowID: window.map { UInt(bitPattern: $0) } ?? 0, time: GetTickCount64(),
-        lookup: processApplication) != nil
+    let application = context.pointee.resolver.consume(processID: pid, window: window)
+    context.pointee.application = application ?? ""
     let currentWindow = GetForegroundWindow()
     var currentPID: DWORD = 0
     GetWindowThreadProcessId(currentWindow, &currentPID)
-    return resolved && currentWindow == window && currentPID == pid
+    return application != nil && currentWindow == window && currentPID == pid
 }
 private func foregroundChanged(
     _ hook: HWINEVENTHOOK?, _ event: DWORD, _ window: HWND?, _ object: LONG, _ child: LONG, _ thread: DWORD,
@@ -82,7 +67,7 @@ private func deliverAction(_ action: String, context: UnsafeMutablePointer<Remap
     if action == "switch language" {
         do {
             try requestLanguage(
-                in: foreground, layouts: context.pointee.layouts, mode: context.pointee.configuration.languageMode,
+                in: foreground, layouts: context.pointee.resolver.layouts, mode: context.pointee.configuration.languageMode,
                 pair: context.pointee.configuration.languagePair)
             return true
         } catch { return false }
@@ -147,7 +132,7 @@ private func remappingCallback(_ code: Int32, _ message: WPARAM, _ data: LPARAM)
         }
     }
     guard event.flags & DWORD(LLKHF_INJECTED) == 0 else { return CallNextHookEx(nil, code, message, data) }
-    // WinEvent prewarms the cache; a focus miss resolves the executable before the first chord, without waiting for an event.
+    // Known live processes reuse their rules immediately; an unknown process passes through while a worker resolves it.
     let resolved = cacheForegroundApplication()
     let foreground = context.pointee.lastForeground
     let enabled =
@@ -190,22 +175,7 @@ private func remappingCallback(_ code: Int32, _ message: WPARAM, _ data: LPARAM)
 /// The dedicated hook thread owns the engine and all injection. UI updates restart this small worker.
 final class KeyboardRemapper: @unchecked Sendable {
     static func selfCheck() throws {
-        var foreground = ForegroundApplication()
-        var queries = 0
-        for _ in 0..<1000 {
-            let application = foreground.resolve(processID: GetCurrentProcessId(), windowID: 1, time: GetTickCount64()) { pid in
-                queries += 1
-                return processApplication(pid)
-            }
-            guard application == "swiftytoys.exe" else {
-                throw WindowsError.unsupported("Foreground executable lookup failed.")
-            }
-        }
-        guard queries == 1, processApplication(0) == nil,
-            foreground.resolve(processID: 0, windowID: 0, time: GetTickCount64(), lookup: processApplication) == nil else {
-            throw WindowsError.unsupported("Foreground cache validation failed.")
-        }
-        Console.writeLine("PASS: native executable lookup, cached input context and unresolved foreground rejection")
+        try ForegroundResolver.selfCheck()
     }
     private struct Status {
         var threadID: DWORD = 0
@@ -216,6 +186,7 @@ final class KeyboardRemapper: @unchecked Sendable {
     private let status = Mutex(Status())
     private let ready: OwnedHandle
     private let finished: OwnedHandle
+    private let resolver: ForegroundResolver
     private let destination: MessageDestination
     private let configuration: KeyboardConfiguration
     private let brightnessKeys: Bool
@@ -242,7 +213,11 @@ final class KeyboardRemapper: @unchecked Sendable {
             throw WindowsError.unsupported("The previous input worker is still stopping. Try again after it finishes.")
         }
         self.generation = generation
-        do { thread = try NativeThread(name: "SwiftyToys remapping") { self.run() } }
+        do {
+            resolver = try ForegroundResolver.shared()
+            resolver.refreshLayouts()
+            thread = try NativeThread(name: "SwiftyToys remapping") { self.run() }
+        }
         catch { remappingWorker.withLock { $0.owned = false }; throw error }
         guard waitForWindowEvent(ready.raw, timeout: 5000) == DWORD(WAIT_OBJECT_0),
             active || !(configuration.enabled || brightnessKeys)
@@ -278,7 +253,7 @@ final class KeyboardRemapper: @unchecked Sendable {
         }
         var context = RemappingState(
             engine: RemapEngine(rules: rules), caps: SmartCapsLock(threshold: configuration.capsThreshold),
-            layouts: configuredLayouts(), configuration: configuration, destination: destination, generation: generation,
+            resolver: resolver, configuration: configuration, destination: destination, generation: generation,
             brightnessKeys: brightnessKeys, allowInjectedBrightness: allowInjectedBrightness)
         context.engine.seedHeldModifiers(
             [160, 161, 162, 163, 164, 165, 91, 92].filter { GetAsyncKeyState(Int32($0)) < 0 })
@@ -336,7 +311,6 @@ final class KeyboardRemapper: @unchecked Sendable {
                         }
                     } else {
                         cacheForegroundApplication()
-                        pointer.pointee.layouts = configuredLayouts()
                         rearm()
                     }
                 } else {

@@ -4,6 +4,30 @@ import WindowsDisplayABI
 import Synchronization
 
 let deviceReportMessage: UINT = 0x8034
+let displayListMessage: UINT = 0x8037
+
+/// One cached display scan, independent of the settings message thread.
+final class SettingsDisplayReports: Sendable {
+    private let state = Mutex((busy: false, outputs: Optional<[DisplayOutput]>.none))
+    var outputs: [DisplayOutput]? { state.withLock { $0.outputs } }
+    func load(destination: MessageDestination, refresh: Bool = false) {
+        guard state.withLock({ value in
+            guard !value.busy, refresh || value.outputs == nil else { return false }
+            value.busy = true
+            return true
+        }) else { return }
+        do {
+            _ = try NativeThread(name: "SwiftyToys display list") { [self] in
+                let outputs = ((try? discoverDisplays()) ?? []).filter { $0.isPhysical && !$0.isCloned && !$0.isHDR }
+                state.withLock { $0.outputs = outputs; $0.busy = false }
+                _ = destination.post(displayListMessage)
+            }
+        } catch {
+            state.withLock { $0.busy = false }
+            Diagnostics.write("display list: \(error)")
+        }
+    }
+}
 /// At most one read-only scan per device page; returning to a page uses its cache.
 final class SettingsDeviceReports: Sendable {
     private let state = Mutex((busy: Set<Int>(), reports: [Int: (locale: String, text: String)]()))

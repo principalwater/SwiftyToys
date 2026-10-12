@@ -35,6 +35,12 @@ func executablePath() -> String {
     let count = GetModuleFileNameW(nil, &buffer, DWORD(buffer.count))
     return String(decoding: buffer.prefix(Int(count)), as: UTF16.self)
 }
+enum RecoveryCheckpointAction: Equatable { case persist, reuse, conflict }
+
+func missingRecoveryIsComplete(expected: ColorLease?, restored: Bool) -> Bool {
+    expected == nil || restored
+}
+
 struct ColorLease: Sendable, Equatable {
     var version = 1
     let owner: UInt32
@@ -46,6 +52,10 @@ struct ColorLease: Sendable, Equatable {
     let contrast: Int?
     let gamma: [UInt16]?
     var restoresCursorVisibility: Bool { backend == "compositor" }
+    func checkpointAction(current: Self?) -> RecoveryCheckpointAction {
+        guard let current else { return .persist }
+        return current == self ? .reuse : .conflict
+    }
 
     static func read() throws -> Self? {
         let path = try NativeFiles.path("scanout-lease.json")
@@ -92,12 +102,21 @@ struct ColorLease: Sendable, Equatable {
         return bytes
     }
     func write() throws { try NativeFiles.write(encoded(), to: NativeFiles.path("scanout-lease.json")) }
-    static func remove() throws { try NativeFiles.remove(NativeFiles.path("scanout-lease.json")) }
+    @discardableResult
+    static func remove(_ expected: Self) throws -> Bool {
+        guard try read() == expected else { return false }
+        try NativeFiles.remove(NativeFiles.path("scanout-lease.json"))
+        return true
+    }
 }
 /// Called under the instance mutex before a new backend captures its baseline.
 @discardableResult
-func recoverOutput(owner: UInt32? = nil, started: UInt64? = nil) throws -> Bool {
-    if let lease = try ColorLease.read() {
+func recoverOutput(owner: UInt32? = nil, started: UInt64? = nil, expected: ColorLease? = nil,
+    expectedRestored: Bool = false) throws -> Bool {
+    let saved = try ColorLease.read()
+    if saved == nil, !missingRecoveryIsComplete(expected: expected, restored: expectedRestored) { return false }
+    if let lease = saved {
+        if let expected, lease != expected { return false }
         if let owner, let started, owner != lease.owner || started != lease.started { return false }
         if lease.restoresCursorVisibility {
             // Older releases hid the global cursor; new image-only leases never own it.
@@ -128,7 +147,7 @@ func recoverOutput(owner: UInt32? = nil, started: UInt64? = nil) throws -> Bool 
             try session.restoreSaved(ramp)
         }
         }
-        try ColorLease.remove()
+        guard try ColorLease.remove(lease) else { return false }
         Diagnostics.write("recovery: original output color state restored")
     }
     // Preserve the baseline when migrating from the public 0.1.x versions.
@@ -137,6 +156,10 @@ func recoverOutput(owner: UInt32? = nil, started: UInt64? = nil) throws -> Bool 
     let lines = try NativeFiles.text(legacy).split(whereSeparator: \.isNewline).map(String.init)
     guard lines.count == 7, let brightness = Int(lines[3]), let contrast = Int(lines[4]) else {
         throw WindowsError.unsupported("Invalid legacy recovery state.")
+    }
+    if let expected {
+        guard expected.backend == "amd", lines[0] == String(expected.owner), lines[1] == String(expected.started),
+            lines[2] == expected.amdID, brightness == expected.brightness, contrast == expected.contrast else { return false }
     }
     if let owner, let started, lines[0] != String(owner) || lines[1] != String(started) { return false }
     let control = try AMDControl()

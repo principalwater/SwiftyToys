@@ -28,25 +28,25 @@ Gamma storage uses `InlineArray` and scoped `Span` access. A dedicated serial ac
 executor owns blocking driver calls. Win32 UI and low-level input own separate
 message threads. The original brightness hook avoids allocation. The general remap
 engine uses bounded Swift collections (64 rules) and emits small input batches.
-WinEvent prewarms the executable cache. If focus changes before that asynchronous
-event arrives, the hook resolves the current HWND/PID with one limited-access
-process-image query using a fixed 1,024-character buffer before deciding the first
-chord. Unchanged resolved focus performs no process lookup; failures pass through
-and retry at most once per second for that context. The foreground snapshot is
-rechecked before enabling rules and dispatching actions. No file reads, UI waits,
-actor hops or explicit display/device operations occur inside the hook. Native
-process calls have no documented latency ceiling; this is not a hard real-time
-guarantee. The dedicated input thread and existing periodic rearm remain.
-Mutexes
+One independent resolver owns process queries and loaded-layout ordering. The hook
+uses a bounded live-process cache and posts one latest request on a miss. It never
+opens a process, reads files/registry or loads layouts. Known-process window changes
+reuse the cache; unknown processes pass through until their name is resolved,
+preserving exclusions and scoped rules. Process lifetime and foreground snapshots
+are checked before use. Loaded HKLs are identified on the windowless resolver thread
+and its previous layout is restored; no layout is installed or loaded by remapping.
+Native calls still have no hard real-time scheduling guarantee. Mutexes
 protect shared completion state; unchecked Sendable declarations explain their
 ownership invariant.
 
 Shell flyout observation has its own Win32 message thread. Out-of-context WinEvent
-callbacks run on that thread and hide only recognized Shell brightness hosts
-synchronously, avoiding a tray queue hop and a second `ShowWindowAsync` delay.
-To prevent the first composed frame, recognized unshaped hosts are pre-clipped
-with an empty native window region. Brightness HID reports are parsed on this
-observer and arm suppression before posting steps to the tray. Media reports and
+callbacks record/coalesce events only. Foreign-window region changes run afterward
+with a reentrancy guard; hiding uses ShowWindowAsync. Recognized unshaped hosts may
+be pre-clipped with an empty native region. Deferred observation can expose a brief
+first-frame flash. Brightness HID reports use one pending notification, up to 128
+ordered transitions and final masks for 64 sources. Overflow retains releases and
+held state but may discard additional completed taps. Failed posts retry on the
+existing observer timer; press/release steps share the same UI repeat engine. Media reports and
 Shell media triggers restore normal rendering; completion rearms suppression.
 The preference crosses threads through a mutex. System mode and shutdown restore
 the region. Window properties identify the owning PID and process creation time,
