@@ -33,8 +33,11 @@ Only the supported device hardware IDs are rebound. Existing drivers are exporte
 first; a binding failure triggers restoration. Restore previous driver uses the
 earliest retained binding backup for each supported hardware ID, even after repeated
 installation. Windows may request a restart; none is automatic. The installer writes
-`last-result.json` in protected storage. `-PrepareOnly -NonInteractive` performs package
-and signature checks without staging or rebinding drivers; it still requires elevation.
+`last-result.json` in protected storage. `SwiftyToys.exe --trackpad-install prepare-apple`
+(or `prepare-imbushuo`) performs download, extraction and signature checks without
+adding packages to the Driver Store or rebinding devices; it still requires elevation.
+All orchestration uses Swift/Win32. Existing approved extractors and Windows
+`tar`/`pnputil` are invoked directly, without a PowerShell helper or shell command.
 
 ## Settings and Bluetooth
 
@@ -78,8 +81,8 @@ If Windows pairs and then deletes the trackpad, use **Repair Bluetooth pairing**
 4. Install the Apple Precision driver from SwiftyToys while the pair is present.
    Test pointer movement and gestures. Avoid removing that working pair afterward.
 
-The CLI equivalent is `install-trackpad.ps1 -RepairBluetooth` in elevated 64-bit
-Windows PowerShell. The action downloads and checks the packages even when no
+The CLI equivalent is `SwiftyToys.exe --trackpad-install repair-bluetooth` from an
+elevated Windows session. The native Swift action downloads and checks packages even when no
 trackpad node is present; no restart or new pairing is automatic. Backups and
 `pairing-repair.json` remain in protected driver storage. If pairing still fails,
 inspect System / HidBth and SetupAPI logs before changing the radio driver.

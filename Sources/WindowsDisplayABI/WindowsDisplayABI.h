@@ -3,6 +3,7 @@
 #pragma once
 #pragma clang module import WinSDK
 #include <Windows.h>
+#include <winhttp.h>
 #include <commctrl.h>
 #include <wtsapi32.h>
 #include <dbt.h>

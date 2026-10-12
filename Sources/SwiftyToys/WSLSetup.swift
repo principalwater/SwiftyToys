@@ -129,18 +129,10 @@ struct WSLSetup {
         return count > 0
     }
     static func install(owner: HWND?) throws {
-        try openInstaller(arguments: "--install --no-distribution", elevated: true, owner: owner)
+        try NativePackageSetup.open(action: "wsl", owner: owner)
     }
     static func installUbuntu(owner: HWND?) throws {
-        try openInstaller(arguments: "--install --no-launch -d Ubuntu", elevated: false, owner: owner)
-    }
-    private static func openInstaller(arguments: String, elevated: Bool, owner: HWND?) throws {
-        // Fixed command only. /d disables AutoRun; pause keeps diagnostics visible without leaving an admin shell.
-        // Ubuntu package installation and first launch both stay in the current user's profile.
-        let wsl = try systemExecutable("wsl.exe")
-        try shellOpen(
-            systemExecutable("cmd.exe"), arguments: "/d /s /c \"\"\(wsl)\" \(arguments) & pause\"",
-            elevated: elevated, owner: owner)
+        try NativePackageSetup.open(action: "ubuntu", owner: owner)
     }
     static func openUbuntu() throws {
         // Activate the current user's official Ubuntu package, including first-time registration.

@@ -6,8 +6,38 @@ import WinSDK
 import WindowsDisplayABI
 
 func runCLI(_ args: [String]) throws -> Int32 {
-    Console.attach()
     let command = args[0].lowercased()
+    if command == "--package-setup" {
+        guard args.count == 2 || args.count == 3 else { throw WindowsError.unsupported("Use --package-setup wsl|ubuntu|homebrew [registered distribution].") }
+        return try NativePackageSetup.runCLI(action: args[1], distro: args.count == 3 ? args[2] : nil)
+    }
+    if command == "--installer" {
+        guard args.count == 1 || args.count == 2 && args[1] == "--install" else { throw WindowsError.unsupported("Use --installer [--install] from a complete extracted release.") }
+        let module = executablePath()
+        guard let separator = module.lastIndex(of: "\\") else { throw WindowsError.unsupported("Cannot find installer package.") }
+        let setup = try SetupWindow(source: String(module[..<separator]))
+        try setup.run(automatic: args.count == 2)
+        return 0
+    }
+    if command == "--trackpad-install" {
+        guard args.count == 2 else { throw WindowsError.unsupported("Use --trackpad-install apple|imbushuo|rollback|repair-bluetooth.") }
+        let setup = try SetupWindow(source: "", trackpadAction: args[1])
+        try setup.run(automatic: true)
+        return 0
+    }
+    Console.attach()
+    if command == "--test-package-setup" { try NativePackageSetup.selfCheck(); return 0 }
+    if command == "--test-installer-ui" { try SetupWindow.selfCheck(); return 0 }
+    if command == "--test-trackpad-installer" { try NativeTrackpadInstaller.selfCheck(); return 0 }
+    if command == "--test-installer" { try NativeInstaller.selfCheck(); return 0 }
+    if command == "--test-shell-integration" { try ShellIntegration.selfCheck(); return 0 }
+    if command == "--configure-shortcut" {
+        guard args.count == 3 else { throw WindowsError.unsupported("Use --configure-shortcut <Start menu shortcut> <icon file>.") }
+        try ShellIntegration.configureShortcut(path: args[1], iconPath: args[2])
+        try ShellIntegration.refreshIcons(paths: [executablePath(), args[1], args[2]])
+        Console.writeLine("Shortcut identity and icon configured.")
+        return 0
+    }
     if command == "--test-wsl" { try WSLSetup.selfCheck(); return 0 }
     if command == "--test-errors" { try WindowsError.selfCheck(); return 0 }
     if command == "--test-power" { try DesktopPower.selfCheck(); return 0 }
@@ -259,6 +289,7 @@ private func sendResident(_ window: HWND, command: Int, value: Int = 0) throws -
     return try decodeBrightnessReply(result)
 }
 do {
+    try ShellIntegration.configureProcessIdentity()
     let args = Array(CommandLine.arguments.dropFirst())
     if !args.isEmpty { exit(try runCLI(args)) }
     let lock = try InstanceLock(timeout: 2000)

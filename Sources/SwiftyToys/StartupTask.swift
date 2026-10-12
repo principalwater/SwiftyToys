@@ -73,7 +73,7 @@ func startResident() throws {
     var taskPointer: UnsafeMutablePointer<IRegisteredTask>?
     try checkCOM(
         folder.pointer.pointee.lpVtbl.pointee.GetTask(folder.pointer, name.raw, &taskPointer),
-        "Find startup task; run install.ps1 if it is missing")
+        "Find startup task; reinstall SwiftyToys if it is missing")
     let task = try COMReference(taskPointer)
     var definitionPointer: UnsafeMutablePointer<ITaskDefinition>?
     try checkCOM(

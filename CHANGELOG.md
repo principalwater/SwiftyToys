@@ -1,5 +1,28 @@
 # Changelog
 
+## SwiftyToys 0.1.12 — 2026-10-13
+
+- Install the fixed Command Ember ICO and explicit shortcut icon before starting
+  the resident. Give the process and Start-menu shortcut one stable AppUserModelID
+  so Windows resolves taskbar branding from the intended application metadata.
+- Notify Shell only about the installed executable, shortcut and icon. Preserve
+  other applications, taskbar pins, display/input settings and the approved GUI.
+- Add a native shortcut fixture covering identity/icon persistence and unchanged
+  target, arguments, working directory and description.
+- Add a single-EXE installer written in standard Swift with native Windows
+  compression, hashing, file, COM and Task Scheduler APIs. Preserve existing settings,
+  safe display restoration and rollback on installation failure. Install the
+  verified official Microsoft runtime only when the system prerequisite is missing.
+- Move trackpad installation, verified backups, rollback and scoped Bluetooth repair
+  into Swift. Preserve signed package pins, protected storage and native input.
+- Move WSL, Ubuntu and Homebrew setup decisions and diagnostics into Swift. Launch
+  native utilities directly, keep interactive Linux password prompts and setup
+  output visible, and invoke the official Homebrew installer without custom shell
+  control scripts.
+- Support long local/UNC file paths through native APIs without changing Windows
+  policy. Use compact SHA-256 names for legacy task backups and verify long-path
+  atomic replacement, failed-commit preservation and temporary-file cleanup.
+
 ## SwiftyToys 0.1.11 — 2026-10-12
 
 - Introduce Swift Ember with an original Command-style mark and coral/orange tones,

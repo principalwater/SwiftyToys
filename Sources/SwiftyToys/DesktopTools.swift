@@ -297,13 +297,7 @@ struct LinuxDistribution {
         guard version == 2 else {
             throw WindowsError.unsupported("Upgrade this distribution to WSL 2 before installing Homebrew.")
         }
-        let script =
-            "set -e; if test \"$(id -u)\" -eq 0; then printf 'Create a non-root Linux user before installing Homebrew.\\n'; exit 1; fi; printf 'SwiftyToys: Homebrew in WSL 2\\nhttps://docs.brew.sh/Installation\\n'; if ! command -v curl >/dev/null || ! command -v git >/dev/null || ! command -v gcc >/dev/null; then if command -v apt-get >/dev/null; then sudo apt-get update; sudo apt-get install build-essential procps curl file git; else printf 'Install build tools, procps, curl, file and git first.\\n'; exit 1; fi; fi; installer=$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh); /bin/bash -c \"$installer\"; if test -x /home/linuxbrew/.linuxbrew/bin/brew; then line='eval \"$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)\"'; grep -Fqx \"$line\" ~/.bashrc 2>/dev/null || printf '\\n%s\\n' \"$line\" >> ~/.bashrc; eval \"$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)\"; brew --version; fi"
-        // Fixed installer script, strictly validated distro, one escaped Windows argument.
-        let wrapped =
-            "( " + script
-            + " ); status=$?; printf '\\nFinished with status %s. You can close this terminal.\\n' \"$status\"; exec bash"
-        try shellOpen(systemExecutable("wsl.exe"), arguments: "--distribution \(name) --exec bash -c \(quoteArgument(wrapped))")
+        try NativePackageSetup.open(action: "homebrew", distro: name)
     }
 }
 

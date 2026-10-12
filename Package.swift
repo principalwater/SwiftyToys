@@ -22,6 +22,7 @@ var products: [Product] = [.library(name: "BrightnessCore", targets: ["Brightnes
                 .linkedLibrary("wtsapi32"), .linkedLibrary("setupapi"), .linkedLibrary("cfgmgr32"),
                 .linkedLibrary("magnification"),
                 .linkedLibrary("wevtapi"), .linkedLibrary("powrprof"),
+                .linkedLibrary("winhttp"),
                 .linkedLibrary("bcrypt"), .linkedLibrary("wintrust"), .linkedLibrary("crypt32"),
             ]),
     ]

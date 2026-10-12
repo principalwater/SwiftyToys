@@ -8,9 +8,10 @@ patterns. Read the relevant requirements and validation notes before editing.
 
 - Sources/SwiftyToys: Windows application, native UI and system integration.
 - Sources/BrightnessCore and Sources/KeyboardCore: portable algorithms.
-- Sources/WindowsDisplayABI: header-only Windows interop.
+- Sources/WindowsDisplayABI and Sources/SetupABI: header-only Windows interop.
 - tests: hardware-independent Swift Testing checks.
-- scripts: build, packaging and installation tooling.
+- tools: Swift setup bootstrap and build-only payload builder.
+- scripts: developer build, test and packaging orchestration; never runtime payload.
 - Languages: UTF-8 JSON language packs with English fallback.
 - docs: architecture, compatibility, validation and performance notes.
 
@@ -31,6 +32,10 @@ Use documented Windows APIs and existing helpers. Avoid extra dependencies or
 abstractions without a required feature or measured benefit. Keep input callbacks
 bounded and free of disk, driver and UI work. Do not intercept or synthesize wheel
 input; preserve the native Precision Touchpad pipeline.
+
+Write application, setup and driver orchestration code in Swift. ABI headers contain
+only SDK declarations. Use native Windows APIs and existing signed OS/vendor
+components; do not add runtime shell scripts, C implementations or patched runtimes.
 
 Keep the release size budgets, static Swift runtime and safe DLL resolution.
 Measure CPU, memory and latency on the supported target platform before claiming

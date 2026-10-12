@@ -19,6 +19,7 @@ private func nativeThreadEntry(_ context: UnsafeMutableRawPointer?) -> UInt32 {
 /// The entry point retains its Sendable closure until the work has finished.
 struct NativeThread: ~Copyable {
     private let handle: OwnedHandle
+    var isFinished: Bool { WaitForSingleObject(handle.raw, 0) == DWORD(WAIT_OBJECT_0) }
 
     init(name: String, run: @escaping @Sendable () -> Void) throws(WindowsError) {
         let body = Unmanaged.passRetained(ThreadBody(run))
