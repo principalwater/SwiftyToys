@@ -1,4 +1,28 @@
-# Validation snapshot: 0.1.10
+# Validation snapshot: 0.1.11
+
+## Swift Ember native branding
+
+2026-10-12. The complete installed package passes all 18 native checks, including
+the ten-page settings layout/navigation check and real WM_GETICON bindings.
+The embedded ICO contains eight transparent resolutions; separate native resource
+loading verified each size. The original SVG source is retained. Caption icons
+reload on window DPI changes; the tray receives at least a 32-pixel icon so it does
+not start with a bitmap that must be enlarged for 125–200% taskbars.
+
+The final Command Ember EXE is 6,607,872 bytes, SHA-256
+`C691870EF5C34463E03910A85EABF25A7E132320F89E7C3A5EA30BD04318456D`.
+Installation preserves Automatic software control, DDC off and the current level.
+No display/input pipeline change or new runtime library is introduced by branding.
+Calculated normal-text contrast ranges from 4.94:1 to 15.20:1 for the selected
+palette. High contrast uses system colors and native controls retain their names.
+
+The operator confirms the feature tiles and Overview transition work normally.
+The final Command-style mark was selected from concepts; its raster frames were inspected
+at actual tray sizes and native loading was checked. Windows Graphics Capture
+timed out twice while obtaining an automated screenshot; that tool supplied no
+visual evidence. Physical mixed-DPI, high-contrast, Narrator and Windows 11 checks
+remain acceptance limits.
+See [design and material boundaries](Design.md).
 
 ## Desktop freeze regression and native runtime
 

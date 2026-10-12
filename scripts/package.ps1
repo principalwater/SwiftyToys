@@ -1,4 +1,4 @@
-param([string]$Version = '0.1.10', [string]$SwiftVersion = '6.4.0')
+param([string]$Version = '0.1.11', [string]$SwiftVersion = '6.4.0')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 if ($Version -notmatch '^\d+\.\d+(?:\.\d+)?(?:-[a-z0-9.-]+)?$') { throw 'Invalid package version.' }
@@ -11,6 +11,8 @@ foreach ($document in @('README.md','LICENSE','THIRD_PARTY_NOTICES.md','CHANGELO
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'install.ps1') -Destination $packageDirectory -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot 'Licenses') -Destination $packageDirectory -Recurse
 Copy-Item -LiteralPath (Join-Path $repoRoot 'docs') -Destination $packageDirectory -Recurse
+New-Item -ItemType Directory -Path (Join-Path $packageDirectory 'resources') | Out-Null
+Copy-Item -LiteralPath (Join-Path $repoRoot 'resources\SwiftyToys.svg') -Destination (Join-Path $packageDirectory 'resources')
 $archivePath = "$packageDirectory.zip"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 # .NET 6+ has maximum ZIP compression; Windows PowerShell uses Optimal.

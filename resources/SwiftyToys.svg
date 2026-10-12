@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title">
+  <title id="title">SwiftyToys Command Ember</title>
+  <defs>
+    <linearGradient id="ember" x1="24" y1="4" x2="228" y2="252" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFA268"/>
+      <stop offset=".5" stop-color="#FF8055"/>
+      <stop offset="1" stop-color="#FF5948"/>
+    </linearGradient>
+    <path id="loop" fill-rule="evenodd" d="M80 42C101 42 118 59 118 80V118H80C59 118 42 101 42 80C42 59 59 42 80 42ZM80 62C70 62 62 70 62 80C62 90 70 98 80 98H98V80C98 70 90 62 80 62Z"/>
+  </defs>
+  <rect x="4" y="4" width="248" height="248" rx="54" fill="url(#ember)"/>
+  <g fill="#FFF">
+    <use href="#loop"/>
+    <use href="#loop" transform="rotate(90 128 128)"/>
+    <use href="#loop" transform="rotate(180 128 128)"/>
+    <use href="#loop" transform="rotate(270 128 128)"/>
+    <circle cx="128" cy="128" r="31"/>
+  </g>
+  <path fill="url(#ember)" d="M125 110Q128 107 131 110L146 125Q149 128 146 131L131 146Q128 149 125 146L110 131Q107 128 110 125Z"/>
+</svg>

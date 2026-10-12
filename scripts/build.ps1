@@ -20,6 +20,15 @@ foreach ($name in @('dispatch.lib', 'BlocksRuntime.lib')) {
 }
 Push-Location $repoRoot
 try {
+    New-Item -ItemType Directory -Force -Path (Join-Path $repoRoot '.build') | Out-Null
+    $iconResource = Join-Path $repoRoot '.build\SwiftyToys.res'
+    & rc.exe /nologo /fo $iconResource (Join-Path $repoRoot 'resources\SwiftyToys.rc')
+    if ($LASTEXITCODE -ne 0) { throw 'Could not compile the application icon.' }
+    # Content-named inputs make icon changes invalidate SwiftBuild's link command.
+    $resourceDigest = (Get-FileHash -LiteralPath $iconResource -Algorithm SHA256).Hash
+    $linkedResource = Join-Path $repoRoot ('.build\SwiftyToys-' + $resourceDigest + '.res')
+    Copy-Item -LiteralPath $iconResource -Destination $linkedResource -Force
+    $buildFlags += @('-Xlinker', $linkedResource)
     # Optimized SwiftBuild still embeds local paths unless debug info is disabled.
     & swift build @buildFlags
     if ($LASTEXITCODE -ne 0) { throw 'Swift compilation failed.' }
@@ -56,5 +65,5 @@ if (Test-Path -LiteralPath $manifest) {
 }
 [IO.File]::WriteAllText($manifest, '', [Text.UTF8Encoding]::new($false))
 $size = (Get-Item -LiteralPath (Join-Path $OutputDirectory 'SwiftyToys.exe')).Length
-if ($size -gt 6600000) { throw "Executable exceeds the 6.6 MB size budget: $size bytes." }
+if ($size -gt 6700000) { throw "Executable exceeds the 6.7 MB size budget: $size bytes." }
 Write-Host "Built one executable: $size bytes; no Swift DLLs."

@@ -1,5 +1,15 @@
 # Changelog
 
+## SwiftyToys 0.1.11 — 2026-10-12
+
+- Introduce Swift Ember with an original Command-style mark and coral/orange tones,
+  embedded in the EXE, system tray, window caption and settings header.
+- Refine native feature cards, typography, status pills and primary actions.
+  Preserve Overview/Esc navigation, drafts, DPI scaling, keyboard focus and the
+  system high-contrast palette. Painting remains event-driven and window-local.
+- Ship eight icon resolutions without image decoding libraries or new runtime
+  dependencies; content-named resources invalidate incremental linking.
+
 ## SwiftyToys 0.1.10 — 2026-10-12
 
 - Remove the full-screen Magnification copy and 16-ms frame loop after desktop

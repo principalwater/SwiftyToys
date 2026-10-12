@@ -16,10 +16,14 @@ scripts, documentation and licenses. Driver downloads are separate from that arc
 Build uses -Osize, -static-stdlib, -use-static-resource-dir, /OPT:REF and /OPT:ICF.
 Official dispatch.lib and BlocksRuntime.lib satisfy the static Swift concurrency
 archive. Native threads are CRT initialized; driver work runs on its serial Swift
-actor executor. The build rejects accidental dynamic Swift imports and has a 6.6 MB
+actor executor. The build rejects accidental dynamic Swift imports and has a 6.7 MB
 exe / 3 MB ZIP regression budget. These budgets can be revised when an explicit
 feature or a measured improvement justifies larger distribution; they are not a
 reason to remove requested functionality or correctness checks.
+
+0.1.11 adds eight native icon frames and updates window-local GDI painting. Its
+EXE is 31,744 bytes above 0.1.10; the budget is 6.7 MB. RC resource hashes form
+part of the link input name, so changed icons invalidate incremental linking.
 
 ## Checks
 
