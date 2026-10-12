@@ -76,6 +76,7 @@ final class SettingsWindow {
     private var wslVirtualizationBlocked = false
     private let wslBootDiagnostic = WSLBootDiagnostic()
     private let deviceReports = SettingsDeviceReports()
+    private let displayReports = SettingsDisplayReports()
     private var displays: [DisplayOutput] = []
     private var languages: [UInt16] = []
     private let localization = Localization()
@@ -240,9 +241,7 @@ final class SettingsWindow {
         if let control = controls[244] { SendMessageW(control, UINT(BM_SETCHECK), enabled ? WPARAM(BST_CHECKED) : WPARAM(BST_UNCHECKED), 0) }
         for id in [245, 246] { if let control = controls[id] { EnableWindow(control, !enabled) } }
         let hintText = enabled ? "DDC/CI controls the monitor backlight, including the cursor. Turn off to use software dimming."
-            : brightnessConfiguration?.softwareBackend == "compositor"
-                ? "Windows composition dims the image; the native cursor may stay brighter. Backlight stays unchanged. The effect stops at 100%."
-                : "Software dimming changes the image only. Monitor backlight stays unchanged; hardware cursors may remain brighter."
+            : "Software dimming changes the image only. Monitor backlight stays unchanged; hardware cursors may remain brighter."
         if let hint = controls[248] { setText(hint, localization.text(hintText)) }
         brightnessControlBusy(modeBusy)
     }
@@ -539,11 +538,12 @@ final class SettingsWindow {
             check("Hardware brightness (DDC/CI)", 244, 300, 318, 650, on: settings?.ddcEnabled ?? false)
             label("", 248, 300, 361, 650, 66)
             label("Software compatibility", 247, 300, 444, 650, 25)
-            combo(["Automatic", "Windows color controls", "AMD display controls", "Software composition (experimental)"], 246, 300, 479, 450)
+            combo(["Automatic", "Windows color controls", "AMD display controls"], 246, 300, 479, 450)
             if let control = controls[246], let selected = Settings.softwareModes.firstIndex(of: settings?.softwareBackend ?? "auto") { SendMessageW(control, UINT(CB_SETCURSEL), WPARAM(selected), 0) }
             button("Apply software method", 245, 770, 477, 180)
             updateBrightnessMode()
-            displays = ((try? discoverDisplays()) ?? []).filter { $0.isPhysical && !$0.isCloned && !$0.isHDR }
+            displays = displayReports.outputs ?? []
+            if !preview { displayReports.load(destination: MessageDestination(window)) }
             label("Display", 212, 300, 547, 200, 25)
             combo(displays.map(\.name), 213, 300, 579, 444)
             if let selected = displays.firstIndex(where: { $0.id == settings?.targetID }), let combo = controls[213] { SendMessageW(combo, UINT(CB_SETCURSEL), WPARAM(selected), 0) }
@@ -794,6 +794,20 @@ final class SettingsWindow {
 
     fileprivate func handle(_ window: HWND, _ message: UINT, _ value: WPARAM, _ data: LPARAM) -> LRESULT {
         switch message {
+        case displayListMessage:
+            guard page == 1, let combo = controls[213], let updated = displayReports.outputs else { return 0 }
+            let index = Int(SendMessageW(combo, UINT(CB_GETCURSEL), 0, 0))
+            let selected = displays.indices.contains(index) ? displays[index].id : brightnessConfiguration?.targetID
+            displays = updated
+            SendMessageW(combo, UINT(CB_RESETCONTENT), 0, 0)
+            for display in displays { _ = withWideString(display.name) { SendMessageW(combo, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0))) } }
+            if let index = displays.firstIndex(where: { $0.id == selected }) {
+                SendMessageW(combo, UINT(CB_SETCURSEL), WPARAM(index), 0)
+            }
+            return 0
+        case UINT(WM_DISPLAYCHANGE), UINT(WM_DEVICECHANGE):
+            if !preview { displayReports.load(destination: MessageDestination(window), refresh: true) }
+            return DefWindowProcW(window, message, value, data)
         case deviceReportMessage:
             let reported = Int(value)
             if page == reported {

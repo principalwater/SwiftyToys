@@ -1,6 +1,55 @@
-# Validation snapshot: 0.1.9
+# Validation snapshot: 0.1.10
 
-## First keyboard chord after a foreground change
+## Desktop freeze regression and native runtime
+
+2026-10-12, Windows 10 / MacPro6,1. The user reports a frozen visible interface
+with audio/cursor still active and recovery requiring reboot followed by disabling
+SwiftyToys. The copied-desktop Magnification renderer introduced in 0.1.6 is a
+source-backed failure path: a stalled refresh/driver operation can leave an opaque
+stale image visible. No hang dump established the exact native blocking call.
+
+0.1.10 removes that renderer and its 16-ms timer entirely, migrates saved compositor
+preferences durably to Automatic, and retains DDC off and the saved brightness.
+Native WDDM/AMD controls preserve calibration. Process/layout work runs outside
+the keyboard hook, Shell/HID events are bounded/coalesced, display lists load off
+settings UI, and recovery requires exact lease/binding identity. Unchanged successful
+brightness does not rewrite the driver; refresh/resume/rebind invalidates that cache.
+
+35 portable tests and all 18 native checks pass on the complete installed package.
+These include blocked foreground resolution/nonblocking consumption and stop,
+shared command admission, exact lease fields, missing checkpoint vs confirmed
+restoration, mapping changes, dual-source HID pulses, failed notifications,
+overflow/release/repress and nested observer events. They do not inject real driver
+failure or prove all scheduling paths. Binary import inspection finds no
+MagSetWindowSource, MagSetColorEffect or MagSetWindowTransform. Legacy cursor
+visibility recovery remains, without normal cursor mutation.
+
+The installed static EXE is 6,576,128 bytes, SHA-256
+`6ABCE9BAD6E28119A020E0C735E9637078A51923967026CB4B499E476334260C`.
+Native status reports WDDM gamma, DDC off, physical backlight 100%, both mice with
+vertical inversion and the Bluetooth Precision driver. The user confirms normal
+window/video updates, smooth mouse/trackpad use, held F1/F2 and Cmd+H/Tab, with no
+freeze during this check. User brightness changes are preserved.
+
+A 120-second read-only observation sampled the resident at approximately 0.081%
+of one CPU core, 4.40 MiB private memory, 15.03 MiB working set, 9 threads and
+258 handles. Watchdog: 2.34 MiB private, 9.75 MiB working set, 1 thread and
+151 handles, no visible CPU increment at counter resolution. This interactive
+sample is not a controlled A/B, GPU, input-latency or weaker-hardware benchmark.
+The unsafe renderer was not restarted to obtain a baseline. A separate ten-minute
+interactive observation recorded about 0.016% of one core and 4.39 MiB resident
+private bytes; watchdog ended at 2.34 MiB with no measured CPU increment.
+This does not establish long-session stability. See [runtime boundaries](RuntimeArchitecture.md).
+
+Native cursors remain potentially brighter with DDC off. Unknown applications may
+receive the first chord natively while resolving; known live processes reuse cache.
+HID overflow beyond 128 buffered transitions can discard completed taps while
+preserving release/held state. Deferred Shell work can show a brief first-frame flash.
+Sleep/resume, abrupt failure, additional DPI/accessibility/device cases and long
+gaming sessions remain physical acceptance limits; no universal driver-failure
+or weakest-hardware performance guarantee is claimed.
+
+## Previously installed 0.1.9 first keyboard chord
 
 The previous adapter passed through when the current PID differed from the cached
 PID. Its asynchronous foreground callback or 60-second timer could refresh that

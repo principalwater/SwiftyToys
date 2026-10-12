@@ -43,6 +43,13 @@ enum NativeFlyout {
         return windows
     }
 
+    /// Hiding a Shell-owned window must not join the Shell UI thread.
+    @discardableResult
+    static func hideAsync(_ window: HWND) -> Bool {
+        guard isKnown(window), IsWindowVisible(window) else { return true }
+        return ShowWindowAsync(window, Int32(SW_HIDE))
+    }
+
     private static func property(_ name: String, on window: HWND) -> UInt64? {
         withWideString(name) { GetPropW(window, $0) }.map { UInt64(UInt(bitPattern: $0)) }
     }

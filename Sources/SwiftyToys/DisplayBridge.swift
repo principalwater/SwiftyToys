@@ -3,6 +3,20 @@
 import Synchronization
 import WinSDK
 
+/// Admission survives a caller's timeout until the actual operation completes.
+final class DisplayCommandAdmission: Sendable {
+    private let busy = Mutex(false)
+    var isBusy: Bool { busy.withLock { $0 } }
+    func acquire() -> Bool {
+        busy.withLock { value in
+            guard !value else { return false }
+            value = true
+            return true
+        }
+    }
+    func release() { busy.withLock { $0 = false } }
+}
+
 func decodeBrightnessReply(_ reply: DWORD_PTR) throws(WindowsError) -> Int {
     if reply == DWORD_PTR(brightnessBusyReply) {
         throw .unsupported("SwiftyToys is applying another brightness change. Retry in a moment.")
@@ -22,15 +36,19 @@ private final class ReplyEvent: @unchecked Sendable {
 /// Win32's message loop owns UI state. It does not run Swift's MainActor queue.
 func displayCommand(_ controller: DisplayController, command: Int, value: Int = 0, mode: String? = nil) throws -> DisplayState {
     let event = try ReplyEvent()
+    guard controller.commandAdmission.acquire() else {
+        throw WindowsError.unsupported("SwiftyToys is applying another brightness change. Retry in a moment.")
+    }
     Task {
         let result: Result<DisplayState, WindowsError>
-        do { result = .success(try await performDisplayCommand(controller, command: command, value: value, mode: mode)) } catch let error as WindowsError {
+        do { result = .success(try await executeDisplayCommand(controller, command: command, value: value, mode: mode)) } catch let error as WindowsError {
             result = .failure(error)
         } catch { result = .failure(.unsupported(String(describing: error))) }
         event.reply.withLock { $0 = result }
+        controller.commandAdmission.release()
         SetEvent(event.handle.raw)
     }
-    guard WaitForSingleObject(event.handle.raw, 15000) == DWORD(WAIT_OBJECT_0),
+    guard waitForWindowEvent(event.handle.raw, timeout: 15000) == DWORD(WAIT_OBJECT_0),
         let reply = event.reply.withLock({ $0 })
     else { throw WindowsError.unsupported("Display driver did not finish within 15 seconds.") }
     return try reply.get()
@@ -72,6 +90,16 @@ struct DisplayRequestQueue {
         return nil
     }
     static func selfCheck() throws {
+        let admission = DisplayCommandAdmission()
+        guard !admission.isBusy, admission.acquire(), admission.isBusy,
+            !admission.acquire(), !admission.acquire() else {
+            throw WindowsError.unsupported("Display admission did not retain a pending operation.")
+        }
+        admission.release()
+        guard !admission.isBusy, admission.acquire(), !admission.acquire() else {
+            throw WindowsError.unsupported("Display admission did not reopen after completion.")
+        }
+        admission.release()
         guard try decodeBrightnessReply(1) == 0, try decodeBrightnessReply(101) == 100 else {
             throw WindowsError.unsupported("Brightness reply range check failed.")
         }
@@ -97,6 +125,14 @@ final class DisplayMailbox: Sendable {
 }
 
 func performDisplayCommand(_ controller: DisplayController, command: Int, value: Int, mode: String?) async throws -> DisplayState {
+    guard controller.commandAdmission.acquire() else {
+        throw WindowsError.unsupported("SwiftyToys is applying another brightness change. Retry in a moment.")
+    }
+    defer { controller.commandAdmission.release() }
+    return try await executeDisplayCommand(controller, command: command, value: value, mode: mode)
+}
+
+private func executeDisplayCommand(_ controller: DisplayController, command: Int, value: Int, mode: String?) async throws -> DisplayState {
     guard let mode else { return try await controller.command(command, value: value) }
     let previous = try Settings()
     try previous.setBackend(mode)
@@ -120,12 +156,15 @@ func performDisplayCommand(_ controller: DisplayController, command: Int, value:
         throw WindowsError.unsupported(explanation + (pendingHardware ? "\n\nDDC/CI is off. Backlight recovery is pending; reconnect the monitor and use Reconnect display. Its recovery file is preserved." : "\n\nDDC/CI remains off. The software brightness method is unavailable; select Automatic or reconnect the display."))
     }
 }
-func stopDisplay(_ controller: DisplayController) {
-    guard let event = try? ReplyEvent() else { return }
+func stopDisplay(_ controller: DisplayController) -> Bool {
+    guard let event = try? ReplyEvent() else { return false }
+    let restored = Mutex(false)
     Task {
-        await controller.shutdown()
+        let completed = await controller.shutdown()
+        restored.withLock { $0 = completed }
         SetEvent(event.handle.raw)
     }
-    _ = WaitForSingleObject(event.handle.raw, 15000)
+    guard waitForWindowEvent(event.handle.raw, timeout: 15000) == DWORD(WAIT_OBJECT_0) else { return false }
     // The actor's deinit stops the executor after all outstanding jobs finish.
+    return restored.withLock { $0 }
 }

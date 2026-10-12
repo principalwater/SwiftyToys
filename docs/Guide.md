@@ -23,16 +23,11 @@ or Apple.
   is removed. Conflicting legacy maximum=on + hardware preferences migrate to software.
   Failed disables stay off and preserve pending recovery; failed enables keep the
   previous method. Software methods may leave native cursors brighter.
-  **Software composition (experimental)** uses the native Windows Magnification control
-  at 1x, with one absolute coefficient and an unchanged calibrated gamma baseline.
-  It dims the image and ordinary tooltips; requires exactly one active physical
-  SDR output, including no active virtual outputs; and stops its viewport at 100%.
-  Adjacent levels reuse the viewport. It costs additional CPU/GPU composition and
-  memory; protected/system surfaces and exclusive fullscreen remain acceptance checks.
-  Windows retains native cursor rendering and visibility. Global cursor hiding and
-  the unreliable magnified replacement are removed after LoL and system-menu failures.
-  Existing `compositor` settings remain compatible; new image-only recovery leases
-  never change cursor visibility. Legacy cursor-owning leases retain restoration.
+  Native WDDM gamma and AMD gain preserve the original calibration without copying
+  the desktop or running a frame timer. The Magnification renderer is removed after
+  freeze reports; saved `compositor` preferences migrate to Automatic while retaining
+  the DDC switch and brightness level. Windows retains native cursor rendering.
+  Legacy composition/cursor-owning leases remain recoverable.
   Ctrl+Alt+Shift+F10 requests 100% for emergency restoration. F1/F2 hold repetition
   follows Windows keyboard delay/speed; release, focus, device, session and power
   changes cancel repetition. No mouse-wheel interception is added.
@@ -122,7 +117,7 @@ SwiftyToys.exe --apple-layouts uk
 SwiftyToys.exe --restore-apple-layouts
 SwiftyToys.exe backend hardware
 SwiftyToys.exe backend auto
-SwiftyToys.exe backend compositor
+SwiftyToys.exe backend auto
 SwiftyToys.exe list
 SwiftyToys.exe select <output-id>
 SwiftyToys.exe osd custom

@@ -26,9 +26,23 @@ private final class NativeBackend {
     let session: NativeGammaSession
     init(_ output: DisplayOutput) throws { session = try NativeGammaSession(output: output, emulateOwnership: true) }
 }
+
+func sameDisplayBinding(_ bound: DisplayOutput, _ current: DisplayOutput) -> Bool {
+    bound.isPhysical && current.isPhysical && !bound.isCloned && !current.isCloned
+        && !bound.isHDR && !current.isHDR && bound.id == current.id
+        && bound.adapterLow == current.adapterLow && bound.adapterHigh == current.adapterHigh
+        && bound.source == current.source && bound.target == current.target
+        && equalWindowsNames(bound.device, current.device)
+}
+
+func needsBrightnessApply(_ target: BrightnessLevel, lastApplied: BrightnessLevel?) -> Bool {
+    lastApplied != target
+}
+
 /// All driver state and recovery I/O are isolated to one dedicated executor.
 actor DisplayController {
     nonisolated let executor: DisplayExecutor
+    nonisolated let commandAdmission = DisplayCommandAdmission()
     nonisolated var unownedExecutor: UnownedSerialExecutor { executor.asUnownedSerialExecutor() }
     private var settings: Settings
     private var output: DisplayOutput?
@@ -36,13 +50,15 @@ actor DisplayController {
     private var amdOutput: AMDOutput?
     private var native: NativeBackend?
     private var hardware: HardwareBrightnessSession?
-    private var compositor: SoftwareCursorDimmingSession?
     private var baselineBrightness = 0
     private var baselineContrast = 100
     private var level: BrightnessLevel
     private var watchdog = false
     private var exiting = false
     private var lastState: DisplayState?
+    private var lastApplied: BrightnessLevel?
+    private var recoveryConflict = false
+    private var pendingRecovery: ColorLease?
 
     init(settings: Settings) throws {
         executor = try DisplayExecutor()
@@ -57,46 +73,76 @@ actor DisplayController {
         guard let output else { throw WindowsError.unsupported("Output is disconnected.") }
         return ColorLease(
             owner: GetCurrentProcessId(), started: try processStartTicks(GetCurrentProcess()), displayID: output.id,
-            backend: compositor != nil ? "composition" : hardware != nil ? "hardware" : native == nil ? "amd" : "native", amdID: amdOutput?.legacyID,
-            brightness: hardware.map { Int($0.original) } ?? (native == nil && compositor == nil ? baselineBrightness : nil),
-            contrast: hardware == nil && native == nil && compositor == nil ? baselineContrast : nil, gamma: native?.session.original.array)
+            backend: hardware != nil ? "hardware" : native == nil ? "amd" : "native", amdID: amdOutput?.legacyID,
+            brightness: hardware.map { Int($0.original) } ?? (native == nil ? baselineBrightness : nil),
+            contrast: hardware == nil && native == nil ? baselineContrast : nil, gamma: native?.session.original.array)
     }
 
     /// Restore through the device that already owns the source before releasing
     /// it. Opening a second EMULATED owner fails on some WDDM drivers.
     @discardableResult
     private func restoreAndRelease() throws -> Bool {
+        lastApplied = nil
+        var expected: ColorLease?
+        var checkpointReady = false
+        var cachedRestored = false
         do {
-            let hadBackend = compositor != nil || hardware != nil || native != nil || (amd != nil && amdOutput != nil)
-            if let compositor {
-                compositor.restore()
-            } else if let hardware {
+            guard !recoveryConflict else {
+                throw WindowsError.unsupported("Recovery ownership changed. Its saved state is preserved; restart SwiftyToys before retrying.")
+            }
+            let hadBackend = hardware != nil || native != nil || (amd != nil && amdOutput != nil)
+            expected = hadBackend ? try lease() : pendingRecovery
+            pendingRecovery = expected
+            if let expected {
+                switch expected.checkpointAction(current: try ColorLease.read()) {
+                case .persist: try expected.write()
+                case .reuse: break
+                case .conflict:
+                    recoveryConflict = true
+                    throw WindowsError.unsupported("Recovery ownership changed. Its saved state is preserved; restart SwiftyToys before retrying.")
+                }
+                if !watchdog { try startWatchdog(); watchdog = true }
+            }
+            checkpointReady = true
+            if hadBackend {
+                guard let output, try discoverDisplays().contains(where: { sameDisplayBinding(output, $0) }) else {
+                    throw WindowsError.unsupported("The display binding changed; recovery must reopen the saved target.")
+                }
+            }
+            if let hardware {
                 try hardware.restore()
             } else if let native {
                 try native.session.restore()
             } else if let amd, let amdOutput {
                 try amd.set(amdOutput, brightness: baselineBrightness, contrast: baselineContrast)
             }
-            if hadBackend, let output, let saved = try ColorLease.read(), saved.owner == GetCurrentProcessId(),
-                saved.displayID == output.id
-            {
-                try ColorLease.remove()
+            if hadBackend, let expected {
+                guard try ColorLease.remove(expected) else {
+                    recoveryConflict = true
+                    throw WindowsError.unsupported("Recovery ownership changed. Its saved state is preserved; restart SwiftyToys before retrying.")
+                }
+                cachedRestored = true
+                pendingRecovery = nil
             }
         } catch { Diagnostics.write("restore through current device: \(error)") }
         native = nil
         hardware = nil
-        compositor = nil
         amdOutput = nil
         amd = nil
         output = nil
+        // Never recover a lease that unexpectedly replaced this live session's baseline.
+        guard checkpointReady, !recoveryConflict else { return false }
         // A disconnected device or failed restore retains its lease for retry.
-        return try recoverOutput()
+        let restored = try recoverOutput(expected: expected, expectedRestored: cachedRestored)
+        if restored { pendingRecovery = nil }
+        else if let expected, let saved = try ColorLease.read(), saved != expected { recoveryConflict = true }
+        return restored
     }
 
     private func bind() throws {
-        // Validate hints before discovery: a failed query must restore the cursor,
-        // not leave a stale viewport active because discovery threw first.
-        try compositor?.validateTopology()
+        guard !recoveryConflict else {
+            throw WindowsError.unsupported("Recovery ownership changed. Its saved state is preserved; restart SwiftyToys before retrying.")
+        }
         let outputs = try discoverDisplays()
         let eligible = outputs.filter { $0.isPhysical && !$0.isCloned && !$0.isHDR }
         var saved = settings.targetID
@@ -121,10 +167,8 @@ actor DisplayController {
             return
         }
         let selected = eligible.first { $0.id == id }!
-        if let output, output.id == selected.id, output.adapterLow == selected.adapterLow,
-            output.adapterHigh == selected.adapterHigh, output.source == selected.source
-        {
-            if hardware != nil || native != nil || compositor?.isValid == true {
+        if let output, sameDisplayBinding(output, selected) {
+            if hardware != nil || native != nil {
                 self.output = selected
                 return
             }
@@ -141,16 +185,14 @@ actor DisplayController {
         }
         // A reconnected target must first recover its original calibration.
         guard try restoreAndRelease() else { return }  // Never overwrite a pending lease for another target.
-        if settings.backend == "compositor" {
-            compositor = try SoftwareCursorDimmingSession(output: selected)
-        } else if settings.backend == "hardware" {
+        if settings.backend == "hardware" {
             hardware = try HardwareBrightnessSession(output: selected)
         } else if settings.backend != "amd" {
             do { native = try NativeBackend(selected) } catch {
                 Diagnostics.write("native backend unavailable: \(error)")
             }
         }
-        if compositor == nil, hardware == nil, native == nil, settings.backend != "native", let driver = try? AMDControl(),
+        if hardware == nil, native == nil, settings.backend != "native", let driver = try? AMDControl(),
             let match = try driver.enumerate().first(where: {
                 equalWindowsNames($0.device, selected.device)
             })
@@ -160,7 +202,7 @@ actor DisplayController {
             amd = driver
             amdOutput = match
         }
-        guard compositor != nil || hardware != nil || native != nil || (amd != nil && amdOutput != nil) else {
+        guard hardware != nil || native != nil || (amd != nil && amdOutput != nil) else {
             throw WindowsError.unsupported(
                 "Driver supports neither native WDDM gamma nor the AMD fallback on this output.")
         }
@@ -170,30 +212,30 @@ actor DisplayController {
     }
 
     private var backendName: String {
-        compositor != nil ? "Windows composition (native cursor)" : hardware != nil ? "native DDC/CI" : native == nil ? "AMD RGB gain" : "native WDDM gamma"
+        hardware != nil ? "native DDC/CI" : native == nil ? "AMD RGB gain" : "native WDDM gamma"
     }
 
     private func apply(_ target: BrightnessLevel) throws {
         guard !exiting else { throw WindowsError.unsupported("SwiftyToys is shutting down.") }
         try bind()
         if output != nil {
+            if !needsBrightnessApply(target, lastApplied: lastApplied) { level = target; return }
             let original = try lease()
             if let saved = try ColorLease.read() {
                 guard saved == original else {
+                    recoveryConflict = true
                     throw WindowsError.unsupported(
                         "Another output still has pending recovery; brightness remains unchanged.")
                 }
-            } else if compositor == nil || target.percent < 100 {
+            } else {
                 try original.write()
             }  // Persist recovery before the first display write.
-            if !watchdog && (compositor == nil || target.percent < 100) {
+            if !watchdog {
                 try startWatchdog()
                 watchdog = true
             }
             do {
-                if let compositor {
-                    try compositor.apply(target)
-                } else if let hardware {
+                if let hardware {
                     try hardware.apply(target)
                 } else if let native {
                     try native.session.apply(target)
@@ -207,12 +249,10 @@ actor DisplayController {
                 {
                     try settings.saveBrightness(target)
                 }
-                if compositor != nil, target.percent == 100 { try ColorLease.remove() }
+                lastApplied = target
             } catch {
                 // Both halves of an AMD update and native ramps are transactional.
-                if let compositor {
-                    try? compositor.apply(level)
-                } else if let hardware {
+                if let hardware {
                     try? hardware.apply(level)
                 } else if let native {
                     try? native.session.apply(level)
@@ -242,6 +282,7 @@ actor DisplayController {
             if output != nil { try apply(level) }
             else if !settings.ddcEnabled, (try ColorLease.read())?.backend != "hardware" { try apply(level) }
         case 5:
+            lastApplied = nil
             let current = try Settings()
             if current.backend != settings.backend || current.targetID != settings.targetID {
                 settings = current
@@ -263,13 +304,12 @@ actor DisplayController {
         return state
     }
 
-    func shutdown() {
+    func shutdown() -> Bool {
         exiting = true
-        do { try restoreAndRelease() } catch { Diagnostics.write("restore: \(error)") }
-        native = nil
-        hardware = nil
-        compositor = nil
-        amdOutput = nil
-        amd = nil
+        do { return try restoreAndRelease() }
+        catch {
+            Diagnostics.write("restore pending: \(error)")
+            return false
+        }
     }
 }

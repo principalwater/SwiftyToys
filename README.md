@@ -49,10 +49,9 @@ Existing BrightnessCtl settings migrate after safe restoration; its installation
   compatible DDC/CI; writes are verified and recovery is retained.
 - **Off:** software dims the image; the physical backlight stays unchanged.
   Leaving DDC restores its previous backlight once. Software methods may leave
-  native cursors brighter. **Software composition (experimental)** dims the image
-  and ordinary tooltips on one active physical SDR display; Windows retains native
-  cursor rendering and visibility. 100% stops its viewport. It uses additional
-  composition resources; protected surfaces and exclusive fullscreen need validation.
+  native cursors brighter. Native WDDM gamma or AMD color controls preserve the
+  original calibration. The copied-desktop renderer is removed after freeze reports;
+  existing `compositor` preferences migrate to Automatic without enabling DDC.
 
 Holding F1/F2 repeats brightness using Windows keyboard timing. **Ctrl+Alt+Shift+F10**
 requests 100% as an emergency reset.

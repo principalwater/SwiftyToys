@@ -40,6 +40,7 @@ final class TrayApplication {
     private var trayAdded = false
     private var trayText = ""
     private var exiting = false
+    private var synchronousDisplayRequest = false
     private var pendingSteps = 0
     private var lastApply: UInt64 = 0
     private let displayMailbox = DisplayMailbox()
@@ -258,10 +259,13 @@ final class TrayApplication {
             guard !exiting else { return 0 }
             if value == 6 {
                 let modes = Settings.modes
-                guard displayQueue.active == nil else { return brightnessBusyReply }
+                guard displayQueue.active == nil, !synchronousDisplayRequest, !controller.commandAdmission.isBusy else { return brightnessBusyReply }
                 guard modes.indices.contains(Int(data)) else { return 0 }
+                synchronousDisplayRequest = true
+                defer { synchronousDisplayRequest = false }
                 do {
                     state = try displayCommand(controller, command: 3, mode: modes[Int(data)])
+                    guard !exiting else { return 0 }
                     settings = try Settings(); displayQueue.level = state.level.percent
                     dashboard?.refreshBrightnessControl(); dashboard?.update(brightness: state.level.percent); updateTray()
                     return LRESULT(state.level.percent + 1)
@@ -283,7 +287,9 @@ final class TrayApplication {
                 PostMessageW(window, UINT(WM_CLOSE), 0, 0)
                 return 1
             }
-            guard displayQueue.active == nil else { return brightnessBusyReply }
+            guard displayQueue.active == nil, !synchronousDisplayRequest, !controller.commandAdmission.isBusy else { return brightnessBusyReply }
+            synchronousDisplayRequest = true
+            defer { synchronousDisplayRequest = false }
             return apply(command: Int(value), value: Int(data), show: value == 1 || value == 2)
                 ? LRESULT(state.level.percent + 1) : 0
         case keyStepMessage:
@@ -294,6 +300,27 @@ final class TrayApplication {
                 data >= 0 || data == -Int(remapper?.generation ?? 0) else { return 0 }
             let steps = brightnessRepeat.update(source: Int(data), keys: UInt8(value), time: GetTickCount64())
             if steps != 0 { queue(steps) }
+            updateBrightnessRepeatTimer()
+            return 0
+        case brightnessKeyBatchMessage:
+            let batch = indicatorBrightnessMailbox.drain()
+            guard !exiting else { return 0 }
+            let time = GetTickCount64()
+            for transition in batch.transitions {
+                switch transition {
+                case .keys(let source, let keys):
+                    let steps = brightnessRepeat.update(source: source, keys: keys, time: time)
+                    if steps != 0 { queue(steps) }
+                case .cancel: cancelBrightnessRepeat(cancelHID: false)
+                }
+            }
+            // Overflow can drop complete taps, but must never leave an old held mask.
+            for source in batch.overflowReleases {
+                _ = brightnessRepeat.update(source: source, keys: 0, time: time)
+            }
+            for (source, keys) in batch.sources {
+                _ = brightnessRepeat.update(source: source, keys: keys, time: time)
+            }
             updateBrightnessRepeatTimer()
             return 0
         case brightnessKeyCancelMessage:
@@ -383,6 +410,7 @@ final class TrayApplication {
         guard !exiting, displayQueue.active == nil else { return false }
         do {
             state = try displayCommand(controller, command: command, value: value)
+            guard !exiting else { return false }
             displayQueue.level = state.level.percent
             lastApply = GetTickCount64()
             if command == 3 {
@@ -436,7 +464,8 @@ final class TrayApplication {
         else { KillTimer(window, 3) }
     }
 
-    private func cancelBrightnessRepeat() {
+    private func cancelBrightnessRepeat(cancelHID: Bool = true) {
+        if cancelHID { indicatorBrightnessMailbox.cancel() }
         brightnessRepeat.cancel()
         pendingSteps = 0
         if let window { KillTimer(window, 3) }
@@ -451,6 +480,7 @@ final class TrayApplication {
         guard remapper?.stop() != false else {
             throw WindowsError.unsupported("Input worker did not stop within 5 seconds. Previous worker retained; try again after it finishes.")
         }
+        if let remapper { _ = brightnessRepeat.update(source: -remapper.generation, keys: 0, time: GetTickCount64()) }
         remapper = nil
         guard !exiting else { throw WindowsError.unsupported("Application is closing.") }
         remapper = try KeyboardRemapper(
@@ -512,12 +542,15 @@ final class TrayApplication {
                         "A shortcut is used by another application. Previous settings restored.")
                 }
             }
-            for (key, value) in zip(
+            let preferences = Dictionary(uniqueKeysWithValues: zip(
                 ["osd", "step", "grabF1F2", "up", "down", "max", "min"],
-                [values[0] == "Windows" ? "system" : "custom", String(step), values[2]] + keys)
-            { try settings.setValue(value, forKey: key) }
+                [values[0] == "Windows" ? "system" : "custom", String(step), values[2]] + keys))
+            try settings.setValues(preferences)
             settings = try Settings()
             try reloadRemapper()
+            guard systemIndicator?.stop() != false else {
+                throw WindowsError.unsupported("The previous indicator observer is still stopping. Try again after it finishes.")
+            }
             systemIndicator = nil
             systemIndicator = try SystemIndicator(
                 destination: MessageDestination(window!), custom: settings.indicator == .custom,
@@ -655,7 +688,7 @@ final class TrayApplication {
         let height = Int32(92 * scale)
         let area = info.rcWork
         SetWindowPos(
-            osd, SoftwareCursorDimmingSession.activeViewport() ?? HWND(bitPattern: -1), area.left + (area.right - area.left - width) / 2,
+            osd, HWND(bitPattern: -1), area.left + (area.right - area.left - width) / 2,
             area.bottom - height - Int32(110 * scale), width, height, UINT(SWP_NOACTIVATE | SWP_SHOWWINDOW))
         InvalidateRect(osd, nil, false)
         SetTimer(osd, 1, 1100, nil)
@@ -710,6 +743,7 @@ final class TrayApplication {
         dashboard = nil
         remapper?.stop()
         remapper = nil
+        ForegroundResolver.stopShared()
         tools.stop()
         systemIndicator = nil
         if let window {
@@ -718,10 +752,10 @@ final class TrayApplication {
             KillTimer(window, 2)
             for id in 1...5 { UnregisterHotKey(window, Int32(id)) }
         }
-        stopDisplay(controller)
+        let restored = stopDisplay(controller)
         Shell_NotifyIconW(DWORD(NIM_DELETE), &tray)
         if let osd { DestroyWindow(osd) }
-        Diagnostics.write("exit: output restored")
+        Diagnostics.write(restored ? "exit: output restored" : "exit: output recovery pending; watchdog and lease retained")
     }
 
     deinit { shutdown() }

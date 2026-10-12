@@ -5,9 +5,11 @@ import WinSDK
 import WindowsDisplayABI
 
 private let indicatorModeMessage: UINT = 0x8005
+private let indicatorEventsMessage: UINT = 0x8006
+private let indicatorWorkerActive = Mutex(false)
 
 // Set/used/cleared only on the observer thread. OUTOFCONTEXT callbacks run
-// on the thread that installed the hook, without another UI-queue hop.
+// on the installing thread; foreign-window work is deferred to its message queue.
 nonisolated(unsafe) private var activeIndicator: Unmanaged<IndicatorWatcher>?
 private func indicatorShown(
     _ hook: HWINEVENTHOOK?, _ event: DWORD, _ window: HWND?, _ object: LONG,
@@ -56,45 +58,57 @@ final class SystemIndicator {
     init(destination: MessageDestination, custom: Bool, hardwareKeys: Bool) throws {
         let state = try IndicatorState(destination: destination, custom: custom, hardwareKeys: hardwareKeys)
         self.state = state
-        thread = try NativeThread(name: "SwiftyToys system indicator") {
-            defer {
-                state.values.withLock { $0.threadID = 0 }
-                SetEvent(state.ready.raw)
-                SetEvent(state.finished.raw)
-            }
-            var message = MSG()
-            PeekMessageW(&message, nil, 0, 0, UINT(PM_NOREMOVE))
-            guard
-                state.values.withLock({ values in
-                    guard !values.stopped else { return false }
-                    values.threadID = GetCurrentThreadId()
-                    return true
-                })
-            else { return }
-            do {
-                let watcher = try IndicatorWatcher(state: state)
-                defer { watcher.stop() }
-                SetEvent(state.ready.raw)
-                while true {
-                    let result = BC_GetMessageW(&message, nil, 0, 0)
-                    if result == 0 { break }
-                    if result < 0 { throw WindowsError.api("Indicator GetMessage", GetLastError()) }
-                    if message.message == indicatorModeMessage {
-                        watcher.modeChanged()
-                    } else if message.hwnd == watcher.window {
-                        watcher.handle(message)
-                    } else {
-                        TranslateMessage(&message)
-                        DispatchMessageW(&message)
-                    }
+        guard indicatorWorkerActive.withLock({ active in
+            guard !active else { return false }
+            active = true
+            return true
+        }) else { throw WindowsError.unsupported("The previous indicator observer is still stopping. Retry after it finishes.") }
+        do {
+            thread = try NativeThread(name: "SwiftyToys system indicator") {
+                defer {
+                    state.values.withLock { $0.threadID = 0 }
+                    indicatorWorkerActive.withLock { $0 = false }
+                    SetEvent(state.ready.raw)
+                    SetEvent(state.finished.raw)
                 }
-            } catch let error as WindowsError {
-                state.values.withLock { $0.error = error }
-            } catch {
-                state.values.withLock { $0.error = .unsupported("System indicator observer failed.") }
+                var message = MSG()
+                PeekMessageW(&message, nil, 0, 0, UINT(PM_NOREMOVE))
+                guard
+                    state.values.withLock({ values in
+                        guard !values.stopped else { return false }
+                        values.threadID = GetCurrentThreadId()
+                        return true
+                    })
+                else { return }
+                do {
+                    let watcher = try IndicatorWatcher(state: state)
+                    defer { watcher.stop() }
+                    SetEvent(state.ready.raw)
+                    while true {
+                        let result = BC_GetMessageW(&message, nil, 0, 0)
+                        if result == 0 { break }
+                        if result < 0 { throw WindowsError.api("Indicator GetMessage", GetLastError()) }
+                        if state.values.withLock({ $0.stopped }) { break }
+                        if message.message == indicatorModeMessage {
+                            watcher.modeChanged()
+                        } else if message.hwnd == watcher.window {
+                            watcher.handle(message)
+                        } else {
+                            TranslateMessage(&message)
+                            DispatchMessageW(&message)
+                        }
+                    }
+                } catch let error as WindowsError {
+                    state.values.withLock { $0.error = error }
+                } catch {
+                    state.values.withLock { $0.error = .unsupported("System indicator observer failed.") }
+                }
             }
+        } catch {
+            indicatorWorkerActive.withLock { $0 = false }
+            throw error
         }
-        guard WaitForSingleObject(state.ready.raw, 5000) == DWORD(WAIT_OBJECT_0) else {
+        guard waitForWindowEvent(state.ready.raw, timeout: 5000) == DWORD(WAIT_OBJECT_0) else {
             stop()
             throw WindowsError.unsupported("System indicator observer did not start.")
         }
@@ -111,16 +125,16 @@ final class SystemIndicator {
         }
     }
 
-    func stop() {
+    @discardableResult
+    func stop() -> Bool {
         state.values.withLock {
             $0.stopped = true
             if $0.threadID != 0 {
                 // The worker clears its ID under this lock before exiting.
                 PostThreadMessageW($0.threadID, UINT(WM_QUIT), 0, 0)
-                $0.threadID = 0
             }
         }
-        WaitForSingleObject(state.finished.raw, 2000)
+        return waitForWindowEvent(state.finished.raw, timeout: 2000) == DWORD(WAIT_OBJECT_0)
     }
 
     deinit { stop() }
@@ -134,15 +148,18 @@ private final class IndicatorWatcher {
     private let taskbarCreated = withWideString("TaskbarCreated") { RegisterWindowMessageW($0) }
     private var hook: HWINEVENTHOOK?
     private var focusHook: HWINEVENTHOOK?
-    private var brightnessSources: [Int: UInt8] = [:]
+    private var brightnessSources: Set<Int> = []
+    private var events = IndicatorEventQueue()
     private var shellPID: DWORD = 0
     private var mediaTimestamp: DWORD?
     private var mediaShown = false
+    private var appliedCustom: Bool
     private let owner = GetCurrentProcessId()
     private let started: UInt64
 
     init(state: IndicatorState) throws {
         self.state = state
+        appliedCustom = state.values.withLock { $0.custom }
         started = try processStartTicks(GetCurrentProcess())
         // Establish crash recovery before changing another process's window.
         try startWatchdog()
@@ -169,15 +186,27 @@ private final class IndicatorWatcher {
                 throw WindowsError.api("Register brightness HID", error)
             }
         }
+        guard SetTimer(window, 1, 3000, nil) != 0 else {
+            let error = GetLastError()
+            if state.hardwareKeys {
+                var raw = RAWINPUTDEVICE(usUsagePage: 0x0C, usUsage: 1,
+                    dwFlags: DWORD(RIDEV_REMOVE), hwndTarget: nil)
+                _ = RegisterRawInputDevices(&raw, 1, UINT(MemoryLayout<RAWINPUTDEVICE>.size))
+            }
+            DeregisterShellHookWindow(window)
+            DestroyWindow(window)
+            throw WindowsError.api("Start indicator retry timer", error)
+        }
         activeIndicator = .passUnretained(self)
         focusHook = SetWinEventHook(
             DWORD(EVENT_SYSTEM_FOREGROUND), DWORD(EVENT_SYSTEM_FOREGROUND), nil, indicatorForegroundChanged,
             0, 0, DWORD(WINEVENT_OUTOFCONTEXT))
         refreshShell()
-        SetTimer(window, 1, 3000, nil)
     }
 
     func handle(_ message: MSG) {
+        // A failed mode notification is retried by the existing observer tick.
+        if state.values.withLock({ $0.custom }) != appliedCustom { modeChanged() }
         if message.message == UINT(WM_INPUT) {
             let actions = brightnessActions(HRAWINPUT(bitPattern: Int(message.lParam)))
             if actions.media {
@@ -185,17 +214,13 @@ private final class IndicatorWatcher {
                 mediaShown = false
                 NativeFlyout.restore(owner: owner, started: started)
             }
-            for keys in actions.states {
-                let previous = brightnessSources[actions.source] ?? 0
-                guard keys != previous else { continue }
-                if keys == 0 { brightnessSources.removeValue(forKey: actions.source) }
-                else {
-                    guard brightnessSources[actions.source] != nil || brightnessSources.count < 64 else { continue }
-                    brightnessSources[actions.source] = keys
-                }
-                _ = state.destination.post(brightnessKeyStateMessage, value: Int(keys), data: actions.source)
-                guard keys != 0 else { continue }
-                if state.values.withLock({ $0.custom }) {
+            if !actions.states.isEmpty,
+                brightnessSources.contains(actions.source) || brightnessSources.count < 64 {
+                indicatorBrightnessMailbox.update(source: actions.source, states: actions.states)
+                if actions.states.last == 0 { brightnessSources.remove(actions.source) }
+                else { brightnessSources.insert(actions.source) }
+                notifyBrightness()
+                if actions.states.contains(where: { $0 != 0 }), state.values.withLock({ $0.custom }) {
                     mediaTimestamp = nil
                     prepareFlyout()
                 }
@@ -203,8 +228,9 @@ private final class IndicatorWatcher {
             _ = DefWindowProcW(window, message.message, message.wParam, message.lParam)
         } else if message.message == UINT(WM_INPUT_DEVICE_CHANGE), message.wParam == WPARAM(GIDC_REMOVAL) {
             let source = Int(message.lParam)
-            brightnessSources.removeValue(forKey: source)
-            _ = state.destination.post(brightnessKeyStateMessage, data: source)
+            brightnessSources.remove(source)
+            indicatorBrightnessMailbox.update(source: source, states: [0])
+            notifyBrightness()
         } else if message.message == shellMessage {
             if message.wParam == 55 && state.values.withLock({ $0.custom }) {
                 mediaTimestamp = nil
@@ -216,7 +242,11 @@ private final class IndicatorWatcher {
             } else if !state.values.withLock({ $0.custom }) {
                 modeChanged()
             }
+        } else if message.message == indicatorEventsMessage {
+            processEvents()
         } else if message.message == taskbarCreated || message.message == UINT(WM_TIMER) {
+            notifyBrightness()
+            processEvents()
             refreshShell()
         } else {
             var message = message
@@ -226,6 +256,7 @@ private final class IndicatorWatcher {
     }
 
     func modeChanged() {
+        appliedCustom = state.values.withLock { $0.custom }
         mediaTimestamp = nil
         mediaShown = false
         if state.values.withLock({ $0.custom }) {
@@ -236,12 +267,19 @@ private final class IndicatorWatcher {
     }
 
     func cancelBrightnessKeys() {
-        _ = state.destination.post(brightnessKeyCancelMessage)
+        indicatorBrightnessMailbox.cancel()
+        notifyBrightness()
+    }
+
+    private func notifyBrightness() {
+        indicatorBrightnessMailbox.notify { state.destination.post(brightnessKeyBatchMessage) }
     }
 
     private func prepareFlyout() {
         guard state.values.withLock({ $0.custom }), mediaTimestamp == nil else { return }
-        for window in NativeFlyout.windows() { NativeFlyout.clip(window, owner: owner, started: started) }
+        for window in NativeFlyout.windows() {
+            if !NativeFlyout.clip(window, owner: owner, started: started) { hide(window) }
+        }
     }
 
     /// Rebinds after Explorer restarts without injecting code into its process.
@@ -265,18 +303,38 @@ private final class IndicatorWatcher {
     }
 
     func event(_ event: DWORD, window: HWND, timestamp: DWORD) {
+        events.enqueue(window: Int(bitPattern: window), kind: event, timestamp: timestamp)
+        notifyEvents()
+    }
+
+    private func notifyEvents() {
+        let window = window
+        events.notify { PostMessageW(window, indicatorEventsMessage, 0, 0) }
+    }
+
+    private func processEvents() {
+        guard let batch = events.begin() else { return }
+        defer { events.end(); notifyEvents() }
+        for (address, event) in batch {
+            guard let window = HWND(bitPattern: address) else { continue }
+            processEvent(event, window: window)
+        }
+    }
+
+    private func processEvent(_ event: IndicatorEventQueue.Event, window: HWND) {
         guard state.values.withLock({ $0.custom }), NativeFlyout.isKnown(window) else { return }
-        if event == DWORD(EVENT_OBJECT_SHOW), mediaTimestamp != nil, IsWindowVisible(window) {
+        if event.showed, mediaTimestamp != nil { mediaShown = true }
+        if event.kind == DWORD(EVENT_OBJECT_SHOW), mediaTimestamp != nil, IsWindowVisible(window) {
             mediaShown = true
-        } else if event == DWORD(EVENT_OBJECT_HIDE), mediaShown, !IsWindowVisible(window), let mediaTimestamp,
-            timestamp &- mediaTimestamp > 0, timestamp &- mediaTimestamp < DWORD.max / 2
+        } else if event.kind == DWORD(EVENT_OBJECT_HIDE), mediaShown, !IsWindowVisible(window), let mediaTimestamp,
+            event.timestamp &- mediaTimestamp > 0, event.timestamp &- mediaTimestamp < DWORD.max / 2
         {
             self.mediaTimestamp = nil
             mediaShown = false
             prepareFlyout()
         } else if mediaTimestamp == nil {
             NativeFlyout.clip(window, owner: owner, started: started)
-            if event == DWORD(EVENT_OBJECT_SHOW) { hide(window) }
+            if event.kind == DWORD(EVENT_OBJECT_SHOW) { hide(window) }
         }
     }
 
@@ -286,16 +344,15 @@ private final class IndicatorWatcher {
     }
 
     private func hide(_ window: HWND) {
-        guard NativeFlyout.isKnown(window), IsWindowVisible(window) else { return }
-        // Apply on the independent observer, without another async queue delay.
-        ShowWindow(window, Int32(SW_HIDE))
+        _ = NativeFlyout.hideAsync(window)
     }
 
     func stop() {
-        for source in brightnessSources.keys {
-            _ = state.destination.post(brightnessKeyStateMessage, data: source)
+        for source in brightnessSources {
+            indicatorBrightnessMailbox.update(source: source, states: [0])
         }
         brightnessSources.removeAll()
+        notifyBrightness()
         activeIndicator = nil
         if let focusHook { UnhookWinEvent(focusHook) }
         if let hook { UnhookWinEvent(hook) }
