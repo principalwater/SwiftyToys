@@ -73,11 +73,9 @@ struct TrackpadStatus {
         return String(decoding: buffer.prefix(while: { $0 != 0 }), as: UTF16.self)
     }
     static func openInstaller(owner: HWND, source: String = "Apple", rollback: Bool = false, repairBluetooth: Bool = false) throws {
-        let path = executablePath().split(separator: "\\").dropLast().joined(separator: "\\") + "\\install-trackpad.ps1"
-        guard try NativeFiles.exists(path) else {
-            throw WindowsError.unsupported("Install from the complete release ZIP to use the trackpad installer.")
-        }
         guard source == "Apple" || source == "Imbushuo" else { throw WindowsError.unsupported("Unknown driver source.") }
-        try shellOpen(systemExecutable("WindowsPowerShell\\v1.0\\powershell.exe"), arguments: "-NoProfile -ExecutionPolicy Bypass -File " + quoteArgument(path) + " -Source " + source + (rollback ? " -Rollback" : "") + (repairBluetooth ? " -RepairBluetooth" : ""), elevated: true, owner: owner)
+        guard !(rollback && repairBluetooth) else { throw WindowsError.unsupported("Choose one driver recovery action.") }
+        let action = repairBluetooth ? "repair-bluetooth" : rollback ? "rollback" : source.lowercased()
+        try shellOpen(executablePath(), arguments: "--trackpad-install " + action, elevated: true, owner: owner)
     }
 }

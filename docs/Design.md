@@ -12,6 +12,12 @@ without a runtime image library. The SVG is the editable source; regenerate the
 ICO after changing its geometry. Icon handles have explicit native ownership and
 are replaced after the window has received its new DPI-sized handles.
 
+Installation also includes a fixed `resources/SwiftyToys.ico`. Before first launch,
+the installer sets this icon and the stable `SwiftyToys.SwiftyToys` AppUserModelID
+on the Start-menu shortcut; the process declares the same identity. Shell receives
+targeted item notifications after the files are written. No global icon-cache
+purge, Explorer restart, pin changes or versioned icon scheme is used.
+
 The Windows 10 interface uses quiet solid cards, rounded controls, status pills,
 clear typography and a warm accent for primary actions. This draws on Apple's
 light material hierarchy; it does not implement Apple's Liquid Glass API. There

@@ -25,8 +25,46 @@ enum NativeFiles {
     static func legacyDirectory() throws -> String { try appData.get() + "\\BrightnessCtl" }
     static func path(_ name: String) throws -> String { try directory() + "\\" + name }
 
+    /// Extended filesystem paths work without changing Windows long-path policy.
+    /// Short paths retain their existing Win32 semantics and avoid a full-size buffer.
+    static func windowsPath(_ path: String) throws(WindowsError) -> String {
+        let length = path.utf16.count
+        guard length > 0, length < 32768, !path.utf16.contains(0),
+            !path.hasPrefix("\\\\.\\"), !path.hasPrefix("\\??\\"), !path.hasPrefix("\\\\??\\") else {
+            throw .unsupported("Invalid filesystem path.")
+        }
+        func localDrive(_ value: String) -> Bool {
+            let first = value.utf8.first ?? 0
+            return ((65...90).contains(first) || (97...122).contains(first)) && value.dropFirst().hasPrefix(":\\")
+        }
+        var plain = path, extended = false
+        if path.hasPrefix("\\\\?\\") {
+            extended = true
+            let rest = String(path.dropFirst(4))
+            if localDrive(rest) { plain = rest }
+            else if rest.prefix(4).lowercased() == "unc\\" { plain = "\\\\" + rest.dropFirst(4) }
+            else { throw .unsupported("Filesystem paths must use a local drive or UNC share, not a device namespace.") }
+        }
+        if !extended, length < 248 { return path }
+        var buffer = [WCHAR](repeating: 0, count: length < 248 ? Int(MAX_PATH) : 32768)
+        let count = withWideString(plain) { GetFullPathNameW($0, DWORD(buffer.count), &buffer, nil) }
+        guard count > 0, count < buffer.count else { throw .api("Resolve filesystem path", GetLastError()) }
+        let absolute = String(decoding: buffer.prefix(Int(count)), as: UTF16.self)
+        let result: String
+        if localDrive(absolute) { result = "\\\\?\\" + absolute }
+        else if absolute.hasPrefix("\\\\") {
+            let parts = absolute.dropFirst(2).split(separator: "\\", omittingEmptySubsequences: false)
+            guard parts.count >= 2, !parts[0].isEmpty, !parts[1].isEmpty, parts[0] != ".", parts[0] != "?" else {
+                throw .unsupported("Invalid filesystem UNC share.")
+            }
+            result = "\\\\?\\UNC\\" + absolute.dropFirst(2)
+        } else { throw .unsupported("Filesystem paths must use a local drive or UNC share.") }
+        guard result.utf16.count < 32768 else { throw .unsupported("Filesystem path exceeds the Windows limit.") }
+        return result
+    }
+
     static func exists(_ path: String) throws(WindowsError) -> Bool {
-        let (attributes, error) = withWideString(path) {
+        let (attributes, error) = withWideString(try windowsPath(path)) {
             let attributes = GetFileAttributesW($0)
             return (attributes, attributes == DWORD(INVALID_FILE_ATTRIBUTES) ? GetLastError() : 0)
         }
@@ -36,6 +74,7 @@ enum NativeFiles {
     }
 
     static func createDirectory(_ path: String) throws(WindowsError) {
+        let path = try windowsPath(path)
         if withWideString(path, { CreateDirectoryW($0, nil) }) { return }
         let error = GetLastError()
         let attributes = withWideString(path) { GetFileAttributesW($0) }
@@ -46,7 +85,7 @@ enum NativeFiles {
 
     static func read(_ path: String, maximum: Int = 32767) throws -> [UInt8] {
         let handle = try OwnedHandle(
-            withWideString(path) {
+            withWideString(try windowsPath(path)) {
                 CreateFileW(
                     $0, DWORD(GENERIC_READ), DWORD(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), nil,
                     DWORD(OPEN_EXISTING), DWORD(FILE_ATTRIBUTE_NORMAL), nil)
@@ -72,7 +111,7 @@ enum NativeFiles {
     }
 
     static func remove(_ path: String) throws(WindowsError) {
-        guard withWideString(path, { DeleteFileW($0) }) || GetLastError() == DWORD(ERROR_FILE_NOT_FOUND) else {
+        guard withWideString(try windowsPath(path), { DeleteFileW($0) }) || GetLastError() == DWORD(ERROR_FILE_NOT_FOUND) else {
             throw .api("Remove local file", GetLastError())
         }
     }
@@ -85,8 +124,9 @@ enum NativeFiles {
             throw WindowsError.unsupported("Encode temporary file name.")
         }
         let temporary = path + "." + String(decoding: name.prefix(while: { $0 != 0 }), as: UTF16.self) + ".tmp"
+        let destinationPath = try windowsPath(path), temporaryPath = try windowsPath(temporary)
         let handle = try OwnedHandle(
-            withWideString(temporary) {
+            withWideString(temporaryPath) {
                 CreateFileW($0, DWORD(GENERIC_WRITE), 0, nil, DWORD(CREATE_NEW), DWORD(FILE_ATTRIBUTE_NORMAL), nil)
             })
         // Close the handle before attempting to delete an uncommitted temporary file.
@@ -95,9 +135,9 @@ enum NativeFiles {
             try writeAndClose(consume handle, bytes: bytes)
             guard
                 withWideString(
-                    temporary,
+                    temporaryPath,
                     { source in
-                        withWideString(path) {
+                        withWideString(destinationPath) {
                             MoveFileExW(source, $0, DWORD(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
                         }
                     })

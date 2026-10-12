@@ -1,0 +1,6 @@
+module SetupABI [system] {
+    header "SetupABI.h"
+    link "winhttp"
+    link "wintrust"
+    export *
+}

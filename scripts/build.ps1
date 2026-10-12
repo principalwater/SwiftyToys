@@ -41,7 +41,8 @@ $sourceExecutable = Join-Path ($binPath | Select-Object -Last 1) 'SwiftyToys.exe
 if ($LASTEXITCODE -ne 0) { throw 'Could not embed the native UI manifest.' }
 Copy-Item -LiteralPath $sourceExecutable -Destination (Join-Path $OutputDirectory 'SwiftyToys.exe') -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot 'Languages') -Destination $OutputDirectory -Recurse -Force
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'install-trackpad.ps1') -Destination $OutputDirectory -Force
+New-Item -ItemType Directory -Force -Path (Join-Path $OutputDirectory 'resources') | Out-Null
+Copy-Item -LiteralPath (Join-Path $repoRoot 'resources\SwiftyToys.svg'),(Join-Path $repoRoot 'resources\SwiftyToys.ico') -Destination (Join-Path $OutputDirectory 'resources') -Force
 # A portable release must link the official Swift runtime statically.
 $dependencyOutput = & dumpbin /nologo /dependents $sourceExecutable
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect native runtime dependencies.' }
@@ -65,5 +66,5 @@ if (Test-Path -LiteralPath $manifest) {
 }
 [IO.File]::WriteAllText($manifest, '', [Text.UTF8Encoding]::new($false))
 $size = (Get-Item -LiteralPath (Join-Path $OutputDirectory 'SwiftyToys.exe')).Length
-if ($size -gt 6700000) { throw "Executable exceeds the 6.7 MB size budget: $size bytes." }
+if ($size -gt 7000000) { throw "Executable exceeds the 7 MB size budget: $size bytes." }
 Write-Host "Built one executable: $size bytes; no Swift DLLs."

@@ -20,9 +20,13 @@ jobs:
       - name: Run hardware-independent tests
         shell: powershell
         run: ./scripts/test.ps1
-      - name: Check trackpad repair selection
-        shell: powershell
-        run: ./scripts/test-trackpad.ps1
+      - name: Check native installation and trackpad policies without configuring devices
+        shell: pwsh
+        run: |
+          foreach ($check in @('--test-trackpad-installer','--test-installer','--test-shell-integration','--test-installer-ui','--test-package-setup')) {
+            $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList $check -Wait -PassThru -NoNewWindow
+            if ($process.ExitCode -ne 0) { throw "Native installation check failed: $check" }
+          }
       - name: Check native mouse registry operations
         shell: pwsh
         run: |
@@ -109,6 +113,11 @@ jobs:
         run: |
           $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-ui' -Wait -PassThru -NoNewWindow
           if ($process.ExitCode -ne 0) { throw 'Native settings check failed' }
+      - name: Build and validate native Swift setup package
+        shell: powershell
+        run: |
+          ./scripts/package.ps1
+          ./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.12-win-x64
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -117,7 +126,9 @@ jobs:
             artifacts/SwiftyToys.exe
             artifacts/*.dll
             artifacts/runtime-files.txt
-            artifacts/install-trackpad.ps1
+            artifacts/*-Setup.exe
+            artifacts/*-Setup.exe.sha256
+            artifacts/resources/
             artifacts/Languages/
             Licenses/
             LICENSE

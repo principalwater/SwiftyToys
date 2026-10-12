@@ -1,4 +1,46 @@
-# Validation snapshot: 0.1.11
+# Validation snapshot: 0.1.12
+
+## Native Swift setup
+
+2026-10-13. The release candidate passes 35 portable tests and 23 native checks.
+New checks cover installer policy and rollback files, shortcut property persistence,
+native setup controls and modal ownership, signed-driver scope/recovery and native
+WSL/Homebrew command policy. They do not install drivers or Linux.
+
+The installed EXE is 6,885,888 bytes, SHA-256
+`070F135FC5CB892C84083E5E6E93D8C4F00AA3541B6926DEB5F757A0016AB486`.
+The tested single-EXE setup is 2,159,616 bytes before this validation record was
+included. Packaging checks its OS-only bootstrap
+imports, System32 DLL policy, security cookie and actual embedded payload through
+protected extraction and the hidden stage-two UI check. Raw setup and decompressed
+payload privacy scans report no findings.
+
+The first real update exposed an overlong legacy-task backup path with Windows'
+long-path policy disabled. Rollback restored the old executable/startup and relaunched
+the previous resident; its three preference files remained byte-identical. The shared
+filesystem fix and compact SHA-256 backup names then passed real temporary long-path
+Unicode, atomic replacement, blocked-commit and cleanup checks. The repeated complete
+setup returned success and installed the tested EXE. Its fixed ICO, Start-menu target,
+settings arguments and enabled startup task were verified. No machine-wide long-path
+policy was changed.
+
+Configuration, software brightness and keyboard files remained byte-identical.
+Read-only diagnostics still report DDC off, native WDDM gamma, physical backlight
+100%, native vertical mouse inversion and Apple Precision 6.1.8000.6 on Bluetooth.
+Working device bindings and pairing were not modified by this update.
+
+During a 60-second observation with settings closed, native process counters showed
+no CPU-time increment at their resolution. Resident private bytes ranged 3.688–3.738
+MiB, handles 256–258 and threads 9; watchdog private bytes stayed 2.379 MiB with 152
+handles and one thread. All samples responded. This is a short observation, not a
+controlled comparison, GPU attribution, long-session or weakest-hardware benchmark.
+
+Fresh-Windows prerequisite download/UAC, actual driver installation/rollback with
+the Swift implementation, and end-to-end Linux/Homebrew on a virtualization-ready
+host remain separate checks. WSL setup on the firmware-blocked test host remains
+deferred by the operator. Software cursor luminance with DDC off remains a limitation.
+
+## Previous branding validation: 0.1.11
 
 ## Swift Ember native branding
 

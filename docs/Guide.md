@@ -80,12 +80,27 @@ or Apple.
 
 ## Installation
 
-Windows 10 22H2 / Windows 11 x64, Microsoft Visual C++ 2015-2022 x64 Redistributable.
-Extract the ZIP and run install.ps1 with PowerShell. Installation is per user;
-WSL and driver installation separately request Windows administrator consent and may
-need a restart. No Swift compiler required.
+Windows 10 22H2 / Windows 11 x64. Open the release's `win-x64-Setup.exe` and choose
+**Install**. The native Swift installer installs for the current Windows account,
+sets the shortcut's fixed icon and application identity before launch, and enables
+automatic startup. Reinstallation preserves settings. No Swift compiler or
+PowerShell installer is required. Windows may show a reputation warning for an
+unsigned release; obtain the EXE from this project's Releases and verify its checksum.
+If the Microsoft Visual C++ Runtime is missing or older than 14.44.35211, setup offers
+the pinned, signed official Microsoft installer. This separate prerequisite needs
+internet access and Windows administrator consent; ordinary installation does not.
+WSL and driver installation separately request administrator consent and may
+need a restart. No restart is automatic.
 The official Swift runtime is linked into one executable; additional dependencies
 are added only for required functionality or measured improvements.
+
+For the optional portable ZIP, extract the complete archive outside the installed
+application folder and run `SwiftyToys.exe --installer`. This route requires the
+Microsoft Visual C++ x64 Redistributable to be installed already. Keep documentation,
+licenses, language packs and resources together with the executable.
+For automated installation, pass `--install` to the setup EXE. It shows native
+progress, closes after success and retains the same prerequisite, rollback and
+recovery checks; it does not silently approve administrator prompts.
 
 Click the tray icon to open settings. Closing settings leaves the utility active.
 Quit in the tray menu restores the output and stops the tools. Keep only one remapper

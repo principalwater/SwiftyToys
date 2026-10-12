@@ -4,7 +4,7 @@ import WinSDK
 import WindowsDisplayABI
 
 /// Read-only checks of an existing driver file with CNG and WinVerifyTrust.
-/// Policy mirrors scripts/install-trackpad.ps1: pinned SHA-256 for the download, then a trusted
+/// Require a pinned SHA-256 for the download, then a trusted
 /// Authenticode signature whose leaf subject starts with the expected publisher.
 enum NativeDriverTrust {
     enum Signer: String {

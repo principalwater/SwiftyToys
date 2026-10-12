@@ -34,10 +34,12 @@ Tray Quit restores the output and stops the tools.
 
 ## Install
 
-**Windows 10 22H2 / Windows 11 x64** and
-[Microsoft Visual C++ 2015–2022 x64 Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe).
-Download the complete `win-x64.zip` from [Releases](https://github.com/principalwater/SwiftyToys/releases),
-extract it and run `install.ps1` with Windows PowerShell. Per-user installation needs no Swift compiler or Swift runtime DLLs.
+**Windows 10 22H2 / Windows 11 x64.** Download `win-x64-Setup.exe` from
+[Releases](https://github.com/principalwater/SwiftyToys/releases), open it and choose
+**Install**. Setup installs for your account, configures the Command Ember icon and
+starts SwiftyToys. No Swift compiler, Swift DLLs or PowerShell installer is needed.
+If the Microsoft Visual C++ Runtime is missing, setup offers its verified official
+installer; that separate component requires internet access and administrator consent.
 
 WSL and driver setup request administrator consent separately and may require a restart.
 Existing BrightnessCtl settings migrate after safe restoration; its installation remains for rollback. [Installation, CLI and compatibility details](docs/Guide.md).
@@ -90,12 +92,13 @@ Portable BrightnessCore/KeyboardCore tests use Swift Testing; native interop is 
 ./scripts/build.ps1
 ./scripts/test.ps1
 ./scripts/package.ps1
+./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.12-win-x64
 ```
 
 [Contributor guide](CONTRIBUTING.md) · [Packaging](docs/Packaging.md) ·
 [Windows interop](docs/WindowsInterop.md) · [Performance](docs/Performance.md) ·
 [Security](SECURITY.md). CI verifies Windows and macOS core checks. External changes
-use reviewed PRs; the maintainer controls merges. Size budgets are 6.7 MB EXE / 3 MB ZIP;
+use reviewed PRs; the maintainer controls merges. Size budgets are 7 MB EXE / 3 MB ZIP;
 performance advantages require reproducible measurements.
 
 ## Credits and license

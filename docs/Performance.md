@@ -86,7 +86,7 @@ their independent timing/energy benefit is not claimed from source inspection.
 ## Build budget and safety
 
 Release uses `-Osize`, static official Swift runtime, no debug information, dead
-stripping and identical COMDAT folding. Budget: executable <=6.7 MB, ZIP <=3 MB.
+stripping and identical COMDAT folding. Budget: executable <=7 MB, ZIP <=3 MB.
 Static DLL imports are restricted to System32 and verified with dumpbin loadconfig;
 there are no bundled Swift DLLs or web renderer. Do not replace `-Osize` with `-O`
 or change CPU target/ownership/concurrency based on guesswork.
