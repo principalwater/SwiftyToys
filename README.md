@@ -1,5 +1,5 @@
 <h1 align="center">SwiftyToys</h1>
-<p align="center"><img src="resources/SwiftyToys.svg" width="80" height="80" alt="SwiftyToys Swift Ember logo"></p>
+<p align="center"><img src="resources/SwiftyToys.svg" width="80" height="80" alt="SwiftyToys Command Ember logo"></p>
 <p align="center">Mac habits. Windows capabilities.</p>
 <p align="center">
   <a href="https://github.com/principalwater/SwiftyToys/actions/workflows/build.yml"><img alt="Build and test" src="https://github.com/principalwater/SwiftyToys/actions/workflows/build.yml/badge.svg"></a>

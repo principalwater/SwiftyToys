@@ -1,11 +1,13 @@
 # Swift Ember
 
-Swift Ember uses an original three-feather mark and coral/orange tones to express
-lightness and momentum. It is inspired by Swift and the PowerToys tool model;
-the mark is independent artwork, not an Apple or Microsoft logo.
+Swift Ember uses an original Command-style mark and coral/orange tones.
+Four rounded loops express familiar Mac keyboard habits; the warm palette draws
+on Swift, and feature tiles draw on PowerToys. The mark uses custom paths, not
+outlined system fonts, and is independent artwork.
 
-The same icon appears in Explorer, the notification area, window caption and
-settings header. Eight embedded resolutions (16–256 px) provide transparent edges
+The same icon appears in Explorer, the visible notification area, its hidden-icon
+overflow, window caption and settings header. Windows uses one registered icon
+for both tray locations. Eight embedded resolutions (16–256 px) provide transparent edges
 without a runtime image library. The SVG is the editable source; regenerate the
 ICO after changing its geometry. Icon handles have explicit native ownership and
 are replaced after the window has received its new DPI-sized handles.

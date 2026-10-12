@@ -2,7 +2,7 @@
 
 ## SwiftyToys 0.1.11 — 2026-10-12
 
-- Introduce Swift Ember: an original three-feather mark with coral/orange tones,
+- Introduce Swift Ember with an original Command-style mark and coral/orange tones,
   embedded in the EXE, system tray, window caption and settings header.
 - Refine native feature cards, typography, status pills and primary actions.
   Preserve Overview/Esc navigation, drafts, DPI scaling, keyboard focus and the

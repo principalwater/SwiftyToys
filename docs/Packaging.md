@@ -22,7 +22,7 @@ feature or a measured improvement justifies larger distribution; they are not a
 reason to remove requested functionality or correctness checks.
 
 0.1.11 adds eight native icon frames and updates window-local GDI painting. Its
-EXE is 29,184 bytes above 0.1.10; the budget is 6.7 MB. RC resource hashes form
+EXE is 31,744 bytes above 0.1.10; the budget is 6.7 MB. RC resource hashes form
 part of the link input name, so changed icons invalidate incremental linking.
 
 ## Checks

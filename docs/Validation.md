@@ -9,15 +9,16 @@ loading verified each size. The original SVG source is retained. Caption icons
 reload on window DPI changes; the tray receives at least a 32-pixel icon so it does
 not start with a bitmap that must be enlarged for 125–200% taskbars.
 
-The static EXE is 6,605,312 bytes, SHA-256
-`73707F78C9EA3ABA848A49880F612E4673CF7B48D33C66E51FAF5E8BE15752A1`.
+The final Command Ember EXE is 6,607,872 bytes, SHA-256
+`C691870EF5C34463E03910A85EABF25A7E132320F89E7C3A5EA30BD04318456D`.
 Installation preserves Automatic software control, DDC off and the current level.
 No display/input pipeline change or new runtime library is introduced by branding.
 Calculated normal-text contrast ranges from 4.94:1 to 15.20:1 for the selected
 palette. High contrast uses system colors and native controls retain their names.
 
-The operator confirms the installed interface and tray icon look and work normally,
-including feature tiles and the Overview transition. Windows Graphics Capture
+The operator confirms the feature tiles and Overview transition work normally.
+The final Command-style mark was selected from concepts; its raster frames were inspected
+at actual tray sizes and native loading was checked. Windows Graphics Capture
 timed out twice while obtaining an automated screenshot; that tool supplied no
 visual evidence. Physical mixed-DPI, high-contrast, Narrator and Windows 11 checks
 remain acceptance limits.
