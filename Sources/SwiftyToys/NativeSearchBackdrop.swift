@@ -80,6 +80,7 @@ final class NativeSearchBackdrop {
     private let acrylic: UnsafeMutablePointer<__x_ABI_CWindows_CUI_CXaml_CMedia_CIAcrylicBrush>
     private let brushBase: UnsafeMutablePointer<__x_ABI_CWindows_CUI_CXaml_CMedia_CIXamlCompositionBrushBase>
     private let grid: UnsafeMutablePointer<__x_ABI_CWindows_CUI_CXaml_CControls_CIGrid2>
+    private var frameSize: (Int32,Int32,UINT,Double)?
     private var closed = false
 
     private static func initialize() throws {
@@ -180,20 +181,52 @@ final class NativeSearchBackdrop {
         successful = true
     }
 
-    func resize(width: Int32, height: Int32, cornerRadius: Double, highContrast: Bool) {
+    @discardableResult func resize(width: Int32, height: Int32, cornerRadius: Double, highContrast: Bool) -> Bool {
         guard !closed, !Self.stopped, thread == GetCurrentThreadId(), width > 0, height > 0,
-            cornerRadius.isFinite, cornerRadius >= 0 else { return }
-        _ = acrylic.pointee.lpVtbl.pointee.put_AlwaysUseFallback(acrylic, highContrast ? 1 : 0)
+            cornerRadius.isFinite, cornerRadius >= 0 else { return false }
         let color = GetSysColor(Int32(COLOR_WINDOW))
         let fallback = highContrast
             ? __x_ABI_CWindows_CUI_CColor(A: 255, R: UInt8(color & 255), G: UInt8((color >> 8) & 255), B: UInt8((color >> 16) & 255))
-            : __x_ABI_CWindows_CUI_CColor(A: 255, R: 249, G: 250, B: 252)
-        _ = brushBase.pointee.lpVtbl.pointee.put_FallbackColor(brushBase, fallback)
+            : __x_ABI_CWindows_CUI_CColor(A: 255, R: 248, G: 250, B: 252)
+        guard acrylic.pointee.lpVtbl.pointee.put_AlwaysUseFallback(acrylic, highContrast ? 1 : 0) >= 0,
+            brushBase.pointee.lpVtbl.pointee.put_FallbackColor(brushBase, fallback) >= 0 else {
+            ShowWindow(window,Int32(SW_HIDE)); return false
+        }
         // Win32 sizes are physical pixels; XAML corner radii are device-independent pixels.
-        let scale = 96.0 / Double(max(96, GetDpiForWindow(window)))
+        let dpi = max(96,GetDpiForWindow(window))
+        let size = (width,height,dpi,cornerRadius)
+        let scale = 96.0 / Double(dpi)
         let radius = min(cornerRadius, Double(min(width, height)) / 2) * scale
-        _ = grid.pointee.lpVtbl.pointee.put_CornerRadius(grid, __x_ABI_CWindows_CUI_CXaml_CCornerRadius(TopLeft: radius, TopRight: radius, BottomRight: radius, BottomLeft: radius))
-        _ = SetWindowPos(window, HWND(bitPattern: 1), 0, 0, width, height, UINT(SWP_NOACTIVATE | SWP_SHOWWINDOW))
+        if frameSize.map({ $0 != size }) ?? true {
+            frameSize = nil // A partial native update cannot leave an old geometry cache valid.
+            // One readable native card, with Acrylic confined to its surrounding frame.
+            let inset = min(Int32((8 / scale).rounded()),min(width,height)/4)
+            let diameter = Int32(2*radius/scale)
+            guard let frame = CreateRoundRectRgn(0,0,width,height,diameter,diameter) else {
+                ShowWindow(window,Int32(SW_HIDE)); return false
+            }
+            var transferred = false
+            defer { if !transferred { DeleteObject(frame) } }
+            guard let content = CreateRoundRectRgn(inset,inset,width-inset,height-inset,Int32(24/scale),Int32(24/scale)) else {
+                ShowWindow(window,Int32(SW_HIDE)); return false
+            }
+            defer { DeleteObject(content) }
+            guard CombineRgn(frame,frame,content,Int32(RGN_DIFF)) != 0,
+                SetWindowRgn(window,frame,true) != 0 else {
+                ShowWindow(window,Int32(SW_HIDE)); return false
+            }
+            transferred = true // Windows owns the frame region after SetWindowRgn succeeds.
+            guard grid.pointee.lpVtbl.pointee.put_CornerRadius(grid, __x_ABI_CWindows_CUI_CXaml_CCornerRadius(TopLeft: radius, TopRight: radius, BottomRight: radius, BottomLeft: radius)) >= 0 else {
+                ShowWindow(window,Int32(SW_HIDE)); return false
+            }
+        }
+        if (frameSize.map({ $0 != size }) ?? true) || GetWindowLongPtrW(window,Int32(GWL_STYLE)) & LONG_PTR(WS_VISIBLE) == 0 {
+            guard SetWindowPos(window, HWND(bitPattern: 1), 0, 0, width, height, UINT(SWP_NOACTIVATE | SWP_SHOWWINDOW)) else {
+                ShowWindow(window,Int32(SW_HIDE)); return false
+            }
+        }
+        frameSize = size
+        return true
     }
 
     func close() {
@@ -258,11 +291,15 @@ final class NativeSearchBackdrop {
         // Drain deferred XAML work through two warm-ups, then require four stable reopen cycles.
         for cycle in 0..<6 {
             let backdrop = try NativeSearchBackdrop(parent: parent)
-            backdrop.resize(width: 640, height: 360, cornerRadius: 16, highContrast: true)
+            try expect(backdrop.resize(width: 640, height: 360, cornerRadius: 16, highContrast: true),"high contrast material sizing")
             var fallback: boolean = 0
             try SearchXamlReferences.check(backdrop.acrylic.pointee.lpVtbl.pointee.get_AlwaysUseFallback(backdrop.acrylic, &fallback), "Read Search contrast fallback")
             try expect(fallback != 0, "high contrast fallback")
-            backdrop.resize(width: 640, height: 360, cornerRadius: 16, highContrast: false)
+            try expect(backdrop.resize(width: 640, height: 360, cornerRadius: 16, highContrast: false),"material sizing")
+            guard let frame = CreateRectRgn(0,0,0,0) else { throw WindowsError.api("Read Search frame fixture",GetLastError()) }
+            defer { DeleteObject(frame) }
+            try expect(GetWindowRgn(backdrop.window,frame) != 0 && PtInRegion(frame,320,4) &&
+                !PtInRegion(frame,320,88) && !PtInRegion(frame,320,180),"continuous content excluded from Acrylic frame")
             try expect(IsWindow(backdrop.window) && !IsWindowVisible(parent) && !IsWindowVisible(backdrop.window), "hidden HWND ownership")
             var bounds = RECT()
             try expect(GetClientRect(backdrop.window, &bounds) && bounds.right == 640 && bounds.bottom == 360, "native child sizing")
@@ -279,9 +316,16 @@ final class NativeSearchBackdrop {
             try expect(SendMessageW(backdrop.window, UINT(WM_NCHITTEST), 0, LPARAM(50 | (50 << 16))) == LRESULT(HTTRANSPARENT), "transparent HWND hit testing")
             backdrop.close(); backdrop.close()
             try expect(!IsWindow(backdrop.window), "source HWND destruction")
+            let releaseDeadline = GetTickCount64() + 1500
             settle()
-            let resources = (gdi: GetGuiResources(GetCurrentProcess(), DWORD(GR_GDIOBJECTS)),
+            var resources = (gdi: GetGuiResources(GetCurrentProcess(), DWORD(GR_GDIOBJECTS)),
                 user: GetGuiResources(GetCurrentProcess(), DWORD(GR_USEROBJECTS)))
+            // Close schedules OS work; wait boundedly without relaxing the exact resource baseline.
+            while let warmedResources, resources != warmedResources, GetTickCount64() < releaseDeadline {
+                settle()
+                resources = (GetGuiResources(GetCurrentProcess(),DWORD(GR_GDIOBJECTS)),
+                    GetGuiResources(GetCurrentProcess(),DWORD(GR_USEROBJECTS)))
+            }
             if let warmedResources {
                 try expect(resources == warmedResources, "material resources return to warmed baseline after reopen \(cycle + 1) (GDI \(warmedResources.gdi)/\(resources.gdi), USER \(warmedResources.user)/\(resources.user))")
             } else if cycle == 1 { warmedResources = resources }

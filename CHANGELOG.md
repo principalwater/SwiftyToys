@@ -1,5 +1,22 @@
 # Changelog
 
+## SwiftyToys 0.1.17 — 2026-10-13
+
+- Keep Search's frame and results steady while typing; grow for additional rows
+  without shrinking between queries, and restore the compact bar on clear/reopen.
+- Preserve selection and valid scroll position during progressive results; block
+  retained-result actions until a reply for the current query arrives.
+- Skip unchanged native text, row, layout, region and material updates.
+- Restore list selection and scroll before resuming redraw; coalesce pending
+  notices and paint native rows/buttons with checked OS buffered-paint fallback.
+- Use Windows' plain-text Rich Edit for the query, preserving native Unicode,
+  selection, Undo, IME, accessible naming and the input limit without automatic
+  keyboard or font-size switching.
+- Unify input, results, preview and actions on one readable content surface with
+  a narrow OS Acrylic frame, retaining native IME, accessibility and system fallbacks.
+- Refresh high-contrast material colors and invalidate partial geometry updates;
+  verify strict resource cleanup after bounded asynchronous XAML teardown.
+
 ## SwiftyToys 0.1.16 — 2026-10-13
 
 - Clip Search's Acrylic background against overlapping native input, results,

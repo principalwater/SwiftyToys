@@ -5,6 +5,8 @@
 #include <Windows.h>
 #include <winhttp.h>
 #include <commctrl.h>
+#include <uxtheme.h>
+#include <richedit.h>
 #include <oleacc.h>
 #include <wtsapi32.h>
 #include <dbt.h>
