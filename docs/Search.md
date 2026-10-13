@@ -127,7 +127,9 @@ saving or hardware limitations. SwiftyToys preserves those system choices and
 uses native high-contrast colors. A material initialization failure leaves Search
 usable with an opaque surface.
 
-The OS framework remains loaded after Search is hidden; the source closes before
+The background and native controls use Windows sibling clipping, so Acrylic
+cannot draw into higher controls' visible regions. The OS framework remains
+loaded after Search is hidden; the source closes before
 its UI-thread manager at application exit. There is no separate WinUI/Windows App
 SDK download, Apple SDK, desktop capture, application blur renderer or idle
 animation. English strings have language-pack fallback, including the Russian

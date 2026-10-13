@@ -112,7 +112,7 @@ Portable BrightnessCore/KeyboardCore/SearchCore tests use Swift Testing; native 
 ./scripts/build.ps1
 ./scripts/test.ps1
 ./scripts/package.ps1
-./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.15-win-x64
+./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.16-win-x64
 ```
 
 [Contributor guide](CONTRIBUTING.md) · [Packaging](docs/Packaging.md) ·

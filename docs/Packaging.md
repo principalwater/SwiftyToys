@@ -61,7 +61,7 @@ replaces runtime PowerShell helpers. The integrated build measured
 Run scripts/test.ps1, then build.ps1 (sequentially: SwiftBuild shares its database).
 Developer PowerShell scripts only invoke build/test tools; none is shipped or run
 by the application or installer. Package with scripts/package.ps1, then run
-scripts/build-setup.ps1 -PackageDirectory artifacts/SwiftyToys-0.1.15-win-x64.
+scripts/build-setup.ps1 -PackageDirectory artifacts/SwiftyToys-0.1.16-win-x64.
 The setup build runs parser rejection checks and validates the actual resource,
 protected extraction, native stage-two controls and owned cleanup without installing.
 Native --test-installer, --test-shell-integration, --test-installer-ui and

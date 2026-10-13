@@ -1,4 +1,27 @@
-# Validation snapshot: 0.1.15 Search presentation
+# Validation snapshot: 0.1.16 Search content clipping
+
+2026-10-13. The OS XAML child initially had only WS_CHILD (0x40000000),
+without WS_CLIPSIBLINGS. Its lower z-order alone did not prevent painting over
+overlapping native controls. The material now preserves its existing styles,
+adds sibling clipping and refreshes its frame; native siblings also clip.
+
+The final rebuilt candidate is 7,569,920 bytes. The explicit interactive layering
+fixture verifies that the material's actual native DC visible region excludes
+every input/result/status/preview/action control, while each control's interior
+remains visible. It passes through collapsed, expanded and collapsed layouts.
+The hidden overlap fixture also checks nonempty EDIT/STATIC/LISTBOX siblings,
+shared parent/bottom ordering, resource cleanup and prior quit preservation.
+Two old/new clipping comparisons reproduced the missing exclusion without the
+fix and verified exclusion with it. Five fresh hidden fixture processes passed
+30 close/reopen cycles. Deferred XAML cleanup is drained for up to 200 ms after
+each close; two warm-ups precede four strict GDI/USER resource comparisons.
+
+The inspectable read-only preview exposes live input and calculated results to
+Windows accessibility. Window graphics capture timed out twice, so no screenshot
+or final composed-pixel acceptance is claimed from these tests. Native region
+verification is evidence of clipping, not a substitute for visual acceptance.
+
+## Previously verified 0.1.15 Search presentation
 
 2026-10-13. The optimized Swift 6.4.1 candidate is 7,561,728 bytes and passes
 all 41 portable tests and 28 native checks. Search tests cover complete one/six-row

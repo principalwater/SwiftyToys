@@ -125,6 +125,17 @@ final class NativeSearchBackdrop {
         var child: HWND?
         try SearchXamlReferences.check(interop.pointee.lpVtbl.pointee.get_WindowHandle(interop, &child), "Get Search material window")
         guard let child else { throw WindowsError.unsupported("Search material child window is unavailable.") }
+        // A lower sibling can paint over higher native controls unless its visible region clips them.
+        let style = GetWindowLongPtrW(child, Int32(GWL_STYLE))
+        SetLastError(0)
+        let previous = SetWindowLongPtrW(child, Int32(GWL_STYLE), style | LONG_PTR(WS_CLIPSIBLINGS))
+        if previous == 0, GetLastError() != 0 {
+            throw WindowsError.api("Clip Search material around native controls", GetLastError())
+        }
+        guard SetWindowPos(child, nil, 0, 0, 0, 0,
+            UINT(SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE)) else {
+            throw WindowsError.api("Refresh Search material clipping", GetLastError())
+        }
         let gridFactory = try refs.factory("Windows.UI.Xaml.Controls.Grid", "ae814041-c531-43b4-bf99-12f506f7b01c", as: __x_ABI_CWindows_CUI_CXaml_CControls_CIGridFactory.self)
         var root: UnsafeMutablePointer<__x_ABI_CWindows_CUI_CXaml_CControls_CIGrid>?
         var inner: UnsafeMutablePointer<IInspectable>?
@@ -200,12 +211,6 @@ final class NativeSearchBackdrop {
         func expect(_ condition: Bool, _ name: String) throws {
             guard condition else { throw WindowsError.unsupported("Search material check failed: " + name) }
         }
-        let parent = withWideString("STATIC") {
-            CreateWindowExW(DWORD(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE), $0, nil, DWORD(WS_POPUP),
-                0, 0, 640, 360, nil, nil, GetModuleHandleW(nil), nil)
-        }
-        guard let parent else { throw WindowsError.api("Create hidden Search material fixture", GetLastError()) }
-        defer { _ = DestroyWindow(parent) }
         var priorQuit: Int32?
         var message = MSG()
         while PeekMessageW(&message, nil, UINT(WM_QUIT), UINT(WM_QUIT), UINT(PM_REMOVE)) {
@@ -216,7 +221,42 @@ final class NativeSearchBackdrop {
             while PeekMessageW(&message, nil, UINT(WM_QUIT), UINT(WM_QUIT), UINT(PM_REMOVE)) {}
             if let priorQuit { PostQuitMessage(priorQuit) }
         }
-        for _ in 0..<2 {
+        func settle() {
+            let deadline = GetTickCount64() + 200
+            repeat {
+                var count = 0
+                while count < 256, GetTickCount64() < deadline,
+                    PeekMessageW(&message, nil, 0, 0, UINT(PM_REMOVE)) {
+                    count += 1
+                    if message.message == UINT(WM_QUIT) {
+                        if priorQuit == nil { priorQuit = Int32(truncatingIfNeeded: message.wParam) }
+                    } else { _ = TranslateMessage(&message); _ = DispatchMessageW(&message) }
+                }
+                _ = MsgWaitForMultipleObjectsEx(0, nil, 10, DWORD(QS_ALLINPUT), DWORD(MWMO_INPUTAVAILABLE))
+            } while GetTickCount64() < deadline
+        }
+        let parent = withWideString("STATIC") {
+            CreateWindowExW(DWORD(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE), $0, nil, DWORD(WS_POPUP) | DWORD(WS_CLIPCHILDREN),
+                0, 0, 640, 360, nil, nil, GetModuleHandleW(nil), nil)
+        }
+        guard let parent else { throw WindowsError.api("Create hidden Search material fixture", GetLastError()) }
+        defer { _ = DestroyWindow(parent) }
+        var controls: [HWND] = []
+        for (kind, text, x, y, width, height) in [("EDIT", "Visible query", 20, 20, 360, 40),
+            ("STATIC", "Visible status", 20, 70, 360, 30), ("LISTBOX", "Results", 20, 110, 360, 200)] {
+            let control = withWideString(kind) { name in withWideString(text) {
+                CreateWindowExW(0, name, $0, DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS),
+                    Int32(x), Int32(y), Int32(width), Int32(height), parent, nil, GetModuleHandleW(nil), nil)
+            } }
+            guard let control else { throw WindowsError.api("Create overlapping Search control fixture", GetLastError()) }
+            controls.append(control)
+        }
+        _ = withWideString("Visible result") { SendMessageW(controls[2], UINT(LB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0))) }
+        try expect(GetWindowTextLengthW(controls[0]) > 0 && GetWindowTextLengthW(controls[1]) > 0 &&
+            SendMessageW(controls[2], UINT(LB_GETCOUNT), 0, 0) == 1, "nonempty overlapping native controls")
+        var warmedResources: (gdi: DWORD, user: DWORD)?
+        // Drain deferred XAML work through two warm-ups, then require four stable reopen cycles.
+        for cycle in 0..<6 {
             let backdrop = try NativeSearchBackdrop(parent: parent)
             backdrop.resize(width: 640, height: 360, cornerRadius: 16, highContrast: true)
             var fallback: boolean = 0
@@ -226,11 +266,25 @@ final class NativeSearchBackdrop {
             try expect(IsWindow(backdrop.window) && !IsWindowVisible(parent) && !IsWindowVisible(backdrop.window), "hidden HWND ownership")
             var bounds = RECT()
             try expect(GetClientRect(backdrop.window, &bounds) && bounds.right == 640 && bounds.bottom == 360, "native child sizing")
+            try expect(GetWindowLongPtrW(backdrop.window, Int32(GWL_STYLE)) & LONG_PTR(WS_CLIPSIBLINGS) != 0 &&
+                GetParent(backdrop.window) == parent && GetWindow(backdrop.window, UINT(GW_HWNDNEXT)) == nil,
+                "material clips higher sibling controls at bottom z-order")
+            for control in controls {
+                try expect(GetParent(control) == parent && IsWindow(control) &&
+                    GetWindowLongPtrW(control, Int32(GWL_STYLE)) & LONG_PTR(WS_CLIPSIBLINGS) != 0,
+                    "overlapping native sibling ownership and clipping")
+            }
             try expect(GetWindowLongPtrW(backdrop.window, Int32(GWL_STYLE)) & LONG_PTR(WS_TABSTOP) == 0 &&
                 GetWindowLongPtrW(backdrop.window, Int32(GWL_EXSTYLE)) & LONG_PTR(WS_EX_CONTROLPARENT) == 0, "skip native tab traversal")
             try expect(SendMessageW(backdrop.window, UINT(WM_NCHITTEST), 0, LPARAM(50 | (50 << 16))) == LRESULT(HTTRANSPARENT), "transparent HWND hit testing")
             backdrop.close(); backdrop.close()
             try expect(!IsWindow(backdrop.window), "source HWND destruction")
+            settle()
+            let resources = (gdi: GetGuiResources(GetCurrentProcess(), DWORD(GR_GDIOBJECTS)),
+                user: GetGuiResources(GetCurrentProcess(), DWORD(GR_USEROBJECTS)))
+            if let warmedResources {
+                try expect(resources == warmedResources, "material resources return to warmed baseline after reopen \(cycle + 1) (GDI \(warmedResources.gdi)/\(resources.gdi), USER \(warmedResources.user)/\(resources.user))")
+            } else if cycle == 1 { warmedResources = resources }
         }
         try expect(PostThreadMessageW(GetCurrentThreadId(), UINT(WM_QUIT), 37, 0) &&
             PostThreadMessageW(GetCurrentThreadId(), UINT(WM_QUIT), 37, 0), "queue duplicate quit fixture")

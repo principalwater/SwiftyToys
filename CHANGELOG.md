@@ -1,5 +1,14 @@
 # Changelog
 
+## SwiftyToys 0.1.16 — 2026-10-13
+
+- Clip Search's Acrylic background against overlapping native input, results,
+  preview and buttons so the material cannot paint over their content.
+- Verify overlapping native sibling ownership, clipping and resource cleanup;
+  add an explicit interactive visible-region regression check.
+- Keep the read-only design preview open when inactive and expose it as an
+  inspectable application window; normal Search still dismisses on activation loss.
+
 ## SwiftyToys 0.1.15 — 2026-10-13
 
 - Make Search a compact rounded query bar with larger type, expanding results,
