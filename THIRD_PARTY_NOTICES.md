@@ -109,7 +109,7 @@ port, fork, or endorsed version of either project.
 
 Starting with 0.5.2, packages statically link the standard library, Concurrency,
 Synchronization, WinSDK, Dispatch and Blocks runtime from the unmodified official
-Swift 6.4.0 Windows SDK. The Apache 2.0 license and Swift runtime exception remain
+Swift 6.4.1 Windows SDK. The Apache 2.0 license and Swift runtime exception remain
 in `Licenses/Swift.txt` and `Licenses/Dispatch.txt`. The application's MIT license
 does not replace those licenses. No Foundation or ICU binary is linked or bundled.
 
@@ -139,6 +139,15 @@ Win32 interop declarations were written against Microsoft's public API documenta
 Windows SDK layouts are imported at build time. Windows and the Microsoft Visual
 C++ x64 Redistributable are system prerequisites; their binaries are not bundled.
 There is no .NET dependency in the Swift application.
+
+## SwiftOSPrimitives — native page ownership
+
+The Windows build links the MIT-licensed PageMemory component from
+[SwiftOSPrimitives](https://github.com/principalwater/SwiftOSPrimitives).
+It owns the bounded temporary buffer used by streaming SHA-256 verification,
+using synchronous borrowed spans and explicit native page release. The pinned
+source revision is in `Package.swift`; its license is retained in
+`Licenses/SwiftOSPrimitives.txt`.
 
 ## Optional local semantic search
 

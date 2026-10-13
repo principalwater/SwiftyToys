@@ -72,6 +72,9 @@ component licenses. Download, cancellation,
 removal and status checks run on a cold worker. Missing or incompatible components
 leave basic search available. Downloaded files are not reported as inference-ready
 until the worker has passed its tokenizer, embedding and retrieval checks.
+The selected folder contains your documents, not model weights: downloaded
+components are stored separately. An empty folder needs readable text files
+before it can produce semantic results; settings and Search explain this state.
 The optional component requires Windows 10 version 1903 or newer and a compatible
 x64 runtime/CPU; basic search remains independent of it.
 

@@ -11,14 +11,18 @@ var targets: [Target] = [
     .testTarget(name: "BrightnessCoreTests", dependencies: ["BrightnessCore"], path: "tests/BrightnessCoreTests"),
 ]
 var products: [Product] = [.library(name: "BrightnessCore", targets: ["BrightnessCore"])]
+var dependencies: [Package.Dependency] = []
 #if os(Windows)
+    dependencies.append(.package(
+        url: "https://github.com/principalwater/SwiftOSPrimitives.git",
+        revision: "d2a35ed10d4481bd2c47cc566bb7266baddf8669"))
     targets += [
         .systemLibrary(name: "WindowsDisplayABI", path: "Sources/WindowsDisplayABI"),
         .systemLibrary(name: "SearchIndexABI", path: "Sources/SearchIndexABI"),
         .systemLibrary(name: "SearchXamlABI", path: "Sources/SearchXamlABI"),
         .systemLibrary(name: "EmbeddingABI", path: "Sources/EmbeddingABI"),
         .executableTarget(
-            name: "SwiftyToys", dependencies: ["BrightnessCore", "KeyboardCore", "SearchCore", "WindowsDisplayABI", "SearchIndexABI", "SearchXamlABI", "EmbeddingABI"],
+            name: "SwiftyToys", dependencies: ["BrightnessCore", "KeyboardCore", "SearchCore", "WindowsDisplayABI", "SearchIndexABI", "SearchXamlABI", "EmbeddingABI", .product(name: "PageMemory", package: "SwiftOSPrimitives")],
             linkerSettings: [
                 .linkedLibrary("user32"), .linkedLibrary("gdi32"),
                 .linkedLibrary("shell32"), .linkedLibrary("dxva2"), .linkedLibrary("hid"),
@@ -36,5 +40,6 @@ var products: [Product] = [.library(name: "BrightnessCore", targets: ["Brightnes
     products.append(.executable(name: "SwiftyToys", targets: ["SwiftyToys"]))
 #endif
 let package = Package(
-    name: "SwiftyToys", platforms: [.macOS(.v26)], products: products, targets: targets,
+    name: "SwiftyToys", platforms: [.macOS(.v26)], products: products,
+    dependencies: dependencies, targets: targets,
     swiftLanguageModes: [.v6])

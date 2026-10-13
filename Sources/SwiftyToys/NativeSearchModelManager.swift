@@ -44,7 +44,12 @@ final class NativeSearchModelManager: Sendable {
                         self.publish("Removing optional model…",busy:true); try NativeEmbeddingAssets.remove()
                     }
                     switch try NativeEmbeddingAssets.status() {
-                    case .downloaded: self.publish("Optional model downloaded. It loads only when semantic search is enabled and used.",busy:false,downloaded:true)
+                    case .downloaded:
+                        let preferences = SearchPreferences()
+                        let available = !preferences.folder.isEmpty && NativeSearchFiles.validFolder(preferences.folder)
+                        let documents = preferences.semantic && available
+                            ? NativeSearchFiles.collect(roots: [preferences.folder], maximum: 64, textOnly: true, cancelled: { self.isCancelled() }).count : 0
+                        self.publish(preferences.semanticSetupMessage(folderAvailable: available, documentCount: documents), busy: false, downloaded: true)
                     case .missing: self.publish("Optional model is not downloaded. Basic search works without it.",busy:false)
                     case .unsupported: self.publish("The optional model needs a compatible Windows x64 CPU. Basic search remains available.",busy:false)
                     }

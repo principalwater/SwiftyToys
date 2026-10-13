@@ -70,7 +70,11 @@ func runCLI(_ args: [String]) throws -> Int32 {
         }
         return 0
     }
-    if command == "--test-search-policy" { try testNativeSearchPolicy(); return 0 }
+    if command == "--test-search-policy" {
+        try NativeSearchProcess.selfCheck()
+        try testNativeSearchPolicy()
+        return 0
+    }
     if command == "--test-search-layering" { try NativeSearchWindow.layeringCheck(); return 0 }
     if command == "--test-search-ui" {
         // Measure XAML resources before Rich Edit/accessibility can queue unrelated OS work.
