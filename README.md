@@ -86,7 +86,9 @@ Normal-user injection cannot control elevated apps or the secure desktop.
 
 ## Search
 
-**Cmd+Space** opens a compact native panel with the unchanged Mac keyboard preset.
+**Cmd+Space** opens a rounded native search bar with the unchanged Mac keyboard preset.
+Results expand below it; preview opens on demand. The surrounding Windows Acrylic
+surface respects system transparency/high-contrast fallbacks.
 Use arrows, Enter, Cmd+C, Space for preview, Cmd+Enter to reveal a file, and Esc to
 close. Apps and Windows-indexed content use native Shell/Search APIs, with local
 filename fallback. Calculations, units and supported world clocks work offline.
@@ -110,7 +112,7 @@ Portable BrightnessCore/KeyboardCore/SearchCore tests use Swift Testing; native 
 ./scripts/build.ps1
 ./scripts/test.ps1
 ./scripts/package.ps1
-./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.14-win-x64
+./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.15-win-x64
 ```
 
 [Contributor guide](CONTRIBUTING.md) · [Packaging](docs/Packaging.md) ·

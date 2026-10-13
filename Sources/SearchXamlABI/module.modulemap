@@ -1,0 +1,4 @@
+module SearchXamlABI {
+    header "SearchXamlABI.h"
+    export *
+}

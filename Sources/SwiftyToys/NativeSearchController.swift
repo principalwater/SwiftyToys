@@ -17,6 +17,12 @@ final class NativeSearchController {
         if panel == nil {
             panel = try NativeSearchWindow(onQuery: { [weak self] query in
                 guard let self, let panel = self.panel else { return }
+                if query.allSatisfy(\.isWhitespace) {
+                    self.service?.invalidate(generation:panel.generation)
+                    _ = panel.delivery.post(NativeSearchSnapshot(generation:panel.generation,results:[],
+                        status:"Search apps, files, or calculate",quickAnswer:nil))
+                    return
+                }
                 do {
                     if self.service == nil { self.service = try NativeSearchService(delivery: panel.delivery) }
                     self.service?.submit(query: query, generation: panel.generation, preferences: self.preferences)
