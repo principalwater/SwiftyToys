@@ -5,6 +5,7 @@
 #include <Windows.h>
 #include <winhttp.h>
 #include <commctrl.h>
+#include <oleacc.h>
 #include <wtsapi32.h>
 #include <dbt.h>
 #include <magnification.h>

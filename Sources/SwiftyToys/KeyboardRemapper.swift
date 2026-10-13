@@ -78,6 +78,7 @@ private func deliverAction(_ action: String, context: UnsafeMutablePointer<Remap
     case "minimize window": command = 5
     case "lock screen": command = 8
     case "sleep": command = 9
+    case "open search": command = 10
     default: return false
     }
     return context.pointee.destination.post(

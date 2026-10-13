@@ -1,0 +1,4 @@
+module SearchIndexABI [system] {
+    header "SearchIndexABI.h"
+    export *
+}

@@ -25,7 +25,8 @@ struct KeyboardConfiguration: Sendable {
         let powerPrefix = "# powerRule\t"
         for rawLine in contents.split(whereSeparator: \.isNewline) {
             // Older releases ignore the new power actions rather than failing at startup.
-            let line = rawLine.hasPrefix(powerPrefix) ? rawLine.dropFirst(powerPrefix.count) : rawLine
+            let searchPrefix = "# searchRule\t"
+            let line = rawLine.hasPrefix(powerPrefix) ? rawLine.dropFirst(powerPrefix.count) : rawLine.hasPrefix(searchPrefix) ? rawLine.dropFirst(searchPrefix.count) : rawLine
             if line.hasPrefix("enabled=") {
                 enabled = line == "enabled=1"
             } else if line.hasPrefix(marker) {
@@ -103,7 +104,7 @@ struct KeyboardConfiguration: Sendable {
                 "languageMode=\(languageMode)", "languagePair=\(languagePair.map(String.init).joined(separator:","))",
                 "exclude=\(excluded.joined(separator: ","))",
             ]
-            + rules.map { ($0.action == "lock screen" || $0.action == "sleep" ? "# powerRule\t" : "") + "\($0.source.description)\t\($0.destination)\t\($0.application)" }).joined(separator: "\r\n")
+            + rules.map { ($0.action == "lock screen" || $0.action == "sleep" ? "# powerRule\t" : $0.action == "open search" ? "# searchRule\t" : "") + "\($0.source.description)\t\($0.destination)\t\($0.application)" }).joined(separator: "\r\n")
             + "\r\n"
     }
     static func selfCheck() throws {
@@ -122,5 +123,23 @@ struct KeyboardConfiguration: Sendable {
             persisted.split(whereSeparator: \.isNewline).filter({ !$0.hasPrefix("#") }).allSatisfy({ !$0.hasSuffix("\tlock screen\t") && !$0.hasSuffix("\tsleep\t") })
         else { throw WindowsError.unsupported("Power rules did not round-trip or remain rollback-compatible.") }
         Console.writeLine("PASS: legacy Mac preset upgrade, saved deletions and customized rules preserved")
+        let search = try KeyboardConfiguration(contents:"# macPresetVersion=1\n# searchRule\tWin+Space\tOpen search\t\n")
+        guard search.fileContents.containsText("# searchRule\t"), try KeyboardConfiguration(contents:search.fileContents).rules == search.rules else { throw WindowsError.unsupported("Search action did not remain rollback-compatible.") }
+    }
+
+    /// Route only the original Mac search preset. User-edited shortcuts and exclusions keep their existing meaning.
+    func routingSearch(enabled: Bool) throws -> KeyboardConfiguration {
+        var effective = self
+        let source = try KeyChord("Win+Space"), target = try KeyChord("Win+S")
+        effective.rules = try rules.map { rule in
+            if enabled, rule.source == source, rule.target == target, rule.application.isEmpty { return try RemapRule(from: rule.source.description, to: "Open search") }
+            if !enabled, rule.action == "open search" { return try RemapRule(from: rule.source.description, to: "Win+S", application: rule.application) }
+            return rule
+        }
+        let reveal = try KeyChord("Win+Enter")
+        if enabled, effective.rules.count < 64, !effective.rules.contains(where:{ $0.source == reveal }) {
+            effective.rules.append(try RemapRule(from:"Win+Enter",to:"Ctrl+Enter",application:"swiftytoys.exe"))
+        }
+        return effective
     }
 }

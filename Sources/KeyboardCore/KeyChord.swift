@@ -143,7 +143,7 @@ public struct RemapRule: Equatable, Sendable {
     public init(from: String, to: String, application: String = "") throws {
         source = try KeyChord(from)
         let actionName = to.lowercased().trimmingWhitespace()
-        if ["switch language", "pin window", "minimize window", "lock screen", "sleep", "disable key"].contains(actionName) {
+        if ["switch language", "pin window", "minimize window", "lock screen", "sleep", "open search", "disable key"].contains(actionName) {
             action = actionName
             target = nil
         } else {

@@ -7,8 +7,9 @@ patterns. Read the relevant requirements and validation notes before editing.
 ## Repository map
 
 - Sources/SwiftyToys: Windows application, native UI and system integration.
-- Sources/BrightnessCore and Sources/KeyboardCore: portable algorithms.
+- Sources/BrightnessCore, Sources/KeyboardCore and Sources/SearchCore: portable algorithms.
 - Sources/WindowsDisplayABI and Sources/SetupABI: header-only Windows interop.
+- Sources/SearchIndexABI and Sources/EmbeddingABI: declaration-only search/model interop.
 - tests: hardware-independent Swift Testing checks.
 - tools: Swift setup bootstrap and build-only payload builder.
 - scripts: developer build, test and packaging orchestration; never runtime payload.

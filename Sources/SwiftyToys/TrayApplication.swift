@@ -33,6 +33,9 @@ final class TrayApplication {
     private var reloadingInput = false
     private var applyingMouseScroll = false
     private var dashboard: SettingsWindow?
+    private var search: NativeSearchController?
+    private var searchPreferences = SearchPreferences()
+    private var searchModel: NativeSearchModelManager?
     private let tools = DesktopTools()
     private let sleepGate = SleepGate()
     private var systemIndicator: SystemIndicator?
@@ -69,10 +72,11 @@ final class TrayApplication {
             "SwiftyToys.OSD", title: "SwiftyToys", style: DWORD(WS_POPUP),
             extended: DWORD(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TOPMOST))
         guard let window, let osd else { throw WindowsError.api("CreateWindow", GetLastError()) }
+        searchModel = NativeSearchModelManager(destination: MessageDestination(window))
         configureBrightnessRepeat()
         WTSRegisterSessionNotification(window, DWORD(NOTIFY_FOR_THIS_SESSION))
         remapper = try KeyboardRemapper(
-            destination: MessageDestination(window), configuration: KeyboardConfiguration(),
+            destination: MessageDestination(window), configuration: KeyboardConfiguration().routingSearch(enabled: searchPreferences.enabled),
             brightnessKeys: settings.grabFunctionKeys, allowInjectedBrightness: settings.interceptInjectedKeys)
         SetLayeredWindowAttributes(osd, 0, 235, DWORD(LWA_ALPHA))
         tray.cbSize = DWORD(MemoryLayout<NOTIFYICONDATAW>.size)
@@ -137,6 +141,7 @@ final class TrayApplication {
             if result == 0 { break }
             if result < 0 { throw WindowsError.api("GetMessage", GetLastError()) }
             if dashboard?.dialogMessage(&message) == true { continue }
+            if search?.dialogMessage(&message) == true { continue }
             TranslateMessage(&message)
             DispatchMessageW(&message)
         }
@@ -161,6 +166,9 @@ final class TrayApplication {
             return 0
         }
         switch message {
+        case searchModelMessage:
+            if let status = searchModel?.take() { dashboard?.updateSearchModel(status) }
+            return 0
         case mouseScrollResultMessage:
             applyingMouseScroll = value == 4
             do {
@@ -209,6 +217,8 @@ final class TrayApplication {
                     dashboard?.refreshLanguages(result: data == 1 ? "Apple input profiles updated." : "Windows could not update input profiles. Verify language settings.")
                 } else if value == 8 {
                     try DesktopPower.lock()
+                } else if value == 10 {
+                    try showSearch()
                 } else if value == 9 {
                     guard sleepGate.busy.withLock({ busy in if busy { return false }; busy = true; return true }) else { return 0 }
                     let destination = MessageDestination(window)
@@ -478,7 +488,7 @@ final class TrayApplication {
         guard !exiting, !reloadingInput else { throw WindowsError.unsupported("Input settings are already changing.") }
         reloadingInput = true
         defer { reloadingInput = false }
-        let configuration = try KeyboardConfiguration()
+        let configuration = try KeyboardConfiguration().routingSearch(enabled: searchPreferences.enabled)
         guard remapper?.stop() != false else {
             throw WindowsError.unsupported("Input worker did not stop within 5 seconds. Previous worker retained; try again after it finishes.")
         }
@@ -502,8 +512,44 @@ final class TrayApplication {
         dashboard?.show()
     }
 
+    private func showSearch() throws {
+        guard searchPreferences.enabled else { try shellOpen("search-ms:"); return }
+        if search == nil {
+            search = NativeSearchController(preferences:searchPreferences,action:{ [weak self] action in
+                guard let self else { return }
+                switch action {
+                case "settings": try self.showDashboard()
+                case "lock": try DesktopPower.lock()
+                case "sleep": if let window = self.window { _ = MessageDestination(window).post(toyActionMessage,value:9) }
+                case "calculator": try shellOpen("calculator:")
+                case "explorer": try shellOpen("explorer.exe")
+                case "windows-settings": try shellOpen("ms-settings:")
+                case "bluetooth": try shellOpen("ms-settings:bluetooth")
+                case "sound": try shellOpen("ms-settings:sound")
+                case "display": try shellOpen("ms-settings:display")
+                default: throw WindowsError.unsupported("Unknown search action.")
+                }
+            })
+        }
+        try search?.toggle()
+    }
+
     private func dashboardCommand(_ id: Int, _ values: [String]) throws -> String {
         switch id {
+        case 810:
+            guard values.count == 3, values.prefix(2).allSatisfy({ $0 == "0" || $0 == "1" }) else { throw WindowsError.unsupported("Invalid search preferences.") }
+            var preferences = SearchPreferences(contents:"")
+            preferences.enabled = values[0] == "1"; preferences.semantic = values[1] == "1"; preferences.folder = values[2]
+            if !preferences.enabled { preferences.semantic = false }
+            try preferences.save()
+            search?.stop(); search = nil; searchPreferences = preferences
+            try reloadRemapper()
+            return "Search settings saved. Cmd + Space uses SwiftyToys Search when the Mac preset is active."
+        case 811: try showSearch(); return "Search opened."
+        case 812: try searchModel?.start("download"); return "Downloading optional model…"
+        case 813: searchModel?.cancel(); return "Cancelling optional download…"
+        case 814: try searchModel?.start("remove"); return "Removing optional model…"
+        case 815: try searchModel?.start("status"); return "Checking optional model…"
         case 211:
             guard let value = values.first.flatMap(Int.init), (0...100).contains(value) else { throw WindowsError.unsupported("Brightness must be 0–100%.") }
             requestDisplay(DisplayRequest(1, value: value))
@@ -621,6 +667,7 @@ final class TrayApplication {
         let localization = Localization()
         for (id, label) in [
             (2500, "Open SwiftyToys"), (2501, "Pause / resume keyboard remapping"),
+            (2502, "Open Search"),
             (0, localization.text("Brightness: {0}%", [String(state.level.percent)])), (1, localization.text("Increase by {0}%", [String(settings.step)])),
             (2, localization.text("Decrease by {0}%", [String(settings.step)])),
             (100, "100%"), (75, "75%"), (50, "50%"), (25, "25%"), (10, "10%"), (3, "Reconnect display"),
@@ -645,6 +692,8 @@ final class TrayApplication {
         let selected = BC_TrackPopupMenu(menu, UINT(TPM_RETURNCMD | TPM_RIGHTBUTTON), point.x, point.y, 0, window, nil)
         if selected == 2500 {
             do { try showDashboard() } catch { Diagnostics.write("settings: \(error)") }
+        } else if selected == 2502 {
+            do { try showSearch() } catch { Diagnostics.write("search: \(error)") }
         } else if selected == 2501 {
             do {
                 var config = try KeyboardConfiguration()
@@ -742,6 +791,7 @@ final class TrayApplication {
         brightnessRepeat.reset()
         guard !exiting else { return }
         exiting = true
+        search?.stop(); search = nil; searchModel?.cancel()
         dashboard = nil
         remapper?.stop()
         remapper = nil

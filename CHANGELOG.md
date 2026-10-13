@@ -1,5 +1,19 @@
 # Changelog
 
+## SwiftyToys 0.1.13 — 2026-10-13
+
+- Add native SwiftyToys Search for apps, files, indexed content, arithmetic,
+  units, dated currency rates, supported world clocks, previews and system actions.
+- Route the unchanged Mac search preset to the panel, preserving custom rules,
+  exclusions and the Windows Search fallback when disabled. Add copy/file reveal.
+- Isolate Shell, Windows Index and reference rates in cancellable bounded children;
+  keep preview independent of model work and reject stale result deliveries.
+- Add explicit optional EmbeddingGemma 2 semantic matching, a pure Swift pinned
+  BPE tokenizer and the original signed Microsoft CPU runtime. Search local
+  excerpts progressively while ordinary results remain immediately available.
+- Add model progress, cancellation/removal, folder selection and license links.
+  Keep models out of the base installer and disable runtime telemetry.
+
 ## SwiftyToys 0.1.12 — 2026-10-13
 
 - Install the fixed Command Ember ICO and explicit shortcut icon before starting

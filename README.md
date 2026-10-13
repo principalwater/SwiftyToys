@@ -27,6 +27,7 @@ Independent of Microsoft and Apple. Local settings; no telemetry or web renderer
 | **[Brightness](docs/Guide.md#features)** — software dimming or DDC/CI; keys, indicator, calibration and recovery | **[Keyboard](docs/Guide.md#features)** — editable Mac shortcuts, application rules and exclusions | **[Input languages](docs/Guide.md#features)** — Ctrl+Space, Caps Lock tap/hold and installed signed Apple RU/EN layouts |
 | **[Desktop](docs/Guide.md#features)** — minimize, pin, lock, Sleep and temporary keep-awake | **[Mouse](docs/Guide.md#features)** — native vertical/horizontal wheel direction; no wheel interception | **[Magic Trackpad](docs/Trackpad.md)** — signed Precision drivers, USB/Bluetooth, gestures and recovery |
 | **[Homebrew](docs/Guide.md#homebrew)** — WSL 2/Ubuntu setup and the official interactive Linux installer | **[Boot Camp](docs/Guide.md#features)** — installed driver metadata and native Windows update entry points | **[Languages](docs/Localization.md)** — English default, Russian example and extensible UTF-8 packs |
+| **[Search](docs/Search.md)** — Cmd+Space, apps/files, calculator, units, dated currency rates, world clock, previews and optional local semantic matching | | |
 
 Open a tile to configure it. **Overview** or **Esc** returns to the tiles; drafts,
 focus and scroll position survive navigation. Closing settings keeps SwiftyToys active.
@@ -83,22 +84,39 @@ edit/delete rules to restore them. Keep one remapper for the same shortcuts.
 Normal-user injection cannot control elevated apps or the secure desktop.
 [Input limitations, Apple layouts and trackpad models](docs/Guide.md#features).
 
+## Search
+
+**Cmd+Space** opens a compact native panel with the unchanged Mac keyboard preset.
+Use arrows, Enter, Cmd+C, Space for preview, Cmd+Enter to reveal a file, and Esc to
+close. Apps and Windows-indexed content use native Shell/Search APIs, with local
+filename fallback. Calculations, units and supported world clocks work offline.
+Currency conversions such as `120 usd rub` use dated Bank of Russia reference
+rates; cached results show their source date. Web search opens only when selected.
+
+Optional **EmbeddingGemma 2** adds local matching by meaning in a chosen folder.
+Download about 370 MB of model/runtime components separately; the basic installer
+contains none. Semantic search considers up to 64 plain-text files in progressive
+batches with bounded excerpts. Initial preparation can be slow; ordinary results
+appear first. Text stays local, runtime telemetry is disabled, and the CPU worker
+unloads after inactivity. The model does not generate answers or exchange rates.
+[Scope, licenses and limits](docs/Search.md).
+
 ## Build and contribute
 
 Use the official Swift 6.4 Windows toolchain, MSVC and Windows SDK.
-Portable BrightnessCore/KeyboardCore tests use Swift Testing; native interop is header-only.
+Portable BrightnessCore/KeyboardCore/SearchCore tests use Swift Testing; native interop is header-only.
 
 ```powershell
 ./scripts/build.ps1
 ./scripts/test.ps1
 ./scripts/package.ps1
-./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.12-win-x64
+./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.13-win-x64
 ```
 
 [Contributor guide](CONTRIBUTING.md) · [Packaging](docs/Packaging.md) ·
 [Windows interop](docs/WindowsInterop.md) · [Performance](docs/Performance.md) ·
 [Security](SECURITY.md). CI verifies Windows and macOS core checks. External changes
-use reviewed PRs; the maintainer controls merges. Size budgets are 7 MB EXE / 3 MB ZIP;
+use reviewed PRs; the maintainer controls merges. Size budgets are 8 MB EXE / 3.5 MB ZIP;
 performance advantages require reproducible measurements.
 
 ## Credits and license
