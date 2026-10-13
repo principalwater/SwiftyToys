@@ -1,3 +1,43 @@
+# Validation snapshot: 0.1.13 candidate
+
+2026-10-13. The optimized native Swift application is 7,398,912 bytes, SHA-256
+`6dadb40500866b892795b78fb1a6ef6f3bdea3bda49a8d7bc0a431127f621af9`.
+All 41 portable tests (5 Search, 21 Keyboard, 15 Brightness) and 28 native checks
+pass. Native checks include hidden Search controls, MSAA names, Unicode, DPI/HC
+layout, Copy/Reveal callbacks, stale deliveries, destruction, preset routing,
+private IPC bounds and read-only Windows Index/apps enumeration.
+
+Actual product CLI checks find applications and indexed documents, calculate
+arithmetic and temperature, convert a currency amount using the dated official
+CBR table and retrieve a supported world clock. Index coverage remains Windows'
+configuration. These checks do not change input, display, drivers or pairing.
+
+The packaged application's optional worker passes actual local retrieval using
+pinned model data and the original signed Microsoft runtime in private test
+storage: dog similarity 0.78760517 versus unrelated mathematics 0.6292832. The
+short cold request took 7,953 ms; an identical cached batch was below the timer's
+1 ms resolution. Two real 128-token documents took 5,188 ms; eight took 16,469 ms.
+Cold-start cancellation and owned-process cleanup took 156 ms. A full 64-file
+folder pass was not timed; none of these samples proves weakest-hardware or GPU
+performance. Separate prototype profiling recorded only CPU-provider kernels.
+
+Actual acquisition uses the production downloader with a redirected private
+process environment. Existing pinned data is verified, the official 51.6 MB
+runtime package downloads, and its exact member passes SHA-256 and Microsoft
+signature checks. Production removal deletes four known components while
+retaining an unrelated test file and the original pinned data. The installed
+user's model cache and feature preference are unchanged by these tests.
+
+The earlier 30-second installed 0.1.12 observation showed about 0.0521% of one
+core, 3.859 MiB resident private bytes and 2.379 MiB watchdog private bytes.
+Compiler activity was present in six of seven samples. This uncontrolled sample
+is historical context, not an A/B result. Response flags on windowless processes
+do not prove UI/input latency.
+
+Full packaged installation and physical Search shortcut acceptance are separate
+from these candidate checks and will be recorded below after completion.
+
+## Previous baseline: 0.1.12
 # Validation snapshot: 0.1.12
 
 ## Native Swift setup
@@ -460,3 +500,31 @@ hardware availability. It does not claim every device/model or configuration wor
 The error-fix executable is below the 6.5 MB budget, links the official Swift
 runtime statically and restricts static DLL imports to System32. No firmware,
 EFI configuration or driver binding was changed during error diagnosis.
+
+## Installed native package
+
+The complete native setup installs successfully with exit code 0. Its payload has
+35 files, expands to 8,143,000 bytes and contains no model assets or runtime scripts.
+Installed application: 7,398,912 bytes, SHA-256
+`dd820215470bc4c802fe50ecd84a851223d2d115a5d6af83e647e73d2732fed6`.
+The intermediate app hash above differs only in four PE timestamp/checksum bytes
+written while embedding the manifest; the installed image matches the package.
+Existing configuration, brightness, keyboard and selected-language files retain
+identical hashes. The resident reports 0.1.13, native WDDM gamma and DDC/CI off.
+No driver or pairing change was requested. Physical Search hotkey acceptance is
+pending the user's check; hidden control/API checks do not replace it.
+## Final frozen package
+
+The final rebuilt app, including typed folder-setting validation and restored
+owner-draw DC state, passes the same 41 portable tests and 28 native checks.
+Final app: 7,399,424 bytes; SHA-256
+`e08fcc8babcffa15106faa99c022caaab987136edc820718d70ec17ecf9eb616`.
+The rebuilt native Setup installs it with exit 0 and all four existing preference
+files retain their original hashes. Its image matches the complete package.
+
+A 30-second installed Search observation measured no CPU-counter increment for
+resident/watchdog. Resident private bytes ended at 5.426 MiB, working set 21.590
+MiB, 303 handles and 11 threads; watchdog private bytes were 2.410 MiB, working
+set 10.137 MiB, 160 handles and one thread. Search UI was present and compiler
+activity absent. This uncontrolled observation is not an A/B benchmark, proof
+of zero CPU use, GPU attribution or weakest-hardware performance.

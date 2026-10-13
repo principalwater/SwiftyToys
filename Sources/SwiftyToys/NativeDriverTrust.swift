@@ -10,6 +10,7 @@ enum NativeDriverTrust {
     enum Signer: String {
         case apple = "CN=Apple Inc.,"
         case microsoftHardware = "CN=Microsoft Windows Hardware Compatibility Publisher,"
+        case microsoftWindows = "CN=Microsoft Windows Publisher,"
     }
 
     /// SHA-256 through CNG. `next` fills the buffer and returns the byte count, or 0 at the end.

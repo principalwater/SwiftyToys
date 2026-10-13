@@ -7,6 +7,12 @@ Windows system DLLs. No executable packer, experimental Swift mode, runtime prun
 or patched SDK is used. Both embed the Command Ember icon, Common Controls v6,
 per-monitor DPI and asInvoker manifest entries.
 
+Search raises the enforced ceilings to 8 MB app / 3.5 MB ZIP; setup retains 2.5 MB.
+An intermediate optimized Search build measured 7,381,504 bytes versus the installed
+0.1.12 app's 6,885,888 bytes; final sizes are recorded in Validation. Model weights,
+tokenizer and the original signed Microsoft CPU runtime are optional downloads,
+excluded from the base payload. Their license texts are included in the package.
+
 Setup uses native CNG SHA-256, Cabinet LZMS, protected temporary storage, COM shell
 links and Task Scheduler. It validates the complete payload before copying, keeps
 settings/recovery, waits for residents and watchdogs to restore their display, and

@@ -95,6 +95,8 @@ final class SettingsWindow {
     private var lastFocusedControl: Int?
     private let preview: Bool
     private let command: (Int, [String]) throws -> String
+    private var searchPreferences = SearchPreferences()
+    private var searchModelStatus = SearchModelStatus(text:"Optional model is not downloaded. Basic search works without it.",busy:false,downloaded:false)
     private var highContrast = false
     private var background: HBRUSH?
     private var white: HBRUSH?
@@ -104,15 +106,15 @@ final class SettingsWindow {
     private var borderColor: COLORREF { highContrast ? textColor : 0x00E8_E3E2 }
     private var backgroundColor: COLORREF { highContrast ? GetSysColor(Int32(COLOR_WINDOW)) : 0x00F9_F7F7 }
     private let titles = [
-        "Overview", "Brightness", "Keyboard", "Input languages", "Desktop", "Mouse", "Magic Trackpad", "Homebrew", "Boot Camp", "About SwiftyToys",
+        "Overview", "Brightness", "Keyboard", "Input languages", "Desktop", "Mouse", "Magic Trackpad", "Homebrew", "Boot Camp", "Search", "About SwiftyToys",
     ]
     private let tileDetails = [
         "Brightness, F1 / F2 keys, and indicator", "Command, Option, and your shortcuts",
         "Ctrl + Space and smart Caps Lock", "Always-on-top windows and no-sleep mode",
         "Natural wheel direction", "Precision Touchpad over USB and Bluetooth",
-        "Package manager inside WSL 2", "Installed drivers and native Windows updates", "Author, source code, and inspiration",
+        "Package manager inside WSL 2", "Installed drivers and native Windows updates", "Apps, files, calculations and local semantic search", "Author, source code, and inspiration",
     ]
-    private let tileGlyphs = ["\u{E706}", "\u{E765}", "\u{E775}", "\u{E7F4}", "\u{E962}", "\u{E7C9}", "\u{E756}", "\u{E713}", "\u{E946}"]
+    private let tileGlyphs = ["\u{E706}", "\u{E765}", "\u{E775}", "\u{E7F4}", "\u{E962}", "\u{E7C9}", "\u{E756}", "\u{E713}", "\u{E721}", "\u{E946}"]
     init(
         brightness: Int, keyboard: KeyboardConfiguration, preview: Bool = false,
         command: @escaping (Int, [String]) throws -> String
@@ -364,8 +366,8 @@ final class SettingsWindow {
     }
 
     private func captureDraft() {
-        draftText[page] = [218, 230, 231, 232, 233, 303, 305, 307, 317, 348, 351].reduce(into: [:]) { values, id in if controls[id] != nil { values[id] = text(id) } }
-        draftChecks[page] = [219, 315, 346, 405, 422, 423].reduce(into: [:]) { values, id in if controls[id] != nil { values[id] = checked(id) } }
+        draftText[page] = [218, 230, 231, 232, 233, 303, 305, 307, 317, 348, 351, 806].reduce(into: [:]) { values, id in if controls[id] != nil { values[id] = text(id) } }
+        draftChecks[page] = [219, 315, 346, 405, 422, 423, 801, 803].reduce(into: [:]) { values, id in if controls[id] != nil { values[id] = checked(id) } }
         draftSelections[page] = [216, 341, 343, 345, 355, 404, 459].reduce(into: [:]) { values, id in if let control = controls[id] { values[id] = Int(SendMessageW(control, UINT(CB_GETCURSEL), 0, 0)) } }
         pageOffsets[page] = scrollOffset
         if page == 2 { draftRuleSelection = selectedRule }
@@ -493,6 +495,14 @@ final class SettingsWindow {
             EnableWindow(control, !wslVirtualizationBlocked && distributions.indices.contains(index) && distributions[index].canInstallHomebrew)
         }
     }
+    func updateSearchModel(_ value: SearchModelStatus) {
+        searchModelStatus = value
+        if let label = controls[808] { setText(label,localization.text(value.text)) }
+        if let button = controls[812] { EnableWindow(button,!value.busy && !value.downloaded && checked(821)) }
+        if let button = controls[813] { EnableWindow(button,value.busy) }
+        if let button = controls[814] { EnableWindow(button,!value.busy) }
+        if let button = controls[815] { EnableWindow(button,!value.busy) }
+    }
     private func tileState(_ page: Int) -> String {
         switch page {
         case 1: return "\(level)%  ·  " + localization.text(brightnessConfiguration?.ddcEnabled == true ? "DDC/CI" : "Software")
@@ -503,6 +513,7 @@ final class SettingsWindow {
         case 6: return "USB + Bluetooth"
         case 7: return "Install in WSL 2"
         case 8: return "On demand"
+        case 9: return searchPreferences.enabled ? "Cmd + Space" : "Off"
         default: return "principalwater"
         }
     }
@@ -538,6 +549,7 @@ final class SettingsWindow {
             "Apple Magic Trackpad gestures via the native Windows engine.",
             "The familiar package manager, on Linux inside Windows.",
             "Native driver diagnostics for Apple hardware running Windows.",
+            "Find, calculate and act from a familiar keyboard-first panel.",
             "Made for Mac users and those who've switched to Windows.",
         ]
         if let subtitle = controls[21] { setText(subtitle, localization.text(page == 0 ? "Mac habits. Windows capabilities." : subtitles[page])) }
@@ -599,7 +611,7 @@ final class SettingsWindow {
             edit("", 303, 300, 452, 202)
             label("New shortcut or action", 304, 520, 422, 280, 25)
             combo(
-                ["Switch language", "Pin window", "Minimize window", "Lock screen", "Sleep", "Disable key", "Ctrl+C", "Alt+Tab"], 305, 520, 452, 238,
+                ["Switch language", "Pin window", "Minimize window", "Lock screen", "Sleep", "Open search", "Disable key", "Ctrl+C", "Alt+Tab"], 305, 520, 452, 238,
                 editable: true)
             label("App (empty = all)", 306, 777, 422, 220, 25)
             edit("", 307, 777, 452, 187)
@@ -740,6 +752,31 @@ final class SettingsWindow {
             button("Windows Update", 702, 300, 594, 214)
             button("Device Manager", 703, 534, 594, 214)
             button("Refresh drivers", 705, 768, 594, 182)
+        case 9:
+            label("SwiftyToys Search",800,300,166,650,42,large:true)
+            check("Enable SwiftyToys Search",801,300,228,650,on:searchPreferences.enabled)
+            label("Cmd + Space opens Search with the Mac keyboard preset. You can customize the Open search action on the Keyboard tile.",802,300,274,650,60)
+            button("Open Search",811,300,345,200)
+            check("Enable local semantic search",803,300,410,650,on:searchPreferences.semantic)
+            label("Optional EmbeddingGemma 2 adds matching by meaning. Text stays on this PC. It does not generate answers or currency rates.",804,300,454,650,66)
+            label("Semantic folder",805,300,535,200,24)
+            _ = control("EDIT",searchPreferences.folder,806,300,570,520,34,style:DWORD(WS_TABSTOP | ES_AUTOHSCROLL))
+            button("Browse…",816,838,570,112)
+            label("Choose a local folder. Search considers up to 64 plain-text files progressively, using bounded excerpts. Hidden and linked files are excluded.",807,300,621,650,66)
+            label(searchModelStatus.text,808,300,706,650,84)
+            label("Optional components use the Microsoft Windows ML Runtime terms and Apache 2.0. Read these licenses before downloading.",818,300,806,650,66)
+            button("Runtime license",819,300,886,240)
+            button("Model license",820,560,886,220)
+            check("I accept the Microsoft runtime terms and Apache 2.0 model license",821,300,944,650,on:false)
+            button("Download optional model",812,300,1008,280)
+            button("Cancel download",813,600,1008,170)
+            button("Remove model",814,790,1008,160)
+            label("About 370 MB on disk; download is optional. The model uses one CPU thread only when asked and unloads after inactivity.",809,300,1064,650,66)
+            button("Save search settings",810,300,1140,280)
+            button("Refresh model status",815,600,1140,260)
+            button("Status details",817,300,1200,180)
+            updateSearchModel(searchModelStatus)
+            if !preview { _ = try? command(815,[]) }
         default:
             label("Think Different.", 600, 300, 166, 650, 46, large: true)
             label("On Windows.  •  SwiftyToys \(AppVersion.string)", 602, 300, 220, 650, 30)
@@ -922,6 +959,7 @@ final class SettingsWindow {
                 return 0
             }
             if id == 502, notification == Int(CBN_SELCHANGE) { updateHomebrewAvailability(); return 0 }
+            if id == 821, notification == Int(BN_CLICKED) { updateSearchModel(searchModelStatus); return 0 }
             if id == 244, notification == Int(BN_CLICKED) {
                 brightnessControlBusy(false)
                 if !preview {
@@ -969,6 +1007,21 @@ final class SettingsWindow {
             if id == Int(IDCANCEL) { ShowWindow(window, Int32(SW_HIDE)); return 0 }
             if id == Int(IDOK) { return 0 }
             do {
+                if id == 810 {
+                    searchPreferences.enabled = checked(801); searchPreferences.semantic = checked(803); searchPreferences.folder = text(806)
+                    status(try command(810,[searchPreferences.enabled ? "1" : "0",searchPreferences.semantic ? "1" : "0",searchPreferences.folder]))
+                    return 0
+                }
+                if (811...815).contains(id) {
+                    if id == 812, !checked(821) { throw WindowsError.unsupported("Read and accept the component licenses before downloading.") }
+                    status(try command(id,[])); return 0
+                }
+                if id == 816 { if let path = try NativeSearchFolderPicker.choose(owner:window), let field = controls[806] { setText(field,path) }; return 0 }
+                if id == 817 { _ = withWideString(searchModelStatus.text) { value in withWideString("Optional search model") { MessageBoxW(window,value,$0,UINT(MB_OK | MB_ICONINFORMATION)) } }; return 0 }
+                if id == 819 || id == 820 {
+                    let root = executablePath().split(separator:"\\").dropLast().joined(separator:"\\")
+                    try shellOpen(root + "\\Licenses\\" + (id == 819 ? "WindowsML.txt" : "EmbeddingGemma2.txt")); return 0
+                }
                 if id == 311 {
                     selectedRule = nil
                     if let handle = controls[303] {

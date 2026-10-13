@@ -113,11 +113,18 @@ jobs:
         run: |
           $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-ui' -Wait -PassThru -NoNewWindow
           if ($process.ExitCode -ne 0) { throw 'Native settings check failed' }
+      - name: Check native Search without model download or system changes
+        shell: pwsh
+        run: |
+          foreach ($check in @('--test-search-ui','--test-search-policy','--test-tokenizer','--test-embedding')) {
+            $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList $check -Wait -PassThru -NoNewWindow
+            if ($process.ExitCode -ne 0) { throw "Native Search check failed: $check" }
+          }
       - name: Build and validate native Swift setup package
         shell: powershell
         run: |
           ./scripts/package.ps1
-          ./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.12-win-x64
+          ./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.13-win-x64
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:

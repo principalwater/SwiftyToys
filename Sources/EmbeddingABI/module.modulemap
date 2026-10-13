@@ -1,0 +1,5 @@
+// SPDX-License-Identifier: MIT
+module EmbeddingABI [system] {
+    header "EmbeddingABI.h"
+    export *
+}

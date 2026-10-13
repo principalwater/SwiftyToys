@@ -1,12 +1,33 @@
 // SPDX-License-Identifier: MIT
 
 import BrightnessCore
+import SearchCore
 import CRT
 import WinSDK
 import WindowsDisplayABI
 
 func runCLI(_ args: [String]) throws -> Int32 {
     let command = args[0].lowercased()
+    if command == "--embedding-worker" {
+        guard args.count == 2 else { throw WindowsError.unsupported("Invalid embedding worker request.") }
+        return NativeEmbedding.runWorker(pipeName:args[1])
+    }
+    if command == "--embedding-worker-test" {
+        guard args.count == 3 else { throw WindowsError.unsupported("Invalid embedding test worker request.") }
+        return NativeEmbedding.runWorker(pipeName:args[1],assetDirectory:args[2])
+    }
+    if command == "--search-worker" {
+        guard args.count == 2 else { throw WindowsError.unsupported("Invalid search worker request.") }
+        return try NativeSearchProcess.runWorker(folder:args[1])
+    }
+    if command == "--search-rates-worker" {
+        guard args.count == 2 else { throw WindowsError.unsupported("Invalid reference-rate worker request.") }
+        return try NativeSearchProcess.runWorker(folder:args[1],rates:true)
+    }
+    if command == "--search-apps-worker" {
+        guard args.count == 2 else { throw WindowsError.unsupported("Invalid application-search worker request.") }
+        return try NativeSearchProcess.runWorker(folder:args[1],applications:true)
+    }
     if command == "--package-setup" {
         guard args.count == 2 || args.count == 3 else { throw WindowsError.unsupported("Use --package-setup wsl|ubuntu|homebrew [registered distribution].") }
         return try NativePackageSetup.runCLI(action: args[1], distro: args.count == 3 ? args[2] : nil)
@@ -26,6 +47,50 @@ func runCLI(_ args: [String]) throws -> Int32 {
         return 0
     }
     Console.attach()
+    if command == "--test-search-policy" { try testNativeSearchPolicy(); return 0 }
+    if command == "--test-search-ui" { try NativeSearchWindow.selfCheck(); return 0 }
+    if command == "--test-search-index" { try NativeIndexedSearch.selfCheck(); return 0 }
+    if command == "--test-tokenizer" { try GemmaBPETokenizer.selfCheck(); return 0 }
+    if command == "--test-embedding" { try NativeEmbedding.selfCheck(); return 0 }
+    if command == "--test-embedding-live" {
+        guard args.count == 2 else { throw WindowsError.unsupported("Use --test-embedding-live <verified test asset folder>.") }
+        try NativeEmbedding.selfCheck(assetDirectory:args[1]); return 0
+    }
+    if command == "--download-search-model" {
+        guard args.count == 2, args[1] == "--accept-component-licenses" else { throw WindowsError.unsupported("Read the supplied Microsoft Windows ML Runtime and Apache 2.0 licenses, then use --download-search-model --accept-component-licenses.") }
+        try NativeEmbeddingAssets.download(progress:{ value in
+            Console.writeLine(value.stage + " " + String(value.completed) + "/" + String(value.total))
+        },cancelled:{false})
+        Console.writeLine("Optional model downloaded; inference will validate it when used."); return 0
+    }
+    if command == "--remove-search-model" { try NativeEmbeddingAssets.remove(); Console.writeLine("Optional model removed."); return 0 }
+    if command == "--search-query" {
+        guard args.count == 2 else { throw WindowsError.unsupported("Use --search-query <query> for a read-only search check.") }
+        let result = try NativeSearchProcess.query(args[1],cancelled:{false})
+        Console.writeLine(result.status)
+        for item in result.items { Console.writeLine(item.kind + ": " + item.title) }
+        return 0
+    }
+    if command == "--search-apps" {
+        guard args.count == 2 else { throw WindowsError.unsupported("Use --search-apps <app name>.") }
+        for item in try NativeSearchProcess.applications(args[1],cancelled:{false}) { Console.writeLine(item.title) }
+        return 0
+    }
+    if command == "--search-answer" {
+        guard args.count == 2 else { throw WindowsError.unsupported("Use --search-answer <expression or conversion>.") }
+        var answer = SearchAnswers.quick(args[1]) ?? NativeSearchClock.quick(args[1])
+        if answer == nil, let conversion = try? ConversionQuery(args[1]), !conversion.to.isEmpty,
+            ReferenceRates.currency(conversion.from) != nil, ReferenceRates.currency(conversion.to) != nil {
+            answer = try NativeSearchProcess.rates(cancelled:{false}).0.convert(conversion)
+        }
+        guard let answer else { throw WindowsError.unsupported("No calculation or supported conversion was recognized.") }
+        Console.writeLine(answer.value + "\n" + answer.detail); return 0
+    }
+    if command == "search" {
+        guard let window = withWideString(controlWindowTitle, { FindWindowW(nil,$0) }) else { throw WindowsError.unsupported("Start SwiftyToys before opening Search.") }
+        guard MessageDestination(window).post(toyActionMessage,value:10) else { throw WindowsError.api("Open Search",GetLastError()) }
+        return 0
+    }
     if command == "--test-package-setup" { try NativePackageSetup.selfCheck(); return 0 }
     if command == "--test-installer-ui" { try SetupWindow.selfCheck(); return 0 }
     if command == "--test-trackpad-installer" { try NativeTrackpadInstaller.selfCheck(); return 0 }

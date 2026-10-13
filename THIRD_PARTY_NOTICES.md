@@ -139,3 +139,26 @@ Win32 interop declarations were written against Microsoft's public API documenta
 Windows SDK layouts are imported at build time. Windows and the Microsoft Visual
 C++ x64 Redistributable are system prerequisites; their binaries are not bundled.
 There is no .NET dependency in the Swift application.
+
+## Optional local semantic search
+
+The optional text search model is Google's EmbeddingGemma 2, quantized ONNX
+conversion by ONNX Community, pinned to revision
+`daa72c51243991dfcaf9f9137d2c573d8f7790c0`. Model and tokenizer assets are
+downloaded only after an explicit request. They use Apache 2.0; the license is
+retained in `Licenses/EmbeddingGemma2.txt`.
+
+CPU inference dynamically loads the unmodified, Microsoft-signed x64
+`onnxruntime.dll` from the official Microsoft.Windows.AI.MachineLearning 2.4.89
+NuGet package. Its Microsoft Windows ML Runtime license and original third-party
+notices are retained in `Licenses/WindowsML.txt` and
+`Licenses/WindowsML-THIRD-PARTY-NOTICES.txt`. This binary's terms are distinct from
+the upstream MIT license for the original ONNX Runtime C API declarations in
+`Sources/EmbeddingABI`, retained in `Licenses/ONNXRuntimeHeaders.txt`.
+The application disables runtime telemetry before processing local text, uses
+only the CPU provider, and does not download execution-provider plugins.
+
+Sources: [Google model](https://huggingface.co/google/embeddinggemma-2),
+[pinned ONNX conversion](https://huggingface.co/onnx-community/embeddinggemma-2-ONNX/tree/daa72c51243991dfcaf9f9137d2c573d8f7790c0),
+[official Windows ML package](https://www.nuget.org/packages/Microsoft.Windows.AI.MachineLearning/2.4.89),
+[ONNX Runtime headers and MIT license](https://github.com/microsoft/onnxruntime/tree/v1.27.1).

@@ -5,6 +5,8 @@ import PackageDescription
 var targets: [Target] = [
     .target(name: "BrightnessCore"),
     .target(name: "KeyboardCore", dependencies: ["BrightnessCore"]),
+    .target(name: "SearchCore", dependencies: ["BrightnessCore"]),
+    .testTarget(name: "SearchCoreTests", dependencies: ["SearchCore"], path: "tests/SearchCoreTests"),
     .testTarget(name: "KeyboardCoreTests", dependencies: ["KeyboardCore"], path: "tests/KeyboardCoreTests"),
     .testTarget(name: "BrightnessCoreTests", dependencies: ["BrightnessCore"], path: "tests/BrightnessCoreTests"),
 ]
@@ -12,8 +14,10 @@ var products: [Product] = [.library(name: "BrightnessCore", targets: ["Brightnes
 #if os(Windows)
     targets += [
         .systemLibrary(name: "WindowsDisplayABI", path: "Sources/WindowsDisplayABI"),
+        .systemLibrary(name: "SearchIndexABI", path: "Sources/SearchIndexABI"),
+        .systemLibrary(name: "EmbeddingABI", path: "Sources/EmbeddingABI"),
         .executableTarget(
-            name: "SwiftyToys", dependencies: ["BrightnessCore", "KeyboardCore", "WindowsDisplayABI"],
+            name: "SwiftyToys", dependencies: ["BrightnessCore", "KeyboardCore", "SearchCore", "WindowsDisplayABI", "SearchIndexABI", "EmbeddingABI"],
             linkerSettings: [
                 .linkedLibrary("user32"), .linkedLibrary("gdi32"),
                 .linkedLibrary("shell32"), .linkedLibrary("dxva2"), .linkedLibrary("hid"),
@@ -23,6 +27,7 @@ var products: [Product] = [.library(name: "BrightnessCore", targets: ["Brightnes
                 .linkedLibrary("magnification"),
                 .linkedLibrary("wevtapi"), .linkedLibrary("powrprof"),
                 .linkedLibrary("winhttp"),
+                .linkedLibrary("oleacc"), .linkedLibrary("shlwapi"),
                 .linkedLibrary("bcrypt"), .linkedLibrary("wintrust"), .linkedLibrary("crypt32"),
             ]),
     ]

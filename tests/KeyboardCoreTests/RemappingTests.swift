@@ -3,6 +3,18 @@ import KeyboardCore
 import Testing
 
 struct RemappingTests {
+    @Test func searchActionMasksStartAndSuppressesRepeats() throws {
+        var engine = RemapEngine(rules:[try RemapRule(from:"Win+Space",to:"Open search")])
+        _ = engine.process(key:91,down:true)
+        let first = engine.process(key:32,down:true)
+        #expect(first.action == "open search")
+        #expect(first.suppress)
+        #expect(first.events == [KeyTransition(162,down:true),KeyTransition(162,down:false)])
+        #expect(engine.process(key:32,down:true).action == nil)
+        #expect(engine.process(key:32,down:false).suppress)
+        #expect(engine.process(key:91,down:false).suppress == false)
+        #expect(engine.release().isEmpty)
+    }
     @Test func commandControlPowerActionsRunOnceWithoutSyntheticKeys() throws {
         for (key, action) in [(UInt16(81), "lock screen"), (83, "sleep")] {
             for modifiers in [[UInt16(91), 162], [163, 92]] {

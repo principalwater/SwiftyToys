@@ -5,6 +5,7 @@ physical validation. A source change is not an installed fix.
 
 | Requirement or reported finding | Evidence and current status | Remaining acceptance check |
 | --- | --- | --- |
+| Native macOS-like search inside SwiftyToys, with optional local model | Swift/Win32 Search panel, independent Shell/index/rate workers, calculator/units/clock, explicit web action, previews and editable hotkey routing; pinned signed CPU model is optional | Physical installed hotkey/preview acceptance; Windows Index coverage; model preparation is bounded to 64 local text excerpts, not all macOS services |
 | Open-source SwiftyToys, inspired by and complementary to PowerToys for Mac users | MIT repository, credits and third-party notices; independent branding | Keep credits and licenses in every package |
 | Integrate all BrightnessCtl functionality directly | Swift display control, AMD fallback, calibration, selection, HID/function keys, OSD, recovery and watchdog integrated; migration retains rollback | Regression checks whenever display/recovery code changes |
 | Apple Russian/English layouts, native installation | Installed signed Apple RU/US/UK DLLs verified; native API applied Apple RU/UK, confirmed in Windows profiles/Substitutes and physically by the user | Preserve scoped recovery and US/UK choice in GUI |
