@@ -161,7 +161,7 @@ jobs:
             THIRD_PARTY_NOTICES.md
   macos-core:
     needs: toolchain
-    runs-on: macos-26
+    runs-on: macos-26-intel
     steps:
       - uses: actions/checkout@v4
       - uses: compnerd/gha-setup-swift@bbae8ce86bac5a3449f3992b3d88bc4ca25f2057
