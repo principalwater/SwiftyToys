@@ -7,6 +7,8 @@
 - Preserve selection and valid scroll position during progressive results; block
   retained-result actions until a reply for the current query arrives.
 - Skip unchanged native text, row, layout, region and material updates.
+- Update individual child bounds/visibility and redraw parent chrome separately,
+  keeping unchanged query input out of result/preview invalidations.
 - Restore list selection and scroll before resuming redraw; coalesce pending
   notices and paint native rows/buttons with checked OS buffered-paint fallback.
 - Use Windows' plain-text Rich Edit for the query, preserving native Unicode,
@@ -16,6 +18,8 @@
   a narrow OS Acrylic frame, retaining native IME, accessibility and system fallbacks.
 - Refresh high-contrast material colors and invalidate partial geometry updates;
   verify strict resource cleanup after bounded asynchronous XAML teardown.
+- Exclude processes proven exited from installer ownership checks; keep live
+  permission failures and display-recovery protections blocking unsafe updates.
 
 ## SwiftyToys 0.1.16 — 2026-10-13
 

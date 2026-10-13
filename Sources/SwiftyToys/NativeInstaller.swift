@@ -189,14 +189,20 @@ enum NativeInstaller {
         }
     }
     private static func processPath(_ id: DWORD) throws -> String? {
-        let raw = OpenProcess(DWORD(PROCESS_QUERY_LIMITED_INFORMATION), false, id)
+        let raw = OpenProcess(DWORD(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE), false, id)
         guard let raw else {
             if GetLastError() == DWORD(ERROR_INVALID_PARAMETER) { return nil }
             throw WindowsError.api("Inspect existing SwiftyToys process", GetLastError())
         }
         let process = try OwnedHandle(raw)
+        if WaitForSingleObject(process.raw,0)==DWORD(WAIT_OBJECT_0) { return nil }
         var buffer = [WCHAR](repeating: 0, count: 32768), count = DWORD(32768)
-        guard QueryFullProcessImageNameW(process.raw, 0, &buffer, &count) else { throw WindowsError.api("Read existing SwiftyToys process path", GetLastError()) }
+        guard QueryFullProcessImageNameW(process.raw, 0, &buffer, &count) else {
+            let error=GetLastError()
+            // A snapshot can outlive a process; only a signaled handle proves it has exited.
+            if WaitForSingleObject(process.raw,0)==DWORD(WAIT_OBJECT_0) { return nil }
+            throw WindowsError.api("Read existing SwiftyToys process path",error)
+        }
         return String(decoding: buffer.prefix(Int(count)), as: UTF16.self)
     }
     private static func remaining(_ executable: String, session: DWORD) throws -> Bool {
@@ -787,6 +793,29 @@ enum NativeInstaller {
         guard try NativeFiles.read(target) == Array("new payload".utf8) else { throw WindowsError.unsupported("Rollback changed files under a running watchdog.") }
         try copy(snapshot, target)
         guard try NativeFiles.read(target) == Array("old payload".utf8) else { throw WindowsError.unsupported("Explicit installation snapshot rollback failed.") }
+        do {
+            let executable=executablePath()
+            var command=Array(("\""+executable+"\" --process-path-fixture").utf16)+[0]
+            var startup=STARTUPINFOW(), child=PROCESS_INFORMATION()
+            startup.cb=DWORD(MemoryLayout<STARTUPINFOW>.size)
+            startup.dwFlags=DWORD(STARTF_USESHOWWINDOW); startup.wShowWindow=WORD(SW_HIDE)
+            guard withWideString(executable,{ CreateProcessW($0,&command,nil,nil,false,DWORD(CREATE_SUSPENDED|CREATE_NO_WINDOW),nil,nil,&startup,&child) }) else {
+                throw WindowsError.api("Create owned installer process fixture",GetLastError())
+            }
+            let process=try OwnedHandle(child.hProcess), thread=try OwnedHandle(child.hThread)
+            defer {
+                if WaitForSingleObject(process.raw,0) != DWORD(WAIT_OBJECT_0) {
+                    _=TerminateProcess(process.raw,1); _=WaitForSingleObject(process.raw,5000)
+                }
+            }
+            guard try processPath(child.dwProcessId).map({equalWindowsNames($0,executable)}) == true else {
+                throw WindowsError.unsupported("Live owned process identity was not verified.")
+            }
+            guard ResumeThread(thread.raw) != DWORD.max, WaitForSingleObject(process.raw,10000)==DWORD(WAIT_OBJECT_0),
+                try processPath(child.dwProcessId)==nil else {
+                throw WindowsError.unsupported("Exited process was not excluded from installer ownership checks.")
+            }
+        }
         Console.writeLine("PASS: native installer policies, unsafe path rejection, atomic file replacement and rollback ownership gate; no system configuration changed")
     }
 }

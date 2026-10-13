@@ -314,6 +314,8 @@ final class NativeSearchBackdrop {
             try expect(GetWindowLongPtrW(backdrop.window, Int32(GWL_STYLE)) & LONG_PTR(WS_TABSTOP) == 0 &&
                 GetWindowLongPtrW(backdrop.window, Int32(GWL_EXSTYLE)) & LONG_PTR(WS_EX_CONTROLPARENT) == 0, "skip native tab traversal")
             try expect(SendMessageW(backdrop.window, UINT(WM_NCHITTEST), 0, LPARAM(50 | (50 << 16))) == LRESULT(HTTRANSPARENT), "transparent HWND hit testing")
+            // Let lazy framework work run while a warm-up island still owns its content.
+            if cycle < 2 { settle() }
             backdrop.close(); backdrop.close()
             try expect(!IsWindow(backdrop.window), "source HWND destruction")
             let releaseDeadline = GetTickCount64() + 1500
@@ -327,7 +329,23 @@ final class NativeSearchBackdrop {
                     GetGuiResources(GetCurrentProcess(),DWORD(GR_USEROBJECTS)))
             }
             if let warmedResources {
-                try expect(resources == warmedResources, "material resources return to warmed baseline after reopen \(cycle + 1) (GDI \(warmedResources.gdi)/\(resources.gdi), USER \(warmedResources.user)/\(resources.user))")
+                var windows: [String] = []
+                if resources != warmedResources {
+                    withUnsafeMutablePointer(to: &windows) { output in
+                        _ = EnumWindows({ window, data in
+                            var process: DWORD = 0
+                            let thread = GetWindowThreadProcessId(window, &process)
+                            if process == GetCurrentProcessId(), let output = UnsafeMutablePointer<[String]>(bitPattern: Int(data)) {
+                                var name = [WCHAR](repeating: 0, count: 128)
+                                let count = GetClassNameW(window, &name, Int32(name.count))
+                                output.pointee.append(String(decoding: name.prefix(Int(count)), as: UTF16.self) +
+                                    (thread == GetCurrentThreadId() ? "@ui" : "@worker"))
+                            }
+                            return true
+                        }, LPARAM(Int(bitPattern: output)))
+                    }
+                }
+                try expect(resources == warmedResources, "material resources return to warmed baseline after reopen \(cycle + 1) (GDI \(warmedResources.gdi)/\(resources.gdi), USER \(warmedResources.user)/\(resources.user), process window classes \(windows.joined(separator: ", ")))")
             } else if cycle == 1 { warmedResources = resources }
         }
         try expect(PostThreadMessageW(GetCurrentThreadId(), UINT(WM_QUIT), 37, 0) &&

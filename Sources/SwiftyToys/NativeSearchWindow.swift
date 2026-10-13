@@ -316,16 +316,29 @@ final class NativeSearchWindow {
                 (6,width-304,footer+3,68,30),(3,width-232,footer+3,82,30),(5,width-146,footer+3,64,30),(4,width-78,footer+3,60,30)] {
                 if let control = controls[id] {
                     let hiddenPreview = (id == 13 || id == 14) && !showPreview
-                    MoveWindow(control, hiddenPreview ? 0 : Int32(Double(x) * scale), hiddenPreview ? 0 : Int32(Double(y) * scale),
-                        hiddenPreview ? 1 : Int32(Double(max(1,w)) * scale), hiddenPreview ? 1 : Int32(Double(max(1,h)) * scale), false)
+                    let left=hiddenPreview ? 0 : Int32(Double(x)*scale), top=hiddenPreview ? 0 : Int32(Double(y)*scale)
+                    let size=(hiddenPreview ? 1 : Int32(Double(max(1,w))*scale),hiddenPreview ? 1 : Int32(Double(max(1,h))*scale))
+                    var actual=RECT(); GetWindowRect(control,&actual)
+                    _=withUnsafeMutablePointer(to:&actual) { $0.withMemoryRebound(to:POINT.self,capacity:2) { MapWindowPoints(nil,window,$0,2) } }
+                    if (actual.left,actual.top,actual.right-actual.left,actual.bottom-actual.top) != (left,top,size.0,size.1) {
+                        MoveWindow(control,left,top,size.0,size.1,true)
+                    }
                 }
             }
-            for id in [11,12] { ShowWindow(controls[id],Int32(SW_HIDE)) }
-            SetWindowPos(controls[17],controls[10],0,0,0,0,UINT(SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE))
+            func visibility(_ id:Int,_ visible:Bool) {
+                guard let control=controls[id] else { return }
+                if (GetWindowLongPtrW(control,Int32(GWL_STYLE)) & LONG_PTR(WS_VISIBLE) != 0) != visible {
+                    ShowWindow(control,Int32(visible ? SW_SHOW : SW_HIDE))
+                }
+            }
+            for id in [11,12] { visibility(id,false) }
+            if GetWindow(controls[17],UINT(GW_HWNDPREV)) != controls[10] {
+                SetWindowPos(controls[17],controls[10],0,0,0,0,UINT(SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE))
+            }
             updateQueryHint()
-            ShowWindow(controls[2],Int32(hasResults ? SW_SHOW : SW_HIDE))
-            for id in [13,14] { ShowWindow(controls[id],Int32(showPreview ? SW_SHOW : SW_HIDE)) }
-            for id in [3,5,6,16] { ShowWindow(controls[id],Int32(hasResults ? SW_SHOW : SW_HIDE)) }
+            visibility(2,hasResults)
+            for id in [13,14] { visibility(id,showPreview) }
+            for id in [3,5,6,16] { visibility(id,hasResults) }
         }
         let shape = (client.right,client.bottom,dpi)
         // Windows owns the region on success; no layered desktop surface is created.
@@ -337,7 +350,7 @@ final class NativeSearchWindow {
         if let backdrop, materialSize.map({ $0 != material }) ?? true {
             materialSize = backdrop.resize(width:client.right,height:client.bottom,cornerRadius:18*scale,highContrast:highContrast) ? material : nil
         }
-        if layoutChanged { RedrawWindow(window, nil, nil, UINT(RDW_INVALIDATE | RDW_ALLCHILDREN)) }
+        if layoutChanged { RedrawWindow(window, nil, nil, UINT(RDW_INVALIDATE | RDW_NOCHILDREN)) }
     }
     private func fitHeight() {
         guard let window, IsWindowVisible(window) else { arrange(); return }
@@ -1037,6 +1050,37 @@ final class NativeSearchWindow {
             try expect(!synchronous.queryPending && !synchronous.pendingStatusQueued && synchronous.text(15)=="Ready","synchronous reply never replaces ready status with pending text")
             SendMessageW(synchronous.window,searchPendingMessage,0,0)
             try expect(synchronous.text(15)=="Ready","obsolete pending notice cannot overwrite a completed reply")
+        }
+        do {
+            let steady=try NativeSearchWindow(localization:Localization(pack:.english),onQuery:{_ in},onActivate:{_ in},onPreview:{_ in},onCopy:{_ in})
+            let field=steady.controls[1]!, host=steady.window!
+            SetWindowPos(host,nil,0,0,Int32(720*steady.scale),Int32(488*steady.scale),UINT(SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE))
+            steady.setText(1,"stable query")
+            _=try steady.apply(NativeSearchSnapshot(generation:steady.generation,results:[calculation],status:"Ready",quickAnswer:"4"))
+            SendMessageW(field,UINT(EM_SETSEL),2,5)
+            ValidateRect(field,nil)
+            var observed=[Int](repeating:0,count:5)
+            try observed.withUnsafeMutableBufferPointer { buffer in
+                let reference=DWORD_PTR(UInt(bitPattern:buffer.baseAddress!))
+                guard SetWindowSubclass(field,searchLayoutCheckProcedure,3,reference) else { throw WindowsError.api("Observe query invalidation",GetLastError()) }
+                defer { RemoveWindowSubclass(field,searchLayoutCheckProcedure,3) }
+                for rows: [NativeSearchResult] in [[],[calculation]] {
+                    _=try steady.apply(NativeSearchSnapshot(generation:steady.generation,results:rows,status:"Changed results",quickAnswer:nil))
+                    try expect(buffer[0]==0 && !GetUpdateRect(field,nil,false),"result visibility changes neither move nor invalidate unchanged query input")
+                }
+                for expanded in [true,false] {
+                    steady.previewExpanded=expanded; steady.arrange()
+                    try expect(buffer[0]==0 && !GetUpdateRect(field,nil,false),"preview visibility changes do not redraw unchanged query input")
+                }
+                let range=SendMessageW(field,UINT(EM_GETSEL),0,0)
+                try expect(range & 0xffff == 2 && (range >> 16) & 0xffff == 5,"visibility changes retain query selection")
+                SetWindowPos(host,nil,0,0,Int32(800*steady.scale),Int32(488*steady.scale),UINT(SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE))
+                try expect(buffer[0] > 0,"real width changes still resize query input")
+                ValidateRect(field,nil); try steady.theme(forcedHighContrast:true)
+                var colors=CHARFORMATW(); colors.cbSize=UINT(MemoryLayout<CHARFORMATW>.size)
+                _=withUnsafeMutablePointer(to:&colors) { SendMessageW(field,UINT(EM_GETCHARFORMAT),WPARAM(SCF_SELECTION),LPARAM(Int(bitPattern:$0))) }
+                try expect(colors.crTextColor==steady.textColor && steady.text(1)=="stable query","real theme changes still refresh native input colors and retain text")
+            }
         }
         func fixture() throws -> NativeSearchWindow {
             try NativeSearchWindow(localization:Localization(pack:.english),onQuery:{_ in},onActivate:{_ in},onPreview:{_ in},onCopy:{_ in})
