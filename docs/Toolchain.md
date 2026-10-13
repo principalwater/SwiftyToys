@@ -6,6 +6,10 @@ currently **6.4.1**. Package.swift retains Swift 6.4 as its minimum manifest API
 version and Swift 6 language mode; those are compatibility declarations, not
 alternative compiler pins.
 
+Linux CI selects the release directory contained in the official Ubuntu archive;
+the setup action's HOME/usr/bin entry does not identify that directory. The exact
+compiler check prevents the runner's preinstalled Swift from masking this mismatch.
+
 Windows scripts select a complete official compiler, SDK and runtime from one
 installation root and require the exact requested version. An older compiler on
 PATH or stale SDKROOT cannot silently select a different release. The package

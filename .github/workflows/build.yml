@@ -180,6 +180,14 @@ jobs:
         with:
           swift-version: swift-${{ needs.toolchain.outputs.version }}-release
           swift-build: ${{ needs.toolchain.outputs.version }}-RELEASE
+      - name: Select the official archive's release directory
+        shell: bash
+        env:
+          SWIFT_VERSION: ${{ needs.toolchain.outputs.version }}
+        run: |
+          toolchain="$HOME/swift-$SWIFT_VERSION-RELEASE-ubuntu24.04/usr/bin"
+          test -x "$toolchain/swift"
+          printf '%s\n' "$toolchain" >> "$GITHUB_PATH"
       - shell: pwsh
         run: ./scripts/SwiftVersion.ps1 -CheckCompiler
       - run: swift test

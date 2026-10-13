@@ -9,7 +9,7 @@ if ($SwiftVersion -notmatch '\A[0-9]+\.[0-9]+\.[0-9]+\z' -or [version]$SwiftVers
 if ($CheckCompiler) {
     $compiler = & swift --version
     if ($LASTEXITCODE -ne 0 -or ($compiler -join ' ') -notmatch ('Swift version ' + [regex]::Escape($SwiftVersion) + '(?:\s|$)')) {
-        throw "The active compiler does not match Swift $SwiftVersion. Select the pinned toolchain before building."
+        throw "Expected Swift $SwiftVersion; active compiler reported: $($compiler -join ' '). Select the pinned toolchain before building."
     }
 }
 $SwiftVersion
