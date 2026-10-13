@@ -1,12 +1,17 @@
 # Validation snapshot: 0.1.17 Search stability and continuous surface
 
-2026-10-13. The Swift 6.4.1 candidate executable is 7,604,224 bytes. Hidden
+2026-10-13. The Swift 6.4.1 candidate executable is 7,607,808 bytes. Hidden
 Search regressions observe real window messages: pending
 queries retain geometry and rows while Open/Copy/Preview/Reveal remain blocked;
 identical snapshots cause no window reposition, row reset or text replacement.
 Progressive replies retain the selected result and valid list scroll position.
 Different result counts do not shrink a nonempty query's frame; clear/reopen
 restores the compact bar. DPI and high-contrast changes still refresh appearance.
+At a fixed size, one/zero/one results and preview toggles leave query selection,
+position and its native update region unchanged. Real width changes still resize
+the input; high-contrast changes still refresh its native text colors. Child
+bounds and visibility are checked individually, and parent chrome redraws without
+invalidating unchanged controls.
 
 Native query checks cover rapid Unicode insertion, caret/selection, replacement,
 Undo, unchanged input layout, populated text after high-contrast changes, IME hint
@@ -21,7 +26,7 @@ checks passed; complete frozen-package validation is recorded below.
 The frozen package passes all 28 native checks. Its complete native Setup installs
 with exit code 0, preserving all three existing preference-file hashes and both
 absent preference-file states. The installed image matches the package SHA-256
-`f64d331fe25dd84e3211f0147afbc1665e56c5cca47e74034dced55999d11f03`.
+`f3c7e0d4f7980f66893b3dc0aa208620aa3a7089ea0587ffd84e12e7b9b1bbfd`.
 It reports 0.1.17 / Swift 6.4.1, native WDDM gamma and DDC/CI off; the monitor
 backlight remains 100%. The installed interactive native-region check also passes.
 Physical feedback accepted the continuous surface and buffered results; acceptance
@@ -34,6 +39,10 @@ and visible input/results/preview/actions through layout changes. Source ownersh
 high contrast and repeated close/reopen checks pass with exact warmed GDI/USER
 counts. The fixture waits boundedly for deferred XAML releases; a resource
 mismatch still fails, rather than allowing a tolerance or growth.
+The isolated material check runs before Rich Edit/accessibility tests can queue
+unrelated process-wide work. Three fresh processes passed eighteen reopen cycles
+with the same strict resource comparisons; the complete frozen native suite also
+passed. This test ordering does not change the application's lifecycle.
 
 A previous read-only preview accepted `12*7` and exposed `84` through native accessibility.
 During three approximately ten-second samples it used 3.58%, 4.20% and 3.59% of
