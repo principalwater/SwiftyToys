@@ -544,6 +544,7 @@ final class TrayApplication {
             try preferences.save()
             search?.stop(); search = nil; searchPreferences = preferences
             try reloadRemapper()
+            try? searchModel?.start("status")
             return "Search settings saved. Cmd + Space uses SwiftyToys Search when the Mac preset is active."
         case 811: try showSearch(); return "Search opened."
         case 812: try searchModel?.start("download"); return "Downloading optional model…"

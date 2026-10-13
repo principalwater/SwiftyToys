@@ -2,6 +2,7 @@
 
 import WinSDK
 import WindowsDisplayABI
+import PageMemory
 
 /// Read-only checks of an existing driver file with CNG and WinVerifyTrust.
 /// Require a pinned SHA-256 for the download, then a trusted
@@ -31,7 +32,8 @@ enum NativeDriverTrust {
             throw WindowsError.status("Query SHA-256 object size", status)
         }
         var object = [UInt8](repeating: 0, count: Int(objectSize))
-        var chunk = [UInt8](repeating: 0, count: 64 * 1024)
+        var chunk = try PageRegion.allocate(byteCount: 64 * 1024, maximumMappedBytes: 64 * 1024)
+        defer { try? chunk.release() }
         var digest = [UInt8](repeating: 0, count: 32)
         try object.withUnsafeMutableBufferPointer { storage in
             var created: BCRYPT_HASH_HANDLE?
@@ -40,21 +42,24 @@ enum NativeDriverTrust {
             defer { BCryptDestroyHash(hash) }
             var done = false
             while !done {
-                let added: NTSTATUS = try chunk.withUnsafeMutableBytes { buffer in
-                    let count = try next(buffer)
-                    guard count >= 0, count <= buffer.count else {
-                        throw WindowsError.unsupported("Invalid read size.")
+                let added: NTSTATUS = try chunk.withWriteAccess { bytes in
+                    try bytes.withUnsafeMutableBufferPointer { pointer in
+                        let buffer = UnsafeMutableRawBufferPointer(pointer)
+                        let count = try next(buffer)
+                        guard count >= 0, count <= buffer.count else {
+                            throw WindowsError.unsupported("Invalid read size.")
+                        }
+                        done = count == 0
+                        return done ? 0 : BCryptHashData(
+                            hash, pointer.baseAddress, DWORD(count), 0)
                     }
-                    done = count == 0
-                    return done
-                        ? 0
-                        : BCryptHashData(hash, buffer.baseAddress!.assumingMemoryBound(to: UInt8.self), DWORD(count), 0)
                 }
                 guard added >= 0 else { throw WindowsError.status("Hash driver data", added) }
             }
             let finished = digest.withUnsafeMutableBufferPointer { BCryptFinishHash(hash, $0.baseAddress, 32, 0) }
             guard finished >= 0 else { throw WindowsError.status("Finish SHA-256 hash", finished) }
         }
+        try chunk.release()
         return digest
     }
 
@@ -216,6 +221,20 @@ enum NativeDriverTrust {
         try expect(hashMatches(try digest("abc", chunk: 1), expected: abc), "chunked hash")
         try expect(hashMatches(try digest("", chunk: 1), expected: empty), "empty hash")
         try expect(hashMatches(long, expected: million), "multi-buffer hash")
+        for invalid in [-1, 64 * 1024 + 1] {
+            do {
+                _ = try sha256 { _ in invalid }
+                throw WindowsError.unsupported("Invalid hash reader was accepted.")
+            } catch WindowsError.unsupported(let reason) {
+                try expect(reason == "Invalid read size.", "hash reader bounds retained")
+            }
+        }
+        do {
+            _ = try sha256 { _ in throw WindowsError.unsupported("fixture read failure") }
+            throw WindowsError.unsupported("Hash reader failure was swallowed.")
+        } catch WindowsError.unsupported(let reason) {
+            try expect(reason == "fixture read failure", "hash reader error retained")
+        }
         let short = String(abc.dropLast())
         for bad in [
             "", short, abc + "0", " " + short, short + "\n", "0x" + String(abc.dropLast(2)), short + "g", short + "e",

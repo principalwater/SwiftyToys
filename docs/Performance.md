@@ -86,13 +86,40 @@ their independent timing/energy benefit is not claimed from source inspection.
 ## Build budget and safety
 
 Release uses `-Osize`, static official Swift runtime, no debug information, dead
-stripping and identical COMDAT folding. Budget: executable <=7 MB, ZIP <=3 MB.
+stripping and identical COMDAT folding. Budget: executable <=8 MB, ZIP <=3.5 MB.
 Static DLL imports are restricted to System32 and verified with dumpbin loadconfig;
 there are no bundled Swift DLLs or web renderer. Do not replace `-Osize` with `-O`
 or change CPU target/ownership/concurrency based on guesswork.
 
 For deeper Windows profiling, use WPR/WPA CPU sampling and precise context switches,
 native process/GDI/USER counters and diagnostic QPC timing around physical input.
+
+## Search cancellation and owned scratch memory
+
+Search now checks cancellation before provider filesystem/process setup and
+between Apps and Index stages. A process-local invalid-path fixture verifies
+that a pre-cancelled provider reaches no setup I/O. Existing generation guards,
+timeouts, below-normal priority and job ownership remain in place.
+
+Streaming SHA-256 verification uses a pinned SwiftOSPrimitives PageRegion for its
+64 KiB scratch buffer, borrowed synchronously and released explicitly. Read-size
+validation, callback error propagation, CNG hashing and signature checks remain.
+The tokenizer already uses a read-only native file mapping; it does not copy its
+32 MB file into an anonymous region. Page ownership is not a global allocator or
+a claim of faster hashing.
+
+A bounded 120-second idle observation recorded about 0.013% of one core, stable
+18.16 MiB private memory and 502 handles for the resident. A later interactive
+observation mixed Search, settings and optional-model activity: about 8.501% of
+one core, private memory 18.87 to 27.29 MiB and handles 529 to 965. The workload
+and lifecycle were not controlled, so these are not A/B gains or proof of a leak.
+
+The private ETW trace reports zero lost events, but its circular kernel buffers
+retain about 31 seconds of the interactive recording. Samples from the known UI
+thread mostly fall in Windows kernel/drawing/system code; Rich Edit and XAML were
+loaded without attributed samples in that retained window. This is instruction
+sampling, with unmapped addresses and incomplete scheduling/render evidence. It
+does not establish a Search/GPU cause, input latency or absence of microfreezes.
 
 ## 0.1.10 freeze-related work elimination
 

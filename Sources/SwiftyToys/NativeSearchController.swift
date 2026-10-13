@@ -218,6 +218,7 @@ private final class NativeSearchService: @unchecked Sendable {
                     publish(query,items:results,answer:answer,status:"Apps and local files")
                 }
             }
+            guard !cancelled(query.generation) else { continue }
             do {
                 let indexed = try NativeSearchProcess.query(query.text, cancelled: { self.cancelled(query.generation) })
                 var seen = Set<String>()
@@ -229,6 +230,12 @@ private final class NativeSearchService: @unchecked Sendable {
             if answer == nil, query.preferences.semantic, !query.text.isEmpty, !cancelled(query.generation) {
                 do {
                     let candidates = NativeSearchFiles.collect(roots:[query.preferences.folder],maximum:64,textOnly:true,cancelled:{ self.cancelled(query.generation) })
+                    guard !cancelled(query.generation) else { continue }
+                    if candidates.isEmpty {
+                        publish(query, items: results, answer: answer,
+                            status: "Semantic folder has no supported text files. Add documents or choose another folder.")
+                        continue
+                    }
                     let sorted = candidates.sorted { SearchRanking.score($0.title,query:query.text) > SearchRanking.score($1.title,query:query.text) }
                     let documents = sorted.prefix(64).compactMap { item -> NativeEmbeddingDocument? in
                         guard let bytes = try? NativeSearchFiles.readSnippet(item.path,maximum:4096), let text = NativeSearchFiles.decodeSnippet(bytes), !text.isEmpty else { return nil }

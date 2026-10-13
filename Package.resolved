@@ -1,0 +1,14 @@
+{
+  "originHash" : "aac6f598ab19b9e3b09f1ae4f58cd17d20bfada8c3093d01268fd58bd7b1dd99",
+  "pins" : [
+    {
+      "identity" : "swiftosprimitives",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/principalwater/SwiftOSPrimitives.git",
+      "state" : {
+        "revision" : "d2a35ed10d4481bd2c47cc566bb7266baddf8669"
+      }
+    }
+  ],
+  "version" : 3
+}

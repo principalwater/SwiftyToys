@@ -21,6 +21,22 @@ struct SearchPreferences: Sendable {
     init() {
         self.init(contents: (try? NativeFiles.text(NativeFiles.path("search.ini"))) ?? "enabled=1\nsemantic=0\n")
     }
+    func semanticSetupMessage(folderAvailable: Bool, documentCount: Int) -> String {
+        if !semantic {
+            return "Optional model downloaded. Enable local semantic search and choose "
+                + "a folder containing your documents."
+        }
+        if folder.isEmpty || !folderAvailable {
+            return "Optional model downloaded. Choose an existing local folder "
+                + "containing supported text documents."
+        }
+        if documentCount == 0 {
+            return "No supported text files found. Add readable .txt or .md documents, "
+                + "or choose another folder. The model loads when documents are available."
+        }
+        return "Optional model downloaded. Semantic search is enabled for up to 64 "
+            + "supported text files; the model loads only when used."
+    }
     func save() throws {
         guard folder.utf16.count < 32700, !folder.contains(where: { $0.isNewline || $0 == "\0" }),
             !semantic || (!folder.isEmpty && NativeSearchFiles.validFolder(folder)) else {

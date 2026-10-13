@@ -1,4 +1,39 @@
-# Validation snapshot: 0.1.17 Search stability and continuous surface
+# Validation snapshot: 0.1.18 Search cancellation and semantic readiness
+
+2026-10-13. The official Swift 6.4.1 release candidate is 7,628,800 bytes with
+static Swift runtime linkage. All 41 portable tests and 28 native checks pass.
+The pre-cancelled provider fixture rejects work before filesystem or process
+setup for Apps, Index and currency providers. Semantic readiness fixtures cover
+disabled search, unavailable folders, empty supported-text sets and ready folders.
+
+SHA-256 streaming now uses the pinned SwiftOSPrimitives PageRegion. Empty,
+chunked and multi-buffer digests pass; negative/oversized reader counts are
+rejected, and callback errors retain their original identity. Explicit page
+release and CNG/signature validation remain in place. The read-only tokenizer
+file mapping is unchanged.
+
+SwiftOSPrimitives Windows support is merged at
+`d2a35ed10d4481bd2c47cc566bb7266baddf8669`. Its Windows validation discovers
+10 optimized tests, accepts the positive ownership control and rejects all eight
+compile-fail consumers. A 300-cycle soak, 1,000-cycle digest checks and an actual
+bounded compiler-timeout fixture pass. Windows, Linux and macOS merged-main CI
+pass; the new port preserves concurrent upstream changes. Windows allocation,
+recommit and release failure injection remains untested.
+
+The downloaded optional model passed real embedding/retrieval/cancellation checks
+in this candidate: cold preparation about 7.97 seconds, two 128-token documents
+about 5.25 seconds, eight about 16.81 seconds and cancellation about 140 ms.
+These are individual samples, not controlled speedups. The configured folder contained no files;
+no user documents were created or the folder scope changed. Empty-corpus hints
+explain that documents and downloaded weights are separate. Model status and
+document discovery stay on bounded background work.
+
+Private bounded counters and ETW sampling are described in Performance.md. The
+interactive capture mixed Search, settings and model activity, and its circular
+kernel buffers retained only part of the recording. It establishes no GPU cause,
+controlled speedup, end-to-end input latency or absence of system microfreezes.
+
+## Previously verified 0.1.17 Search stability and continuous surface
 
 2026-10-13. The Swift 6.4.1 candidate executable is 7,610,368 bytes. Hidden
 Search regressions observe real window messages: pending
@@ -30,7 +65,7 @@ absent preference-file states. The installed image matches the package SHA-256
 It reports 0.1.17 / Swift 6.4.1, native WDDM gamma and DDC/CI off; the monitor
 backlight remains 100%. The installed interactive native-region check also passes.
 Physical feedback accepted the continuous surface and buffered results; acceptance
-of the final Rich Edit fast-typing behavior remains separate from automated checks.
+of the final installed Rich Edit fast-typing behavior subsequently confirmed no jitter.
 
 One opaque content surface now joins the native controls; the OS Acrylic island's
 region is limited to an eight-DIP perimeter. The interactive native-region check

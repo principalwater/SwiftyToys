@@ -28,6 +28,7 @@ enum NativeSearchProcess {
     }
     private static func perform(_ query: String, operation: String, timeout: UInt64, cancelled: () -> Bool) throws -> [UInt8] {
         guard query.utf8.count <= 4096, !query.utf8.contains(0) else { throw WindowsError.unsupported("Search query is too long.") }
+        guard !cancelled() else { throw WindowsError.unsupported("Search cancelled.") }
         var guid = GUID(), characters = [WCHAR](repeating: 0, count: 40)
         guard CoCreateGuid(&guid) >= 0, StringFromGUID2(&guid, &characters, Int32(characters.count)) > 0 else { throw WindowsError.unsupported("Create search job identity.") }
         let name = String(decoding: characters.prefix(while: { $0 != 0 }), as: UTF16.self).filter { $0.isHexDigit || $0 == "-" }
@@ -45,6 +46,7 @@ enum NativeSearchProcess {
         limits.BasicLimitInformation.LimitFlags = DWORD(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_PROCESS_MEMORY)
         limits.ProcessMemoryLimit = 268_435_456
         guard SetInformationJobObject(job.raw, JobObjectExtendedLimitInformation, &limits, DWORD(MemoryLayout.size(ofValue: limits))) else { throw WindowsError.api("Limit search worker", GetLastError()) }
+        guard !cancelled() else { throw WindowsError.unsupported("Search cancelled.") }
         guard withWideString(executable, { CreateProcessW($0, &command, nil, nil, false,
             DWORD(CREATE_NO_WINDOW | CREATE_SUSPENDED | BELOW_NORMAL_PRIORITY_CLASS), nil, nil, &startup, &information) }) else { throw WindowsError.api("Start search worker", GetLastError()) }
         let process = try OwnedHandle(information.hProcess), thread = try OwnedHandle(information.hThread)
@@ -61,6 +63,43 @@ enum NativeSearchProcess {
         var code: DWORD = 0
         guard GetExitCodeProcess(process.raw, &code), code == 0 else { throw WindowsError.unsupported("Windows Search is unavailable. Local filename results remain available.") }
         return try NativeFiles.read(result, maximum: 1_048_576)
+    }
+    static func selfCheck() throws {
+        var preferences = SearchPreferences(contents: "semantic=1\nfolder=C:\\fixture\n")
+        guard preferences.semanticSetupMessage(folderAvailable: true, documentCount: 0).lowercased().containsText("no supported text"),
+            preferences.semanticSetupMessage(folderAvailable: false, documentCount: 1).containsText("Choose"),
+            preferences.semanticSetupMessage(folderAvailable: true, documentCount: 1).containsText("enabled") else {
+            throw WindowsError.unsupported("Semantic folder readiness was misreported.")
+        }
+        preferences.semantic = false
+        guard preferences.semanticSetupMessage(folderAvailable: true, documentCount: 1).containsText("Enable") else {
+            throw WindowsError.unsupported("Disabled semantic search was reported ready.")
+        }
+        let variable = "LOCALAPPDATA"
+        var previous = [WCHAR](repeating: 0, count: 32768)
+        let length = withWideString(variable) { GetEnvironmentVariableW($0, &previous, DWORD(previous.count)) }
+        guard length < previous.count else { throw WindowsError.unsupported("Search fixture environment is too large.") }
+        let original = length > 0 ? String(decoding: previous.prefix(Int(length)), as: UTF16.self) : nil
+        defer {
+            _ = withWideString(variable) { name in
+                original.map { value in withWideString(value) { SetEnvironmentVariableW(name, $0) } }
+                    ?? SetEnvironmentVariableW(name, nil)
+            }
+        }
+        // An invalid process-local path makes any accidental provider I/O fail before cancellation.
+        guard withWideString(variable, { name in withWideString("\"") { SetEnvironmentVariableW(name, $0) } }) else {
+            throw WindowsError.api("Prepare cancelled Search fixture", GetLastError())
+        }
+        for operation in ["--search-worker", "--search-apps-worker", "--search-rates-worker"] {
+            var checks = 0
+            do {
+                _ = try perform("test", operation: operation, timeout: 1, cancelled: { checks += 1; return true })
+                throw WindowsError.unsupported("Cancelled provider was accepted.")
+            } catch WindowsError.unsupported(let text) {
+                guard text == "Search cancelled.", checks == 1 else { throw WindowsError.unsupported("Cancelled provider performed setup work.") }
+            }
+        }
+        Console.writeLine("PASS: cancelled Search providers stop before filesystem or child-process setup")
     }
     static func runWorker(folder: String, rates:Bool = false, applications:Bool = false) throws -> Int32 {
         let root = try jobs()

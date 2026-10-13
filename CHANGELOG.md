@@ -1,5 +1,18 @@
 # Changelog
 
+## SwiftyToys 0.1.18 — 2026-10-13
+
+- Stop cancelled Search providers before filesystem/process setup and before
+  starting another provider stage.
+- Explain empty or unavailable semantic document folders in settings and Search;
+  distinguish downloaded model weights from the user's searchable documents.
+- Refresh semantic readiness after saving Search preferences, using bounded
+  background work; preserve basic search when no semantic documents are available.
+- Use pinned native SwiftOSPrimitives page ownership for the bounded SHA-256
+  scratch buffer, preserving hash/signature validation and explicit cleanup.
+- Retain Swift 6.4.1, native file-mapped tokenizer input and existing input/display
+  recovery. Record profiling evidence without claiming all microfreezes excluded.
+
 ## SwiftyToys 0.1.17 — 2026-10-13
 
 - Keep Search's frame and results steady while typing; grow for additional rows
