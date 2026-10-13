@@ -8,6 +8,7 @@ import WindowsDisplayABI
 
 func runCLI(_ args: [String]) throws -> Int32 {
     let command = args[0].lowercased()
+    if command == "--process-path-fixture" { return 0 }
     if command == "--embedding-worker" {
         guard args.count == 2 else { throw WindowsError.unsupported("Invalid embedding worker request.") }
         return NativeEmbedding.runWorker(pipeName:args[1])

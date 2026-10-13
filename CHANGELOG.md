@@ -18,6 +18,8 @@
   a narrow OS Acrylic frame, retaining native IME, accessibility and system fallbacks.
 - Refresh high-contrast material colors and invalidate partial geometry updates;
   verify strict resource cleanup after bounded asynchronous XAML teardown.
+- Exclude processes proven exited from installer ownership checks; keep live
+  permission failures and display-recovery protections blocking unsafe updates.
 
 ## SwiftyToys 0.1.16 — 2026-10-13
 

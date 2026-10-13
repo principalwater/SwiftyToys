@@ -1,6 +1,6 @@
 # Validation snapshot: 0.1.17 Search stability and continuous surface
 
-2026-10-13. The Swift 6.4.1 candidate executable is 7,607,808 bytes. Hidden
+2026-10-13. The Swift 6.4.1 candidate executable is 7,610,368 bytes. Hidden
 Search regressions observe real window messages: pending
 queries retain geometry and rows while Open/Copy/Preview/Reveal remain blocked;
 identical snapshots cause no window reposition, row reset or text replacement.
@@ -26,7 +26,7 @@ checks passed; complete frozen-package validation is recorded below.
 The frozen package passes all 28 native checks. Its complete native Setup installs
 with exit code 0, preserving all three existing preference-file hashes and both
 absent preference-file states. The installed image matches the package SHA-256
-`f3c7e0d4f7980f66893b3dc0aa208620aa3a7089ea0587ffd84e12e7b9b1bbfd`.
+`567aa50dc869a3e7053933f218c6101accd3cfb93840880ccf7a914fe412bd1b`.
 It reports 0.1.17 / Swift 6.4.1, native WDDM gamma and DDC/CI off; the monitor
 backlight remains 100%. The installed interactive native-region check also passes.
 Physical feedback accepted the continuous surface and buffered results; acceptance
@@ -40,9 +40,19 @@ high contrast and repeated close/reopen checks pass with exact warmed GDI/USER
 counts. The fixture waits boundedly for deferred XAML releases; a resource
 mismatch still fails, rather than allowing a tolerance or growth.
 The isolated material check runs before Rich Edit/accessibility tests can queue
-unrelated process-wide work. Three fresh processes passed eighteen reopen cycles
-with the same strict resource comparisons; the complete frozen native suite also
-passed. This test ordering does not change the application's lifecycle.
+unrelated process-wide work. Its two warm-ups pump messages while each source is
+still alive, before closing and draining deferred work. Five fresh processes
+passed thirty reopen cycles, including twenty exact warmed resource comparisons;
+the complete frozen native suite also passed. This fixture timing does not change
+the application's lifecycle.
+
+An actual update initially failed when querying an exited process and safely
+rolled back. The installer now excludes only missing PIDs or processes whose
+handles are signaled; live permission/query failures still block installation.
+An owned child fixture verifies live executable identity and exited-process
+exclusion while a handle pins that PID. It does not force the narrower exit
+between the initial wait and image-path query. The rebuilt complete Setup then
+installed successfully with the preserved settings recorded above.
 
 A previous read-only preview accepted `12*7` and exposed `84` through native accessibility.
 During three approximately ten-second samples it used 3.58%, 4.20% and 3.59% of
