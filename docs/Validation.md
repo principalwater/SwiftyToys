@@ -1,4 +1,51 @@
-# Validation snapshot: 0.1.13 candidate
+# Validation snapshot: 0.1.14 toolchain update
+
+2026-10-13. The official Swift 6.4.1 Windows installer passed its published
+SHA-256 and Apple Authenticode checks and completed successfully. The active
+compiler, SDK and runtime use the exact shared .swift-version pin. Stale SDK
+environment replacement, missing-toolchain rejection and active-compiler mismatch
+checks pass. Version parsing rejects unstable/malformed selections; setup rejects
+a package stamped with a different compiler version.
+
+All 41 portable tests and 28 native checks pass with the rebuilt optimized app.
+The executable is 7,401,984 bytes, 2,560 bytes above the installed 0.1.13 app.
+The build passes without the redundant -use-static-resource-dir override, retains
+static Swift linking and System32-only imports, and stays below the 8 MB budget.
+The app reports 0.1.14 / Swift 6.4.1. Valid, malformed and oversized compiler
+metadata fixtures pass without changing resident settings.
+
+Real optional-model retrieval also passes on the new binary using pinned private
+test assets: dog 0.78760517 versus unrelated mathematics 0.6292832. A short cold
+request took 8,000 ms; a cached repeat was below the timer's 1 ms resolution.
+Two 128-token documents took 5,422 ms; eight took 16,766 ms. Cold-start cancellation
+and owned-worker cleanup took 141 ms. These observations do not establish a
+performance improvement, GPU attribution, weakest-hardware support or a full
+64-file preparation time. The actual user model remains optional and disabled.
+
+The README now uses an explicitly labelled vector presentation of the current
+Command Ember tiles and Search. It is not a screen capture; Windows Graphics
+Capture timed out twice on the validation host. Native preview accessibility
+names confirm the current tiles, and the illustration was rendered and inspected.
+Linux CI covers the portable cores; Linux GUI, display and input support is future
+work.
+
+The complete native setup installed successfully with exit 0. Installed and
+packaged EXE hashes match:
+`49d661ba8b42388bbec7f8dff79553cf953f98e6cc7aba54207d46a7bcf85b68`.
+All three existing preference files retain their byte hashes. The installed app
+reports 0.1.14 / Swift 6.4.1, native WDDM gamma and DDC/CI off; the backlight
+remains 100%. Driver selection, mouse direction and pairing are unchanged by
+this update.
+
+A 30-second installed-only counter sample recorded no CPU-time increase at the
+counter's resolution. The resident retained 3.738 MiB private memory, 14.980 MiB
+working set, 257 handles and nine threads; the watchdog retained 2.414 MiB private
+memory, 10.137 MiB working set, 160 handles and one thread. Preview, CLI and build
+processes were excluded. This short idle observation is not a controlled A/B,
+GPU, long-term stability or weakest-hardware test; windowless Responding flags
+are not proof of UI responsiveness. Cross-platform compiler checks run in CI.
+
+## Previously verified 0.1.13 candidate
 
 2026-10-13. The optimized native Swift application is 7,398,912 bytes, SHA-256
 `6dadb40500866b892795b78fb1a6ef6f3bdea3bda49a8d7bc0a431127f621af9`.

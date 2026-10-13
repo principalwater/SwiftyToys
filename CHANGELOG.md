@@ -1,5 +1,16 @@
 # Changelog
 
+## SwiftyToys 0.1.14 — 2026-10-13
+
+- Build the application and native setup with official Swift 6.4.1, using one
+  .swift-version pin for local scripts and Windows/Linux/macOS CI.
+- Select the exact compiler, SDK and runtime from one installation; reject
+  mismatched compiler/package versions and retain static imports and size checks.
+- Remove the redundant static-resource frontend override after Swift Build's fix.
+- Add Linux portable-core CI in preparation for future platform support.
+- Replace the old README screenshot with a Command Ember interface illustration
+  showing current feature tiles and keyboard-driven Search.
+
 ## SwiftyToys 0.1.13 — 2026-10-13
 
 - Add native SwiftyToys Search for apps, files, indexed content, arithmetic,

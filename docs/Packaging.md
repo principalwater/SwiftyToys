@@ -38,11 +38,12 @@ native UI/remapping build was about 6.29 MB. The 0.1.1 release measures 6,327,29
 for the executable and about 2.46 MB for the full ZIP with language packs, installer
 scripts, documentation and licenses. Driver downloads are separate from that archive.
 
-Build uses -Osize, -static-stdlib, -use-static-resource-dir, /OPT:REF and /OPT:ICF.
+Build uses -Osize, -static-stdlib, /OPT:REF and /OPT:ICF with the exact official
+toolchain pinned in .swift-version. See [toolchain upgrades](Toolchain.md).
 Official dispatch.lib and BlocksRuntime.lib satisfy the static Swift concurrency
 archive. Native threads are CRT initialized; driver work runs on its serial Swift
-actor executor. The build rejects accidental dynamic Swift imports and has a 7 MB
-exe / 3 MB ZIP regression budget. These budgets can be revised when an explicit
+actor executor. The build rejects accidental dynamic Swift imports and has an 8 MB
+exe / 3.5 MB ZIP regression budget. These budgets can be revised when an explicit
 feature or a measured improvement justifies larger distribution; they are not a
 reason to remove requested functionality or correctness checks.
 
@@ -60,7 +61,7 @@ replaces runtime PowerShell helpers. The integrated build measured
 Run scripts/test.ps1, then build.ps1 (sequentially: SwiftBuild shares its database).
 Developer PowerShell scripts only invoke build/test tools; none is shipped or run
 by the application or installer. Package with scripts/package.ps1, then run
-scripts/build-setup.ps1 -PackageDirectory artifacts/SwiftyToys-0.1.12-win-x64.
+scripts/build-setup.ps1 -PackageDirectory artifacts/SwiftyToys-0.1.14-win-x64.
 The setup build runs parser rejection checks and validates the actual resource,
 protected extraction, native stage-two controls and owned cleanup without installing.
 Native --test-installer, --test-shell-integration, --test-installer-ui and

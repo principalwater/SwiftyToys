@@ -1,4 +1,4 @@
-param([string]$OutputDirectory, [string]$SwiftVersion = '6.4.0', [string]$LinkMap)
+param([string]$OutputDirectory, [string]$SwiftVersion, [string]$LinkMap)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repoRoot 'artifacts' }
@@ -6,7 +6,6 @@ if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repoRoot 'artifacts' 
 $staticRoot = Join-Path $env:SDKROOT 'usr\lib\swift_static\windows\x86_64'
 $buildFlags = @('-c', 'release', '-debug-info-format', 'none',
     '-Xswiftc', '-Osize', '-Xswiftc', '-static-stdlib',
-    '-Xswiftc', '-Xfrontend', '-Xswiftc', '-use-static-resource-dir',
     '-Xswiftc', '-Xfrontend', '-Xswiftc', '-disable-implicit-string-processing-module-import',
     '-Xlinker', '/SUBSYSTEM:WINDOWS', '-Xlinker', '/ENTRY:mainCRTStartup',
     '-Xlinker', '/OPT:REF', '-Xlinker', '/OPT:ICF',
@@ -65,6 +64,7 @@ if (Test-Path -LiteralPath $manifest) {
     }
 }
 [IO.File]::WriteAllText($manifest, '', [Text.UTF8Encoding]::new($false))
+[IO.File]::WriteAllText((Join-Path $OutputDirectory 'swift-version.txt'), ($SwiftVersion + "`n"), [Text.Encoding]::ASCII)
 $size = (Get-Item -LiteralPath (Join-Path $OutputDirectory 'SwiftyToys.exe')).Length
 if ($size -gt 8000000) { throw "Executable exceeds the 8 MB size budget: $size bytes." }
 Write-Host "Built one executable: $size bytes; no Swift DLLs."

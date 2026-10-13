@@ -109,7 +109,7 @@ enum NativeInstaller {
     }
     private static func payload(_ source: String) throws -> [String] {
         try inspect(source, directory: true)
-        var files = ["SwiftyToys.exe", "runtime-files.txt", "README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "resources\\SwiftyToys.ico", "resources\\SwiftyToys.svg"]
+        var files = ["SwiftyToys.exe", "runtime-files.txt", "swift-version.txt", "README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "resources\\SwiftyToys.ico", "resources\\SwiftyToys.svg"]
         func collect(_ relative: String, depth: Int) throws {
             guard depth <= 4 else { throw WindowsError.unsupported("Installation payload is too deeply nested.") }
             for (name, attributes) in try entries(source + "\\" + relative) {
@@ -119,7 +119,7 @@ enum NativeInstaller {
                     let lower = name.lowercased()
                     let valid = relative == "Languages" ? lower.hasSuffix(".json") :
                         relative == "Licenses" ? lower.hasSuffix(".txt") :
-                        relative == "docs" || relative.hasPrefix("docs\\") ? lower.hasSuffix(".md") || lower.hasSuffix(".png") : false
+                        relative == "docs" || relative.hasPrefix("docs\\") ? lower.hasSuffix(".md") || lower.hasSuffix(".png") || lower.hasSuffix(".svg") : false
                     guard valid, files.count < 4096 else { throw WindowsError.unsupported("Unexpected installation payload file.") }
                     files.append(path)
                 }
@@ -132,7 +132,7 @@ enum NativeInstaller {
             "Licenses\\ModernFlyouts.txt", "Licenses\\ICU.txt", "docs\\Guide.md", "docs\\Design.md",
             "docs\\DriverVerification.md", "docs\\Localization.md", "docs\\WindowsInterop.md", "docs\\Validation.md",
             "docs\\Trackpad.md", "docs\\RuntimeArchitecture.md", "docs\\Requirements.md", "docs\\Performance.md",
-            "docs\\Packaging.md", "docs\\images\\overview.png"]
+            "docs\\Packaging.md", "docs\\images\\overview.svg"]
         guard required.allSatisfy(files.contains) else {
             throw WindowsError.unsupported("Extract the complete SwiftyToys release before installing.")
         }

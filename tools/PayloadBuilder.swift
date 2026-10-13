@@ -72,7 +72,7 @@ private func enumerate(_ source: String, relative: String = "", files: inout [St
             let path = relative.isEmpty ? name : relative + "/" + name
             if !valid(path) || data.dwFileAttributes & DWORD(FILE_ATTRIBUTE_REPARSE_POINT) != 0 { throw BuildFailure.invalidInput }
             if relative.isEmpty {
-                let allowedFiles = ["SwiftyToys.exe", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "CHANGELOG.md", "runtime-files.txt"]
+                let allowedFiles = ["SwiftyToys.exe", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "CHANGELOG.md", "runtime-files.txt", "swift-version.txt"]
                 let allowedDirectories = ["Languages", "resources", "Licenses", "docs", "Drivers"]
                 if data.dwFileAttributes & DWORD(FILE_ATTRIBUTE_DIRECTORY) != 0 {
                     if !allowedDirectories.contains(name) { throw BuildFailure.invalidInput }
