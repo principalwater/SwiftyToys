@@ -98,6 +98,7 @@ final class NativeSearchWindow {
     private let onDismiss: () -> Void
     private let onReveal: (String) -> Void
     private let localization: Localization
+    private let designPreview: Bool
     private var controls: [Int: HWND] = [:]
     private var fonts: [HFONT] = []
     private var brushes: [HBRUSH] = []
@@ -120,9 +121,10 @@ final class NativeSearchWindow {
     private var selectedColor: COLORREF { highContrast ? GetSysColor(Int32(COLOR_HIGHLIGHT)) : 0x00EF_F2FE }
     private var borderColor: COLORREF { highContrast ? textColor : 0x00E8_E3E2 }
 
-    init(localization: Localization = Localization(), onQuery: @escaping (String) -> Void, onActivate: @escaping (String) -> Void,
+    init(localization: Localization = Localization(), designPreview: Bool = false, onQuery: @escaping (String) -> Void, onActivate: @escaping (String) -> Void,
         onPreview: @escaping (String) -> Void, onCopy: @escaping (String) -> Void, onDismiss: @escaping () -> Void = {}, onReveal: @escaping (String) -> Void = { _ in }) throws {
         self.onQuery = onQuery; self.onActivate = onActivate; self.onPreview = onPreview; self.onCopy = onCopy; self.onDismiss=onDismiss; self.onReveal=onReveal; self.localization = localization
+        self.designPreview = designPreview
         var type = WNDCLASSEXW(); type.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
         type.lpfnWndProc = searchProcedure; type.hInstance = GetModuleHandleW(nil)
         type.hCursor = LoadCursorW(nil, UnsafePointer<WCHAR>(bitPattern: 32512))
@@ -132,7 +134,7 @@ final class NativeSearchWindow {
         guard registered != 0 || GetLastError() == DWORD(ERROR_CLASS_ALREADY_EXISTS) else { throw WindowsError.api("Register search panel", GetLastError()) }
         let initialScale = Double(GetDpiForSystem()) / 96
         window = withWideString("SwiftyToys.NativeSearch") { name in withWideString(localization.text("SwiftyToys Search")) {
-            CreateWindowExW(DWORD(WS_EX_TOOLWINDOW | WS_EX_CONTROLPARENT), name, $0, DWORD(WS_POPUP) | DWORD(WS_THICKFRAME | WS_CLIPCHILDREN),
+            CreateWindowExW(DWORD(designPreview ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW) | DWORD(WS_EX_CONTROLPARENT), name, $0, DWORD(WS_POPUP) | DWORD(WS_THICKFRAME | WS_CLIPCHILDREN),
                 0, 0, Int32(720*initialScale), Int32(132*initialScale), nil, nil, GetModuleHandleW(nil), Unmanaged.passUnretained(self).toOpaque())
         } }
         guard let window else { throw WindowsError.api("Create search panel", GetLastError()) }
@@ -162,7 +164,7 @@ final class NativeSearchWindow {
     }
     @discardableResult private func child(_ kind: String, _ text: String, _ id: Int, style: DWORD = 0) throws -> HWND {
         let created = withWideString(kind) { kind in withWideString(localization.text(text)) {
-            CreateWindowExW(0, kind, $0, DWORD(WS_CHILD | WS_VISIBLE) | style, 0, 0, 1, 1, window, HMENU(bitPattern: id), GetModuleHandleW(nil), nil)
+            CreateWindowExW(0, kind, $0, DWORD(WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS) | style, 0, 0, 1, 1, window, HMENU(bitPattern: id), GetModuleHandleW(nil), nil)
         } }
         guard let created else { throw WindowsError.api("Create search control", GetLastError()) }
         controls[id] = created; return created
@@ -417,7 +419,7 @@ final class NativeSearchWindow {
             return 0
         case UINT(WM_CLOSE): hide(); return 0
         case UINT(WM_ACTIVATE):
-            if value & 0xffff == WPARAM(WA_INACTIVE), IsWindowVisible(window) {
+            if !designPreview, value & 0xffff == WPARAM(WA_INACTIVE), IsWindowVisible(window) {
                 let next=HWND(bitPattern:Int(data))
                 if next==nil || GetAncestor(next,UINT(GA_ROOTOWNER)) != window { hide() }
             }; break
@@ -518,6 +520,48 @@ final class NativeSearchWindow {
         return String(decoding:UnsafeBufferPointer(start:name,count:Int(SysStringLen(name))),as:UTF16.self)
     }
     /// Hidden own-window checks. No global hotkey, desktop input, OS setting, file opening or model work.
+    static func layeringCheck() throws {
+        func expect(_ value: Bool,_ message: String) throws { guard value else { throw WindowsError.unsupported("Search layering check failed: " + message) } }
+        var panel: NativeSearchWindow? = try NativeSearchWindow(localization:Localization(pack:.english),designPreview:true,
+            onQuery:{ _ in },onActivate:{ _ in },onPreview:{ _ in },onCopy:{ _ in })
+        defer { panel=nil; NativeSearchBackdrop.shutdown() }
+        guard let window=panel?.window else { throw WindowsError.unsupported("Search fixture is unavailable.") }
+        try panel?.show(query:"2+3*4")
+        guard let background=panel?.backdrop?.window else { throw WindowsError.unsupported("Search material is unavailable for the active layering check.") }
+        let snapshot=NativeSearchSnapshot(generation:panel!.generation,
+            results:[NativeSearchResult(id:"answer",title:"14",subtitle:"2 + 3 * 4",kind:"Calculator")],status:"Native layering check",quickAnswer:"14")
+        _=try panel?.apply(snapshot)
+        // This explicit interactive fixture remains above other windows while checking native DC regions.
+        SetWindowPos(window,HWND(bitPattern:-1),0,0,0,0,UINT(SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE))
+        for expanded in [false,true,false] {
+            panel?.previewExpanded=expanded; panel?.fitHeight()
+            let deadline=GetTickCount64()+250
+            repeat {
+                var message=MSG()
+                var count=0
+                while count<1024,GetTickCount64()<deadline,PeekMessageW(&message,nil,0,0,UINT(PM_REMOVE)) {
+                    count += 1
+                    if message.message==UINT(WM_QUIT) { PostQuitMessage(Int32(truncatingIfNeeded:message.wParam)); throw WindowsError.unsupported("Search layering fixture was closed.") }
+                    TranslateMessage(&message); DispatchMessageW(&message)
+                }
+                _=MsgWaitForMultipleObjectsEx(0,nil,10,DWORD(QS_ALLINPUT),DWORD(MWMO_INPUTAVAILABLE))
+            } while GetTickCount64()<deadline
+            try expect(IsWindowVisible(window),"fixture must be visible")
+            guard let backgroundDC=GetDC(background) else { throw WindowsError.api("Read Search material clipping",GetLastError()) }
+            defer { ReleaseDC(background,backgroundDC) }
+            try expect(PtVisible(backgroundDC,Int32(12*panel!.scale),Int32(12*panel!.scale)),"blank material remains visible")
+            for (id,control) in panel!.controls where GetWindowLongPtrW(control,Int32(GWL_STYLE)) & LONG_PTR(WS_VISIBLE) != 0 {
+                var area=RECT(); GetClientRect(control,&area)
+                let center=POINT(x:area.right/2,y:area.bottom/2)
+                var backgroundPoint=center; MapWindowPoints(control,background,&backgroundPoint,1)
+                try expect(!PtVisible(backgroundDC,backgroundPoint.x,backgroundPoint.y),"material excludes native control \(id)")
+                guard let controlDC=GetDC(control) else { throw WindowsError.api("Read Search control clipping",GetLastError()) }
+                let visible=PtVisible(controlDC,center.x,center.y); ReleaseDC(control,controlDC)
+                try expect(visible,"native control \(id) remains visible")
+            }
+        }
+        Console.writeLine("PASS: active material excludes input/results/preview/actions at their native visible regions through expansion and collapse")
+    }
     static func selfCheck() throws {
         func expect(_ value: Bool,_ message: String) throws { guard value else { throw WindowsError.unsupported("Search check failed: " + message) } }
         let initialized=CoInitializeEx(nil,DWORD(COINIT_APARTMENTTHREADED.rawValue))

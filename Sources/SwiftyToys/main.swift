@@ -51,7 +51,7 @@ func runCLI(_ args: [String]) throws -> Int32 {
         var preview: NativeSearchWindow?
         weak var panel: NativeSearchWindow?
         defer { preview=nil; NativeSearchBackdrop.shutdown() }
-        preview = try NativeSearchWindow(onQuery:{ query in
+        preview = try NativeSearchWindow(designPreview:true,onQuery:{ query in
             guard let panel else { return }
             let answer=SearchAnswers.quick(query)
             let rows=answer.map { [NativeSearchResult(id:"answer",title:$0.value,subtitle:$0.detail,kind:$0.title)] } ?? []
@@ -70,6 +70,7 @@ func runCLI(_ args: [String]) throws -> Int32 {
         return 0
     }
     if command == "--test-search-policy" { try testNativeSearchPolicy(); return 0 }
+    if command == "--test-search-layering" { try NativeSearchWindow.layeringCheck(); return 0 }
     if command == "--test-search-ui" {
         try NativeSearchWindow.selfCheck()
         try NativeSearchBackdrop.selfCheck()
