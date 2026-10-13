@@ -18,10 +18,10 @@ patterns. Read the relevant requirements and validation notes before editing.
 
 ## Build and validation
 
-Use the official Swift 6.4 Windows toolchain, MSVC and Windows SDK. Run builds and
+Use the official Swift toolchain pinned in .swift-version, MSVC and Windows SDK. Run builds and
 tests sequentially with scripts/build.ps1 and scripts/test.ps1. Run the native
 ABI, storage, worker-wait, input-profile, mouse-scope and settings checks on Windows.
-Run portable core tests on macOS. Distinguish physical device validation from tests.
+Run portable core tests on Linux and macOS. Distinguish physical device validation from tests.
 For GUI-subsystem CLI checks, use Start-Process -Wait -PassThru with redirected
 output. Install the complete packaged artifact. Verify CI before release.
 

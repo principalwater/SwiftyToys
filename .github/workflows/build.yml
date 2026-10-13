@@ -5,15 +5,31 @@ on:
 permissions:
   contents: read
 jobs:
+  toolchain:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        shell: pwsh
+        run: |
+          ./scripts/test-toolchain.ps1
+          $version = ./scripts/SwiftVersion.ps1
+          "version=$version" >> $env:GITHUB_OUTPUT
   windows:
+    needs: toolchain
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Swift 6.4
+      - name: Install pinned Swift
         uses: compnerd/gha-setup-swift@bbae8ce86bac5a3449f3992b3d88bc4ca25f2057
         with:
-          swift-version: swift-6.4.0-release
-          swift-build: 6.4.0-RELEASE
+          swift-version: swift-${{ needs.toolchain.outputs.version }}-release
+          swift-build: ${{ needs.toolchain.outputs.version }}-RELEASE
+      - name: Verify active compiler
+        shell: pwsh
+        run: ./scripts/SwiftVersion.ps1 -CheckCompiler
       - name: Build x64
         shell: powershell
         run: ./scripts/build.ps1
@@ -124,7 +140,9 @@ jobs:
         shell: powershell
         run: |
           ./scripts/package.ps1
-          ./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.13-win-x64
+          $package = @(Get-ChildItem ./artifacts -Directory -Filter 'SwiftyToys-*-win-x64')
+          if ($package.Count -ne 1) { throw 'Expected one freshly built package.' }
+          ./scripts/build-setup.ps1 -PackageDirectory $package[0].FullName
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -133,6 +151,7 @@ jobs:
             artifacts/SwiftyToys.exe
             artifacts/*.dll
             artifacts/runtime-files.txt
+            artifacts/swift-version.txt
             artifacts/*-Setup.exe
             artifacts/*-Setup.exe.sha256
             artifacts/resources/
@@ -141,11 +160,26 @@ jobs:
             LICENSE
             THIRD_PARTY_NOTICES.md
   macos-core:
+    needs: toolchain
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - uses: compnerd/gha-setup-swift@bbae8ce86bac5a3449f3992b3d88bc4ca25f2057
         with:
-          swift-version: swift-6.4.0-release
-          swift-build: 6.4.0-RELEASE
+          swift-version: swift-${{ needs.toolchain.outputs.version }}-release
+          swift-build: ${{ needs.toolchain.outputs.version }}-RELEASE
+      - shell: pwsh
+        run: ./scripts/SwiftVersion.ps1 -CheckCompiler
+      - run: swift test
+  linux-core:
+    needs: toolchain
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: compnerd/gha-setup-swift@bbae8ce86bac5a3449f3992b3d88bc4ca25f2057
+        with:
+          swift-version: swift-${{ needs.toolchain.outputs.version }}-release
+          swift-build: ${{ needs.toolchain.outputs.version }}-RELEASE
+      - shell: pwsh
+        run: ./scripts/SwiftVersion.ps1 -CheckCompiler
       - run: swift test

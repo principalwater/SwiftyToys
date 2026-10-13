@@ -1,4 +1,4 @@
-param([string]$SwiftVersion = '6.4.0')
+param([string]$SwiftVersion)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'SwiftEnvironment.ps1') -SwiftVersion $SwiftVersion

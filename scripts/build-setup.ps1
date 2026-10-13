@@ -1,9 +1,10 @@
-param([Parameter(Mandatory)][string]$PackageDirectory, [string]$OutputPath, [string]$SwiftVersion = '6.4.0')
+param([Parameter(Mandatory)][string]$PackageDirectory, [string]$OutputPath, [string]$SwiftVersion)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 . (Join-Path $PSScriptRoot 'SwiftEnvironment.ps1') -SwiftVersion $SwiftVersion
 $packagePath = [IO.Path]::GetFullPath($PackageDirectory)
 if (-not (Test-Path -LiteralPath (Join-Path $packagePath 'SwiftyToys.exe'))) { throw 'Build the complete release package first.' }
+if ([IO.File]::ReadAllText((Join-Path $packagePath 'swift-version.txt')).Trim() -ne $SwiftVersion) { throw 'The application and setup must use the same Swift toolchain.' }
 if (-not $OutputPath) { $OutputPath = Join-Path (Split-Path $packagePath -Parent) ((Split-Path $packagePath -Leaf) + '-Setup.exe') }
 $OutputPath = [IO.Path]::GetFullPath($OutputPath)
 $buildDirectory = Join-Path $repoRoot '.build\setup'

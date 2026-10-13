@@ -12,13 +12,13 @@
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
-Native **Swift 6.4** utilities for Windows, Boot Camp and former macOS users.
+Native **Swift 6.4.1** utilities for Windows, Boot Camp and former macOS users.
 Inspired by and complementary to [Microsoft PowerToys](https://github.com/microsoft/PowerToys).
 Independent of Microsoft and Apple. Local settings; no telemetry or web renderer.
 
 **Think Different. On Windows.** By [principalwater](https://github.com/principalwater).
 
-![SwiftyToys native feature tiles, shown in interface preview](docs/images/overview.png)
+![SwiftyToys Command Ember feature tiles and keyboard-driven Search, illustrated interface presentation](docs/images/overview.svg)
 
 ## Utilities
 
@@ -103,21 +103,25 @@ unloads after inactivity. The model does not generate answers or exchange rates.
 
 ## Build and contribute
 
-Use the official Swift 6.4 Windows toolchain, MSVC and Windows SDK.
+Use the official Swift toolchain pinned in [.swift-version](.swift-version), MSVC and Windows SDK.
 Portable BrightnessCore/KeyboardCore/SearchCore tests use Swift Testing; native interop is header-only.
 
 ```powershell
 ./scripts/build.ps1
 ./scripts/test.ps1
 ./scripts/package.ps1
-./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.13-win-x64
+./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.14-win-x64
 ```
 
 [Contributor guide](CONTRIBUTING.md) · [Packaging](docs/Packaging.md) ·
 [Windows interop](docs/WindowsInterop.md) · [Performance](docs/Performance.md) ·
-[Security](SECURITY.md). CI verifies Windows and macOS core checks. External changes
+[Security](SECURITY.md). CI verifies Windows, Linux and macOS core checks. External changes
 use reviewed PRs; the maintainer controls merges. Size budgets are 8 MB EXE / 3.5 MB ZIP;
 performance advantages require reproducible measurements.
+
+The compiler/SDK pin is shared by local scripts and all CI platforms. Follow the
+[toolchain upgrade procedure](docs/Toolchain.md) to test a newer stable release;
+updates are reviewed and validated before installation or publication.
 
 ## Credits and license
 
