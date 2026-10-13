@@ -117,11 +117,24 @@ Search opens as a rounded, compact query bar. Up to six result rows expand below
 it; longer lists scroll. Preview opens alongside results only when requested.
 Native accessible edit/list controls retain selectable text, IME input, keyboard
 navigation, Segoe UI, system DPI handling and the original Command mark.
+While a nonempty query changes, the panel can grow to accommodate results but
+does not shrink between replies. Clear or reopen it to return to the compact bar.
+Progressive updates preserve the selected result and valid scroll position.
+Pending results remain visible while providers work, with their actions disabled;
+only a reply for the current query can make them actionable again.
+Rows and action buttons use the OS buffered-paint API, committing their background
+and text together. Failed or incomplete buffered drawing falls back to native
+direct painting. The single-line query uses Windows' plain-text Rich Edit with
+native input, caret, Unicode, selection and Undo. It does not accept rich text or
+embedded objects, or automatically switch the keyboard layout or font size. The
+hint disappears before IME composition and returns after an empty cancellation.
 
 The surrounding surface uses Windows' own Acrylic material through
 [OS XAML hosting](https://learn.microsoft.com/en-us/windows/uwp/xaml-islands/using-the-xaml-hosting-api),
-initialized only when Search first opens. Native controls have opaque, readable
-surfaces; the entire panel is not continuously transparent. Windows can replace
+initialized only when Search first opens. A narrow Acrylic frame surrounds one
+continuous opaque content surface shared by input, results, preview and actions;
+individual controls do not form disconnected bright rectangles over the glass.
+The entire panel is not continuously transparent. Windows can replace
 Acrylic with an opaque surface for high contrast, disabled transparency, power
 saving or hardware limitations. SwiftyToys preserves those system choices and
 uses native high-contrast colors. A material initialization failure leaves Search

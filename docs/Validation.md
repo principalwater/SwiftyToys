@@ -1,4 +1,50 @@
-# Validation snapshot: 0.1.16 Search content clipping
+# Validation snapshot: 0.1.17 Search stability and continuous surface
+
+2026-10-13. The Swift 6.4.1 candidate executable is 7,604,224 bytes. Hidden
+Search regressions observe real window messages: pending
+queries retain geometry and rows while Open/Copy/Preview/Reveal remain blocked;
+identical snapshots cause no window reposition, row reset or text replacement.
+Progressive replies retain the selected result and valid list scroll position.
+Different result counts do not shrink a nonempty query's frame; clear/reopen
+restores the compact bar. DPI and high-contrast changes still refresh appearance.
+
+Native query checks cover rapid Unicode insertion, caret/selection, replacement,
+Undo, unchanged input layout, populated text after high-contrast changes, IME hint
+visibility and the 1024-character typing limit. The query is an OS Msftedit
+plain-text single-line control with native accessibility annotation; hidden
+Results labeling remains separate from the visible hint. A real owned 32-bit
+bitmap fixture confirms buffered-paint commit timing, nonzero rectangle origin,
+unchanged exterior pixels, discarded incomplete painting and direct fallback.
+All 41 portable core tests passed. The native Search UI and active layering
+checks passed; complete frozen-package validation is recorded below.
+
+The frozen package passes all 28 native checks. Its complete native Setup installs
+with exit code 0, preserving all three existing preference-file hashes and both
+absent preference-file states. The installed image matches the package SHA-256
+`f64d331fe25dd84e3211f0147afbc1665e56c5cca47e74034dced55999d11f03`.
+It reports 0.1.17 / Swift 6.4.1, native WDDM gamma and DDC/CI off; the monitor
+backlight remains 100%. The installed interactive native-region check also passes.
+Physical feedback accepted the continuous surface and buffered results; acceptance
+of the final Rich Edit fast-typing behavior remains separate from automated checks.
+
+One opaque content surface now joins the native controls; the OS Acrylic island's
+region is limited to an eight-DIP perimeter. The interactive native-region check
+confirms visible material at the perimeter, excluded material inside the content,
+and visible input/results/preview/actions through layout changes. Source ownership,
+high contrast and repeated close/reopen checks pass with exact warmed GDI/USER
+counts. The fixture waits boundedly for deferred XAML releases; a resource
+mismatch still fails, rather than allowing a tolerance or growth.
+
+A previous read-only preview accepted `12*7` and exposed `84` through native accessibility.
+During three approximately ten-second samples it used 3.58%, 4.20% and 3.59% of
+one CPU core, with private bytes 15,777,792, working set 49,684,480, 475 handles
+and nine threads unchanged. The window responded throughout. These uncontrolled
+preview observations preceded the Rich Edit change and are not a before/after benchmark, GPU attribution, proof
+of zero idle cost or weakest-hardware performance. Graphics capture timed out
+twice; visual smoothness and the final composed appearance require physical
+feedback, separately from the native-message and visible-region tests.
+
+## Previously verified 0.1.16 Search content clipping
 
 2026-10-13. The OS XAML child initially had only WS_CHILD (0x40000000),
 without WS_CLIPSIBLINGS. Its lower z-order alone did not prevent painting over

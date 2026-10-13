@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 enum AppVersion {
-    static let string = "0.1.16"
+    static let string = "0.1.17"
     static let implementation: String = {
         let directory = executablePath().split(separator: "\\").dropLast().joined(separator: "\\")
         guard let bytes = try? NativeFiles.read(directory + "\\swift-version.txt", maximum: 64) else { return "Swift" }
