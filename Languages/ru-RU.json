@@ -249,5 +249,9 @@
   "Currency conversion": "Конвертация валют",
   "World clock": "Мировое время",
   "Search the web": "Искать в интернете",
-  "Open search": "Открыть поиск"
+  "Open search": "Открыть поиск",
+  "Enter Open • Esc Close": "Enter — открыть • Esc — закрыть",
+  "↑↓ Choose • Enter Open • Esc Close": "↑↓ — выбрать • Enter — открыть • Esc — закрыть",
+  "Search apps, files, or calculate": "Ищите приложения, файлы или вычисляйте",
+  "Read-only design preview": "Предпросмотр оформления без изменений"
 }

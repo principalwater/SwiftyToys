@@ -1,5 +1,15 @@
 # Changelog
 
+## SwiftyToys 0.1.15 — 2026-10-13
+
+- Make Search a compact rounded query bar with larger type, expanding results,
+  softer selection and small native action buttons; open preview only on request.
+- Add a lazily initialized OS Acrylic background with opaque native input/results
+  and automatic system fallbacks, retaining keyboard navigation, IME and MSAA names.
+- Own the XAML source and UI-thread manager through close/reopen and final shutdown;
+  keep background hit testing out of native input and tab traversal.
+- Preserve Swift 6.4.1, static runtime, Command branding and existing system settings.
+
 ## SwiftyToys 0.1.14 — 2026-10-13
 
 - Build the application and native setup with official Swift 6.4.1, using one

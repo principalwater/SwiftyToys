@@ -1,4 +1,36 @@
-# Validation snapshot: 0.1.14 toolchain update
+# Validation snapshot: 0.1.15 Search presentation
+
+2026-10-13. The optimized Swift 6.4.1 candidate is 7,561,728 bytes and passes
+all 41 portable tests and 28 native checks. Search tests cover complete one/six-row
+layouts at fractional DPI, collapsed/expanded bounds and minimum sizes, visible
+tab order, IME, MSAA names, stale deliveries and warmed native resource ownership.
+The 125% scale check caught a one-pixel truncation; desired and minimum heights
+now round upward before conversion to physical pixels.
+
+The actual OS XAML fixture stays hidden and passes creation, high-contrast
+fallback, child sizing, native hit-test transparency, tab exclusion, close/reopen,
+source destruction and terminal manager shutdown. Duplicate WM_QUIT messages
+become one; a separate wrapper verified preservation of a preexisting quit code.
+The manager is never recreated after terminal shutdown.
+
+Known opaque colors provide 14.53:1 primary and 5.81:1 secondary text contrast;
+secondary text on the selected surface is 5.55:1. These source calculations do not
+certify material contrast, focus appearance or the whole UI's accessibility.
+
+An isolated hidden OS XAML prototype initialized in 204 ms and added about
+9.86 MiB private memory and 30.85 MiB working set. Settled idle sampling recorded
+no CPU-counter increment across approximately two seconds. These are prototype
+observations, not production startup, visible GPU cost, controlled A/B or weakest
+hardware results. The framework remains resident after hiding Search; basic
+startup does not initialize it. Empty/whitespace queries do not start providers.
+
+A separate read-only design preview was launched without input hooks or display
+changes. No screenshot or visual acceptance is claimed. Prior physical feedback
+confirmed the functional Search shortcuts, calculations and Command icons. New
+material appearance and long-session graphics stability remain separate physical
+checks.
+
+## Previously verified 0.1.14 toolchain update
 
 2026-10-13. The official Swift 6.4.1 Windows installer passed its published
 SHA-256 and Apple Authenticode checks and completed successfully. The active

@@ -19,7 +19,7 @@ provides an Open Search button and the enable/disable setting.
 | Ctrl + Enter | Reveal a selected local file, folder or application item in Explorer. The effective Mac preset maps Cmd + Enter to this chord within SwiftyToys, preserving custom rules. |
 | Cmd + C | With the Mac copy preset, copy a selected result path, action title or quick answer from the result list. In the query field, selected text keeps normal text-copy behavior; with no text selected, the selected quick answer is copied. |
 | Space / Preview | Space in the result list requests a preview. Space in the query remains text input. |
-| Tab / Shift + Tab | Move through the native edit, list, preview and action controls. |
+| Tab / Shift + Tab | Move through visible native controls. Preview joins the tab order only when expanded. |
 | Esc / Close | Dismiss the panel and invalidate pending work. Losing activation also dismisses it, except while an owned dialog is active. |
 
 Plain-text previews support selection, scrolling and normal text copying. Other
@@ -113,12 +113,25 @@ does not generate answers, execute instructions in documents or fetch web result
 
 ## Interface and licenses
 
-The panel uses native accessible Windows controls, Segoe UI and the original
-Command mark. It is an opaque tool window with an OS-owned optional shadow,
-system DPI handling and Windows high-contrast colors. It uses no Apple SDK,
-desktop capture, blur renderer or idle animation. English source strings have
-language-pack fallback, including the Russian pack; user file/app names are
-preserved when owned labels are translated.
+Search opens as a rounded, compact query bar. Up to six result rows expand below
+it; longer lists scroll. Preview opens alongside results only when requested.
+Native accessible edit/list controls retain selectable text, IME input, keyboard
+navigation, Segoe UI, system DPI handling and the original Command mark.
+
+The surrounding surface uses Windows' own Acrylic material through
+[OS XAML hosting](https://learn.microsoft.com/en-us/windows/uwp/xaml-islands/using-the-xaml-hosting-api),
+initialized only when Search first opens. Native controls have opaque, readable
+surfaces; the entire panel is not continuously transparent. Windows can replace
+Acrylic with an opaque surface for high contrast, disabled transparency, power
+saving or hardware limitations. SwiftyToys preserves those system choices and
+uses native high-contrast colors. A material initialization failure leaves Search
+usable with an opaque surface.
+
+The OS framework remains loaded after Search is hidden; the source closes before
+its UI-thread manager at application exit. There is no separate WinUI/Windows App
+SDK download, Apple SDK, desktop capture, application blur renderer or idle
+animation. English strings have language-pack fallback, including the Russian
+pack; user file/app names are preserved when owned labels are translated.
 
 SwiftyToys' own implementation is [MIT](../LICENSE). Google's model and the
 pinned ONNX conversion use [Apache 2.0](https://huggingface.co/google/embeddinggemma-2),

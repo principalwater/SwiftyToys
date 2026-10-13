@@ -15,13 +15,15 @@ var products: [Product] = [.library(name: "BrightnessCore", targets: ["Brightnes
     targets += [
         .systemLibrary(name: "WindowsDisplayABI", path: "Sources/WindowsDisplayABI"),
         .systemLibrary(name: "SearchIndexABI", path: "Sources/SearchIndexABI"),
+        .systemLibrary(name: "SearchXamlABI", path: "Sources/SearchXamlABI"),
         .systemLibrary(name: "EmbeddingABI", path: "Sources/EmbeddingABI"),
         .executableTarget(
-            name: "SwiftyToys", dependencies: ["BrightnessCore", "KeyboardCore", "SearchCore", "WindowsDisplayABI", "SearchIndexABI", "EmbeddingABI"],
+            name: "SwiftyToys", dependencies: ["BrightnessCore", "KeyboardCore", "SearchCore", "WindowsDisplayABI", "SearchIndexABI", "SearchXamlABI", "EmbeddingABI"],
             linkerSettings: [
                 .linkedLibrary("user32"), .linkedLibrary("gdi32"),
                 .linkedLibrary("shell32"), .linkedLibrary("dxva2"), .linkedLibrary("hid"),
                 .linkedLibrary("ole32"), .linkedLibrary("oleaut32"),
+                .linkedLibrary("windowsapp"),
                 .linkedLibrary("comctl32"), .linkedLibrary("advapi32"),
                 .linkedLibrary("wtsapi32"), .linkedLibrary("setupapi"), .linkedLibrary("cfgmgr32"),
                 .linkedLibrary("magnification"),

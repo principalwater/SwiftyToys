@@ -47,8 +47,35 @@ func runCLI(_ args: [String]) throws -> Int32 {
         return 0
     }
     Console.attach()
+    if command == "--preview-search" {
+        var preview: NativeSearchWindow?
+        weak var panel: NativeSearchWindow?
+        defer { preview=nil; NativeSearchBackdrop.shutdown() }
+        preview = try NativeSearchWindow(onQuery:{ query in
+            guard let panel else { return }
+            let answer=SearchAnswers.quick(query)
+            let rows=answer.map { [NativeSearchResult(id:"answer",title:$0.value,subtitle:$0.detail,kind:$0.title)] } ?? []
+            _=try? panel.apply(NativeSearchSnapshot(generation:panel.generation,results:rows,
+                status:"Read-only design preview",quickAnswer:answer?.value))
+        },onActivate:{ _ in },onPreview:{ _ in
+            guard let panel else { return }
+            _=try? panel.applyPreview(generation:panel.generation,resultID:"answer",title:"Calculator",text:"Local calculation preview")
+        },onCopy:{ _ in },onDismiss:{ PostQuitMessage(0) })
+        panel=preview
+        try preview?.show(query:args.count > 1 ? args[1] : "2+3*4")
+        var message=MSG()
+        while BC_GetMessageW(&message,nil,0,0)>0 {
+            if preview?.dialogMessage(&message) != true { TranslateMessage(&message); DispatchMessageW(&message) }
+        }
+        return 0
+    }
     if command == "--test-search-policy" { try testNativeSearchPolicy(); return 0 }
-    if command == "--test-search-ui" { try NativeSearchWindow.selfCheck(); return 0 }
+    if command == "--test-search-ui" {
+        try NativeSearchWindow.selfCheck()
+        try NativeSearchBackdrop.selfCheck()
+        Console.writeLine("PASS: native Search material lifecycle, high contrast, click-through sizing and terminal shutdown; fixture stayed hidden")
+        return 0
+    }
     if command == "--test-search-index" { try NativeIndexedSearch.selfCheck(); return 0 }
     if command == "--test-tokenizer" { try GemmaBPETokenizer.selfCheck(); return 0 }
     if command == "--test-embedding" { try NativeEmbedding.selfCheck(); return 0 }

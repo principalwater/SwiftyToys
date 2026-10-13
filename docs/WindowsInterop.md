@@ -74,6 +74,14 @@ timed-out replies alive until their driver work finishes.
 The release links the official static runtime and uses native Win32 file/process
 APIs. See [packaging notes](Packaging.md) for the measured dependency reduction.
 
+Search's optional material calls OS Windows.UI.Xaml activation factories and COM
+interfaces directly from Swift. SearchXamlABI includes official SDK declarations;
+it adds no C implementation or separately distributed WinUI runtime. One lazy
+UI-thread WindowsXamlManager survives panel reuse, with source references closed
+before terminal manager teardown and bounded message draining. The noninteractive
+background HWND returns HTTRANSPARENT while native input/list controls retain
+their own focus, accessibility and drawing.
+
 ## A WinSDK overlay limitation
 
 Swift 6.4 imports `GetMessageW` and `TrackPopupMenu` as Bool. Windows defines signed

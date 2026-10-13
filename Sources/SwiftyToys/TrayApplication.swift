@@ -810,6 +810,7 @@ final class TrayApplication {
         trayIcon = nil
         if let osd { DestroyWindow(osd) }
         Diagnostics.write(restored ? "exit: output restored" : "exit: output recovery pending; watchdog and lease retained")
+        NativeSearchBackdrop.shutdown()
     }
 
     deinit { shutdown() }
