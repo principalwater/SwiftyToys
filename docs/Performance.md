@@ -17,6 +17,54 @@ for the resident and watchdog separately. CPU percent is relative to one core,
 not divided by this machine's 24 logical processors. Keep identical settings,
 foreground workload, startup state and sampling duration for comparisons.
 
+## 0.1.23 Search UI isolation
+
+Five process-cold API traces on this machine localized startup cost: XAML manager
+initialization took 168–241 ms, native controls 28–39 ms, and construction/show
+calls together 256–363 ms. These temporary diagnostic marks did not measure the
+first rendered frame and are absent from the release.
+
+Search now creates its HWNDs, COM objects and material on one lazily started
+native UI thread. It retains the framework through controller resets and waits
+on Windows messages/an event when idle. Main-thread action messages validate the
+built-in index and reset generation. The hidden fixture covers cold-toggle
+coalescing, preference updates, repeated owner-thread resets, sent replies,
+obsolete actions, bounded errors and shutdown; it replaces actual show.
+
+The static Swift 6.4.1 executable is 8,477,184 bytes. Size budgets remain
+8.5 MB for the app, 3.5 MB for ZIP and 2.7 MB for native Setup. Packages include
+current evidence; previous release records remain in this repository.
+
+The installed image, SHA-256
+`3b6c8e1d4ac16a56cf81da57e51ec6d6055f252fa64a4ecdbfdce2edf2f969ee`,
+had no control-queue timeouts in 300 cold-opening probes: p95 0.1591 ms,
+maximum 0.3882 ms. Search's own queue had no timeouts but one 46.0871 ms
+sample during initialization. Queue response is not rendered-frame/input latency.
+In the first approximately 46-second interval, resident/watchdog had no recorded
+CPU increment; resident private bytes stayed near 16.3 MiB and handles at 533.
+With Search dismissed, resident CPU was 0.034% of one core, private bytes near
+16.9 MiB and handles at 528. Optional background indexing resumed at 77.5% of
+one core and initialized about 100.7 MiB of private memory; it is not zero-cost.
+All sampled processes responded. These short intervals are not a controlled
+speedup or a sustained leak test.
+
+Reopening cancelled the indexing child: library private bytes returned to about
+5.6 MiB, handles to 184 and CPU to 1.90% of one core. Resident CPU was 0.068%,
+private bytes near 17 MiB and handles 545–549. Both queues had no timeouts in
+300 probes each: control p95 0.1407 ms / maximum 0.2925 ms, Search p95
+0.1166 ms / maximum 0.6082 ms; Search was visible in 299 samples.
+
+Computer use verified calculation updates, native input and category navigation
+in the installed read-only preview. The resident tool window is omitted from
+that tool's inventory; preview CPU was not attributed to the resident. Screenshot
+capture failed twice, so visual smoothness was not verified. Installation retained
+all five preference-file states, DDC off and physical brightness 100%.
+
+Isolation does not eliminate the one-time Search initialization cost or establish
+absence of every system microfreeze, GPU latency or weakest-hardware performance.
+
+## Previous release evidence
+
 ## 0.1.22 visible Search guard
 
 Search visibility and its last activity tick share one mutex. Heavy-work admission,

@@ -1,4 +1,4 @@
-param([string]$Version = '0.1.22', [string]$SwiftVersion)
+param([string]$Version = '0.1.23', [string]$SwiftVersion)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 if ($Version -notmatch '^\d+\.\d+(?:\.\d+)?(?:-[a-z0-9.-]+)?$') { throw 'Invalid package version.' }
@@ -10,13 +10,15 @@ foreach ($document in @('README.md','LICENSE','THIRD_PARTY_NOTICES.md','CHANGELO
 }
 Copy-Item -LiteralPath (Join-Path $repoRoot 'Licenses') -Destination $packageDirectory -Recurse
 Copy-Item -LiteralPath (Join-Path $repoRoot 'docs') -Destination $packageDirectory -Recurse
-# Ship current validation; the growing historical record stays available upstream.
-$validationPath = Join-Path $packageDirectory 'docs\Validation.md'
-$validation = [IO.File]::ReadAllText($validationPath)
-$history = $validation.IndexOf('## Previous release evidence', [StringComparison]::Ordinal)
-if ($history -ge 0) {
-    $validation = $validation.Substring(0, $history) + "Full validation history: [repository record](https://github.com/principalwater/SwiftyToys/blob/main/docs/Validation.md).`n"
-    [IO.File]::WriteAllText($validationPath, $validation, [Text.UTF8Encoding]::new($false))
+# Ship current evidence; the growing historical records stay available upstream.
+foreach ($document in @('Validation.md', 'Performance.md')) {
+    $documentPath = Join-Path $packageDirectory ('docs\' + $document)
+    $contents = [IO.File]::ReadAllText($documentPath)
+    $history = $contents.IndexOf('## Previous release evidence', [StringComparison]::Ordinal)
+    if ($history -ge 0) {
+        $contents = $contents.Substring(0, $history) + "Full history: [repository record](https://github.com/principalwater/SwiftyToys/blob/main/docs/$document).`n"
+        [IO.File]::WriteAllText($documentPath, $contents, [Text.UTF8Encoding]::new($false))
+    }
 }
 $archivePath = "$packageDirectory.zip"
 Add-Type -AssemblyName System.IO.Compression.FileSystem

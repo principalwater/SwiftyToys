@@ -34,7 +34,7 @@ final class TrayApplication {
     private var reloadingInput = false
     private var applyingMouseScroll = false
     private var dashboard: SettingsWindow?
-    private var search: NativeSearchController?
+    private var search: NativeSearchUI?
     private var searchPreferences = SearchPreferences()
     private var searchModel: NativeSearchModelManager?
     private var searchLibrary: NativeSearchLibraryManager?
@@ -145,7 +145,6 @@ final class TrayApplication {
             if result == 0 { break }
             if result < 0 { throw WindowsError.api("GetMessage", GetLastError()) }
             if dashboard?.dialogMessage(&message) == true { continue }
-            if search?.dialogMessage(&message) == true { continue }
             TranslateMessage(&message)
             DispatchMessageW(&message)
         }
@@ -170,12 +169,21 @@ final class TrayApplication {
             return 0
         }
         switch message {
+        case searchUIActionMessage:
+            guard !exiting, value < WPARAM(SearchCommands.items.count), search?.acceptsAction(generation: data) == true else { return 0 }
+            do { try performSearchAction(String(SearchCommands.items[Int(value)].id.dropFirst(7))) }
+            catch { showSearchError(error) }
+            return 0
+        case searchUIStatusMessage:
+            if !exiting, let error = search?.takeError() { showSearchError(WindowsError.unsupported(error)) }
+            return 0
         case searchModelMessage:
             if let status = searchModel?.take() {
                 dashboard?.updateSearchModel(status)
                 if !status.busy, maintainingSearchModel {
                     maintainingSearchModel = false
-                    search?.preferences = searchPreferences
+                    do { try search?.update(preferences: searchPreferences) }
+                    catch { showSearchError(error) }
                 }
                 if !status.busy, searchLibrary == nil {
                     searchLibrary = try? NativeSearchLibraryManager(destination: MessageDestination(window), preferences: searchPreferences)
@@ -531,25 +539,35 @@ final class TrayApplication {
     private func showSearch() throws {
         guard searchPreferences.enabled else { try shellOpen("search-ms:"); return }
         if search == nil {
-            var preferences = searchPreferences
-            if maintainingSearchModel { preferences.semantic = false }
-            search = NativeSearchController(preferences:preferences,action:{ [weak self] action in
-                guard let self else { return }
-                switch action {
-                case "settings": try self.showDashboard()
-                case "lock": try DesktopPower.lock()
-                case "sleep": if let window = self.window { _ = MessageDestination(window).post(toyActionMessage,value:9) }
-                case "calculator": try shellOpen("calculator:")
-                case "explorer": try shellOpen("explorer.exe")
-                case "windows-settings": try shellOpen("ms-settings:")
-                case "bluetooth": try shellOpen("ms-settings:bluetooth")
-                case "sound": try shellOpen("ms-settings:sound")
-                case "display": try shellOpen("ms-settings:display")
-                default: throw WindowsError.unsupported("Unknown search action.")
-                }
-            })
+            guard let window else { throw WindowsError.unsupported("Application is closing.") }
+            search = try NativeSearchUI(destination: MessageDestination(window))
         }
-        try search?.toggle()
+        var preferences = searchPreferences
+        if maintainingSearchModel { preferences.semantic = false }
+        try search?.toggle(preferences: preferences)
+    }
+
+    private func performSearchAction(_ action: String) throws {
+        switch action {
+        case "settings": try showDashboard()
+        case "lock": try DesktopPower.lock()
+        case "sleep": if let window { _ = MessageDestination(window).post(toyActionMessage, value: 9) }
+        case "calculator": try shellOpen("calculator:")
+        case "explorer": try shellOpen("explorer.exe")
+        case "windows-settings": try shellOpen("ms-settings:")
+        case "bluetooth": try shellOpen("ms-settings:bluetooth")
+        case "sound": try shellOpen("ms-settings:sound")
+        case "display": try shellOpen("ms-settings:display")
+        default: throw WindowsError.unsupported("Unknown Search action.")
+        }
+    }
+
+    private func showSearchError(_ error: any Error) {
+        withWideString(String(describing: error)) { text in
+            withWideString("SwiftyToys Search") {
+                _ = MessageBoxW(window, text, $0, UINT(MB_OK | MB_ICONERROR | MB_SETFOREGROUND))
+            }
+        }
     }
 
     private func dashboardCommand(_ id: Int, _ values: [String]) throws -> String {
@@ -564,8 +582,9 @@ final class TrayApplication {
             preferences.quickKeys = try SearchQuickKeys(serialized: values[7])
             preferences.indexPaused = searchPreferences.indexPaused
             if !preferences.enabled { preferences.semantic = false }
+            try search?.reset()
             try preferences.save()
-            search?.stop(); search = nil; searchPreferences = preferences
+            searchPreferences = preferences
             NativeEmbedding.close()
             searchLibrary?.apply(preferences)
             try reloadRemapper()
@@ -574,10 +593,10 @@ final class TrayApplication {
         case 811: try showSearch(); return "Search opened."
         case 812, 814:
             guard !maintainingSearchModel, searchModel?.busy == false else { throw WindowsError.unsupported("Wait for the current model operation or cancel its download first.") }
+            try search?.reset()
             let library = searchLibrary
             searchLibrary = nil
             maintainingSearchModel = true
-            search?.stop(); search = nil
             do {
                 try searchModel?.start(id == 812 ? "download" : "remove", repositoryID: values.first,
                     includeMedia: values.last == "1", prepare: {
@@ -839,7 +858,8 @@ final class TrayApplication {
         brightnessRepeat.reset()
         guard !exiting else { return }
         exiting = true
-        search?.stop(); search = nil; searchModel?.cancel(); searchLibrary?.stop(); searchLibrary = nil
+        if search?.stop() == false { Diagnostics.write("exit: Search UI shutdown pending on its owner thread") }
+        search = nil; searchModel?.cancel(); searchLibrary?.stop(); searchLibrary = nil
         dashboard = nil
         remapper?.stop()
         remapper = nil
@@ -858,7 +878,6 @@ final class TrayApplication {
         trayIcon = nil
         if let osd { DestroyWindow(osd) }
         Diagnostics.write(restored ? "exit: output restored" : "exit: output recovery pending; watchdog and lease retained")
-        NativeSearchBackdrop.shutdown()
     }
 
     deinit { shutdown() }

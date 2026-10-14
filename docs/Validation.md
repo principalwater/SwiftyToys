@@ -1,3 +1,23 @@
+# Validation snapshot: 0.1.23 Search UI isolation
+
+2026-10-14. All 67 portable tests and 36 frozen-executable native checks pass.
+Five hidden worker-fixture runs check lazy startup, cold-toggle parity, real
+HWND/material ownership, preference updates, repeated controller destruction,
+sent-message replies during reset waits, obsolete action rejection, bounded error
+delivery and terminal shutdown. Actual show is replaced by a logical fixture;
+existing material, Rich Edit, accessibility, layering and input checks also pass.
+Independent connected-code review found no actionable regression.
+
+The static Swift 6.4.1 executable is 8,477,184 bytes, SHA-256
+`3b6c8e1d4ac16a56cf81da57e51ec6d6055f252fa64a4ecdbfdce2edf2f969ee`.
+Full native Setup installs with exit code 0 and preserves all five preference-file
+states, DDC off and physical brightness 100%. Current measurements and
+computer-use limits are in [Performance.md](Performance.md).
+There is no new timer, dependency or display/input configuration. Cold Search
+initialization still costs time; these checks cannot exclude every microfreeze.
+
+## Previous release evidence
+
 # Validation snapshot: 0.1.22 Search foreground indexing guard
 
 2026-10-14. All 67 portable tests and 35 frozen-executable native checks pass.
@@ -15,8 +35,6 @@ short process-counter observations are recorded in [Performance.md](Performance.
 Full native Setup installs with exit code 0 and preserves all five preference-file
 states, Swift 6.4.1, DDC off and physical brightness 100%.
 These checks do not establish absence of every system microfreeze.
-
-## Previous release evidence
 
 # Validation snapshot: 0.1.21 Search categories, filters and Quick Keys
 

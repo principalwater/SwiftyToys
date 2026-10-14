@@ -404,14 +404,18 @@ final class NativeSearchWindow {
         if height != area.bottom-area.top { SetWindowPos(window,nil,0,0,area.right-area.left,max(Int32(166*scale),height),UINT(SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE)) }
         else { arrange() }
     }
-    func show(query: String = "") throws {
+    func prepareMaterial() {
         checkThread(); guard let window else { return }
-        guard query.utf16.count <= 1024, !query.utf16.contains(0) else { throw WindowsError.unsupported("Search query exceeds its limit.") }
         if !materialAttempted {
             materialAttempted = true
             do { backdrop = try NativeSearchBackdrop(parent:window) }
             catch { Diagnostics.write("Search material unavailable; using native opaque surface: \(error)") }
         }
+    }
+    func show(query: String = "") throws {
+        checkThread(); guard let window else { return }
+        guard query.utf16.count <= 1024, !query.utf16.contains(0) else { throw WindowsError.unsupported("Search query exceeds its limit.") }
+        prepareMaterial()
         var monitor = MONITORINFO(); monitor.cbSize = DWORD(MemoryLayout<MONITORINFO>.size)
         let screen = MonitorFromWindow(GetForegroundWindow(), DWORD(MONITOR_DEFAULTTONEAREST))
         guard GetMonitorInfoW(screen, &monitor) else { throw WindowsError.api("Locate search panel monitor", GetLastError()) }
