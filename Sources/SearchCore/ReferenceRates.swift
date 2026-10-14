@@ -9,7 +9,7 @@ public struct ReferenceRates: Sendable, Equatable {
   public let source: String
   private let dayNumber: Int
   private static let unitCodes: Set<String> = [
-    "MIN", "GAL", "CUP", "SEC", "DAY", "LBS", "KIB", "MIB", "GIB", "TIB",
+    "MIN", "GAL", "SEC", "DAY", "LBS", "KIB", "MIB", "GIB", "TIB",
     "BIT", "BAR", "PSI", "KPA", "MPH", "RPM", "KWH", "MOL", "OHM", "RAD", "DEG",
   ]
 

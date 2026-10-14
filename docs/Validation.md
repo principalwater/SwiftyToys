@@ -1,15 +1,18 @@
 # Validation snapshot: 0.1.20 regional Search
 
-2026-10-14. The static-runtime app is 8,354,304 bytes (SHA-256 `d4361d5ecb6b933c5ce3c7722855ebc77b68727531dcd3e952f08c07c6daefde`).
-All 54 portable tests and 35 native checks pass, covering neutral-base exchange rates,
+2026-10-14. The static-runtime app is checked against the 8.5 MB budget; release
+assets carry SHA-256 sidecars.
+Portable suites and native checks cover neutral-base exchange rates,
 Gregorian dates, finite values, region-aware parsing, Unicode digits, custom
 separators and strict Western/Indian grouping. Fixtures include RU, GB, JP, US,
 Canada, French Canada and Arabic formats; the implementation has no country map.
+Currency/unit fixtures distinguish CUP pesos and local symbols from cup volume,
+including attached ISO codes and existing uppercase MIN/GAL units.
 
 The native rate fixture validates pair JSON, six-hour freshness, maximum age,
 malformed responses and a 32-pair cache. Actual WinHTTP requests succeeded for
 USD/RUB, USD/GBP, USD/JPY and USD/INR; USD/XYZ produced the unsupported-pair error.
-Eight final executable answer/provider probes verify currency conversion, regional
+Final executable answer/provider probes cover currency conversion, regional
 numbers, local time, same-currency identity, unsupported-pair error propagation and
 cache labeling through the actual child IPC. Generated caches stay isolated;
 these tests do not change regional preferences.
