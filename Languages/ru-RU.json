@@ -253,5 +253,16 @@
   "Enter Open • Esc Close": "Enter — открыть • Esc — закрыть",
   "↑↓ Choose • Enter Open • Esc Close": "↑↓ — выбрать • Enter — открыть • Esc — закрыть",
   "Search apps, files, or calculate": "Ищите приложения, файлы или вычисляйте",
-  "Read-only design preview": "Предпросмотр оформления без изменений"
+  "Read-only design preview": "Предпросмотр оформления без изменений",
+  "All": "Все",
+  "Apps": "Приложения",
+  "Files": "Файлы",
+  "Actions": "Действия",
+  "Selected category": "Выбранная категория",
+  "Enter Open • Tab Actions • Esc Close": "Enter — открыть • Tab — действия • Esc — закрыть",
+  "Copy path": "Скопировать путь",
+  "Copy result": "Скопировать результат",
+  "Reveal in File Explorer": "Показать в Проводнике",
+  "Search category could not be displayed.": "Не удалось отобразить категорию поиска.",
+  "Result actions could not be displayed.": "Не удалось отобразить действия с результатом."
 }

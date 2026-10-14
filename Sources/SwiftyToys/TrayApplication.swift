@@ -2,6 +2,7 @@
 
 import BrightnessCore
 import KeyboardCore
+import SearchCore
 import Synchronization
 import WinSDK
 import WindowsDisplayABI
@@ -555,11 +556,12 @@ final class TrayApplication {
         switch id {
         case 810:
             guard !maintainingSearchModel else { throw WindowsError.unsupported("Wait for the model operation or cancel its download before saving Search settings.") }
-            guard values.count == 7, [0,1,3,6].allSatisfy({ values[$0] == "0" || values[$0] == "1" }) else { throw WindowsError.unsupported("Invalid search preferences.") }
+            guard values.count == 8, [0,1,3,6].allSatisfy({ values[$0] == "0" || values[$0] == "1" }) else { throw WindowsError.unsupported("Invalid search preferences.") }
             var preferences = SearchPreferences(contents:"")
             preferences.enabled = values[0] == "1"; preferences.semantic = values[1] == "1"; preferences.folder = values[2]
             preferences.allLocalDrives = values[3] == "1"; preferences.exclusions = values[4]
             preferences.modelRepository = values[5]; preferences.media = values[6] == "1"
+            preferences.quickKeys = try SearchQuickKeys(serialized: values[7])
             preferences.indexPaused = searchPreferences.indexPaused
             if !preferences.enabled { preferences.semantic = false }
             try preferences.save()

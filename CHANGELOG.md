@@ -1,5 +1,20 @@
 # Changelog
 
+## SwiftyToys 0.1.21 — 2026-10-14
+
+- Add All, Applications, Files and Actions categories, with panel-only keyboard
+  navigation and matching typed prefixes.
+- Apply file type and extension filters before ranking in the local library,
+  Windows Index and bounded filename fallback; filtered browsing stays bounded.
+- Add a native result action menu for Open, Preview, Copy and Reveal. Pending
+  or obsolete results remain protected from activation.
+- Add editable Quick Keys for the existing built-in commands. Aliases are exact,
+  opt-in and only run after Enter; custom shell destinations are rejected.
+- Preserve the native Rich Edit input, cancellation, user shortcut overrides,
+  static Swift runtime and existing display/input configuration.
+- Reduce repeated path validation during library refresh, retaining scope and
+  native traversal checks; reject ASCII path metacharacters beside combining marks.
+
 ## SwiftyToys 0.1.20 — 2026-10-14
 
 - Derive Search currency defaults from the Windows country/region, independently

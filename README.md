@@ -27,7 +27,7 @@ Independent of Microsoft and Apple. Local settings; no telemetry or web renderer
 | **[Brightness](docs/Guide.md#features)** — software dimming or DDC/CI; keys, indicator, calibration and recovery | **[Keyboard](docs/Guide.md#features)** — editable Mac shortcuts, application rules and exclusions | **[Input languages](docs/Guide.md#features)** — Ctrl+Space, Caps Lock tap/hold and installed signed Apple RU/EN layouts |
 | **[Desktop](docs/Guide.md#features)** — minimize, pin, lock, Sleep and temporary keep-awake | **[Mouse](docs/Guide.md#features)** — native vertical/horizontal wheel direction; no wheel interception | **[Magic Trackpad](docs/Trackpad.md)** — signed Precision drivers, USB/Bluetooth, gestures and recovery |
 | **[Homebrew](docs/Guide.md#homebrew)** — WSL 2/Ubuntu setup and the official interactive Linux installer | **[Boot Camp](docs/Guide.md#features)** — installed driver metadata and native Windows update entry points | **[Languages](docs/Localization.md)** — English default, Russian example and extensible UTF-8 packs |
-| **[Search](docs/Search.md)** — Cmd+Space, apps/files, calculator, units, dated currency rates, world clock, previews and optional local semantic matching | | |
+| **[Search](docs/Search.md)** — Cmd+Space, categories, file filters, Quick Keys, calculator, regional conversions, previews and optional local semantic matching | | |
 
 Open a tile to configure it. **Overview** or **Esc** returns to the tiles; drafts,
 focus and scroll position survive navigation. Closing settings keeps SwiftyToys active.
@@ -97,11 +97,16 @@ Currency and unit defaults follow Windows regional settings; explicit targets wi
 with bounded offline caching. Numbers and clocks follow the user's formats.
 Web search opens only when selected.
 
+Choose All, Applications, Files or Actions; Cmd+1/2/3 selects a category inside
+Search. Use `files: ext:pdf report` or `video: holiday`; Tab opens result actions.
+Set exact Quick Keys such as `calc = Calculator` on the Search tile, then type
+the alias and press Enter to run the built-in command.
+
 The persistent **Local library** covers local drives with exclusions, pause and
 incremental background indexing. It reads text/code, installed document filters,
 PDF/OCR and images; optional encoders add audio/video content matching. Initial
 indexing takes time and coverage is bounded; ordinary results appear first.
-Use `code:`, `pdf:`, `image:`, `audio:` or `video:` to narrow library matches.
+Type and extension filters apply across providers before result limits.
 
 Optional **EmbeddingGemma 2** remains recommended (about 370 MB including runtime;
 media encoders add about 535 MB). Text-only **MiniLM** and compatible Hugging Face
@@ -119,7 +124,7 @@ Portable BrightnessCore/KeyboardCore/SearchCore tests use Swift Testing; native 
 ./scripts/build.ps1
 ./scripts/test.ps1
 ./scripts/package.ps1
-./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.20-win-x64
+./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.21-win-x64
 ```
 
 [Contributor guide](CONTRIBUTING.md) · [Packaging](docs/Packaging.md) ·

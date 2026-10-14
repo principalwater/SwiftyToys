@@ -3,6 +3,27 @@ import KeyboardCore
 import Testing
 
 struct RemappingTests {
+    @Test func searchWindowScopePreservesOtherWindowsAndConfiguredRules() throws {
+        let scope = "swiftytoys.exe|search"
+        let rules = [try RemapRule(from: "Win+1", to: "Ctrl+1", application: scope),
+            try RemapRule(from: "Win+C", to: "Ctrl+C", application: "swiftytoys.exe")]
+        for (application, context, expected) in [
+            ("swiftytoys.exe", scope, true), ("swiftytoys.exe", "", false),
+            ("notepad.exe", "", false)] {
+            var engine = RemapEngine(rules: rules)
+            _ = engine.process(key: 91, down: true, application: application, shortcutScope: context)
+            let result = engine.process(key: 49, down: true, application: application, shortcutScope: context)
+            #expect(result.suppress == expected)
+            #expect(result.events.contains(KeyTransition(49, down: true)) == expected)
+            _ = engine.process(key: 49, down: false, application: application, shortcutScope: context)
+            _ = engine.process(key: 91, down: false, application: application, shortcutScope: context)
+            #expect(engine.release().isEmpty)
+        }
+        var engine = RemapEngine(rules: rules)
+        _ = engine.process(key: 91, down: true, application: "swiftytoys.exe", shortcutScope: scope)
+        #expect(engine.process(key: 67, down: true, application: "swiftytoys.exe", shortcutScope: scope).suppress)
+        _ = engine.release()
+    }
     @Test func searchActionMasksStartAndSuppressesRepeats() throws {
         var engine = RemapEngine(rules:[try RemapRule(from:"Win+Space",to:"Open search")])
         _ = engine.process(key:91,down:true)

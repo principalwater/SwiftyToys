@@ -17,6 +17,7 @@ private struct RemappingState {
     var hook: HHOOK?
     var failed = false
     var application = ""
+    var shortcutScope = ""
     let brightnessKeys: Bool
     let allowInjectedBrightness: Bool
     var brightnessSwallowed: UInt8 = 0
@@ -47,6 +48,16 @@ nonisolated(unsafe) private var remappingState: UnsafeMutablePointer<RemappingSt
         context.pointee.caps.cancel()
         _ = context.pointee.destination.post(brightnessKeyCancelMessage, data: -context.pointee.generation)
         context.pointee.lastForeground = window
+        context.pointee.shortcutScope = ""
+        var pid: DWORD = 0
+        GetWindowThreadProcessId(window, &pid)
+        if pid == GetCurrentProcessId() {
+            var name = [WCHAR](repeating: 0, count: 64)
+            let count = GetClassNameW(window, &name, Int32(name.count))
+            if count > 0, String(decoding: name.prefix(Int(count)), as: UTF16.self) == "SwiftyToys.NativeSearch" {
+                context.pointee.shortcutScope = KeyboardConfiguration.searchWindowScope
+            }
+        }
     }
     guard context.pointee.configuration.enabled else { return false }
     var pid: DWORD = 0
@@ -157,7 +168,8 @@ private func remappingCallback(_ code: Int32, _ message: WPARAM, _ data: LPARAM)
     if caps.suppress { return 1 }
     if context.pointee.configuration.smartCaps, event.vkCode == 20 { return CallNextHookEx(nil, code, message, data) }
     let result = context.pointee.engine.process(
-        key: UInt16(event.vkCode), down: down, application: context.pointee.application, enabled: enabled)
+        key: UInt16(event.vkCode), down: down, application: context.pointee.application,
+        shortcutScope: context.pointee.shortcutScope, enabled: enabled)
     if !emitTransitions(result.events) {
         _ = emitTransitions(context.pointee.engine.release())
         context.pointee.failed = true

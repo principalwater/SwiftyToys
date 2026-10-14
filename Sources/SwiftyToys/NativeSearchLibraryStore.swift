@@ -654,18 +654,24 @@ final class NativeSearchLibraryStore {
         }
     }
     static func parsedQuery(_ query: String) -> (text: String, kind: String?) {
-        guard let separator = query.firstIndex(of: ":") else { return (query, nil) }
-        let prefix = query[..<separator].lowercased()
-        let kinds = ["code": "code", "pdf": "pdf", "image": "image", "photo": "image",
-            "audio": "audio", "video": "video"]
-        guard let kind = kinds[prefix] else { return (query, nil) }
-        return (query[query.index(after: separator)...].trimmingWhitespace(), kind)
+        let parsed = SearchQuery(query)
+        return (parsed.text, parsed.contentKind)
+    }
+    private static func fileKindRestriction(_ kind: String, field: String)
+        -> (sql: String, values: [Value]) {
+        let extensions = SearchQuery.extensions(for: kind)
+        let sql = "(" + extensions.map { _ in "substr(\(field),-?)=?" }
+            .joined(separator: " OR ") + ")"
+        let values = extensions.flatMap { [Value.integer(Int64($0.utf8.count + 1)),
+            Value.text("." + $0)] }
+        return (sql, values)
     }
     func searchText(_ query: String, limit: Int = 32,
         milliseconds: UInt64 = 150, progress: (([SearchItem], Bool) -> Void)? = nil,
         cancelled: () -> Bool) throws -> [SearchItem] {
-        guard !query.isEmpty, query.utf8.count <= 4096 else { return [] }
-        let parsed = Self.parsedQuery(query)
+        let parsed = SearchQuery(query)
+        guard parsed.isValid, parsed.category == .all || parsed.category == .files,
+            !query.trimmingWhitespace().isEmpty else { return [] }
         let terms = parsed.text.lowercased().split(whereSeparator: \.isWhitespace).prefix(16).map(String.init)
         var best: [(SearchItem, Int, String)] = []
         let deadline = GetTickCount64() + max(1, min(2000, milliseconds))
@@ -685,10 +691,17 @@ final class NativeSearchLibraryStore {
             let match = terms.map { "\"" + $0.split(separator: "\"", omittingEmptySubsequences: false)
                 .joined(separator: "\"\"") + "\"" }.joined(separator: " AND ")
             arguments.append(.text(match))
-            if let kind = parsed.kind { contentsSQL += " AND s.kind=?"; arguments.append(.text(kind)) }
-        } else if let kind = parsed.kind { contentsSQL += " WHERE s.kind=? AND s.window=0"; arguments.append(.text(kind)) }
-        else { contentsSQL += " WHERE s.window=0" }
-        try self.query(contentsSQL, arguments) { row in
+        } else { contentsSQL += " WHERE s.window=0" }
+        if let kind = parsed.contentKind {
+            let restriction = Self.fileKindRestriction(kind, field: "f.name")
+            contentsSQL += " AND " + restriction.sql
+            arguments += restriction.values
+        }
+        if let ext = parsed.fileExtension {
+            contentsSQL += " AND substr(f.name,-?)=?"
+            arguments += [.integer(Int64(ext.utf8.count + 1)), .text("." + ext)]
+        }
+        if !terms.isEmpty { try self.query(contentsSQL, arguments) { row in
             try check()
             let contents = text(row, 1).lowercased()
             if !terms.isEmpty, terms.allSatisfy({ contents.containsText($0) }) {
@@ -696,15 +709,34 @@ final class NativeSearchLibraryStore {
                     fragmentID: columnInteger(row, 4)),
                     score: 1100, limit: limit, into: &best)
             }
-        }
+        } }
         if best.count == max(0, min(64, limit)), let lowest = best.last?.1, lowest > 1000 { return }
-        let filenames = parsed.kind == nil ? "SELECT path FROM files" :
-            "SELECT DISTINCT f.path FROM files f JOIN fragments s ON s.file=f.id WHERE s.kind=?"
-        let filenameArguments: [Value] = parsed.kind.map { [.text($0)] } ?? []
+        var filenames = "SELECT path FROM files"
+        var filenameArguments: [Value] = []
+        let field = "name"
+        var hasWhere = false
+        if let kind = parsed.contentKind {
+            let restriction = Self.fileKindRestriction(kind, field: field)
+            filenames += " WHERE " + restriction.sql
+            filenameArguments += restriction.values
+            hasWhere = true
+        }
+        if let ext = parsed.fileExtension {
+            filenames += (hasWhere ? " AND " : " WHERE ") + "substr(\(field),-?)=?"
+            filenameArguments += [.integer(Int64(ext.utf8.count + 1)), .text("." + ext)]
+            hasWhere = true
+        }
+        if terms.isEmpty {
+            try self.query(filenames + " ORDER BY \(field) LIMIT ?",
+                filenameArguments + [.integer(Int64(max(0, min(64, limit))))]) { row in
+                try check()
+                insert(item(path: text(row, 0)), score: 1, limit: limit, into: &best)
+            }
+            return
+        }
         if !terms.isEmpty {
-            let field = parsed.kind == nil ? "name" : "f.name"
             let matches = terms.map { _ in "instr(\(field),?)>0" }.joined(separator: " AND ")
-            let candidates = filenames + (parsed.kind == nil ? " WHERE " : " AND ") + matches
+            let candidates = filenames + (hasWhere ? " AND " : " WHERE ") + matches
             try self.query(candidates, filenameArguments + terms.map(Value.text)) { row in
                 try check()
                 let candidate = item(path: text(row, 0))
@@ -741,11 +773,20 @@ final class NativeSearchLibraryStore {
         if best.count > maximum { best.removeLast() }
     }
     func searchVector(_ vector: [Float], namespace: String, limit: Int = 32,
-        kind: String? = nil, milliseconds: UInt64 = 150,
+        kind: String? = nil, fileExtension: String? = nil, milliseconds: UInt64 = 150,
         progress: (([SearchItem], Bool) -> Void)? = nil,
         cancelled: () -> Bool) throws -> [SearchItem] {
         guard namespace == self.namespace, vector.count == dimensions,
             vector.allSatisfy(\.isFinite) else { return [] }
+        if let fileExtension {
+            let filter = SearchQuery("ext:" + fileExtension)
+            guard filter.isValid, filter.text.isEmpty,
+                filter.fileExtension == fileExtension.lowercased() else { return [] }
+        }
+        if let kind {
+            let filter = SearchQuery("kind:" + kind)
+            guard filter.isValid, filter.text.isEmpty, filter.contentKind == kind else { return [] }
+        }
         let norm = vector.reduce(Double(0)) { $0 + Double($1) * Double($1) }.squareRoot()
         guard norm > 0 else { return [] }
         var best: [(SearchItem, Int, String)] = []
@@ -756,9 +797,18 @@ final class NativeSearchLibraryStore {
         try boundedQuery(deadline: deadline, cancelled: cancelled) {
         guard try meta("namespace") == namespace,
             Int(try meta("dimensions") ?? "0") == vector.count else { return }
-        let sql = "SELECT f.path,s.kind,s.location,s.vector,s.id FROM fragments s JOIN files f ON s.file=f.id WHERE s.vector IS NOT NULL" +
-            (kind == nil ? "" : " AND s.kind=?")
-        try query(sql, kind.map { [.text($0)] } ?? []) { row in
+        var sql = "SELECT f.path,s.kind,s.location,s.vector,s.id FROM fragments s JOIN files f ON s.file=f.id WHERE s.vector IS NOT NULL"
+        var arguments: [Value] = []
+        if let kind {
+            let restriction = Self.fileKindRestriction(kind, field: "f.name")
+            sql += " AND " + restriction.sql
+            arguments += restriction.values
+        }
+        if let ext = fileExtension {
+            sql += " AND substr(f.name,-?)=?"
+            arguments += [.integer(Int64(ext.utf8.count + 1)), .text("." + ext.lowercased())]
+        }
+        try query(sql, arguments) { row in
             if cancelled() { throw WindowsError.api("Search cancelled", DWORD(ERROR_CANCELLED)) }
             if GetTickCount64() >= deadline { throw QueryStop.budget }
             rows += 1

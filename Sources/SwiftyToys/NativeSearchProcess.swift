@@ -183,7 +183,10 @@ enum NativeSearchProcess {
             if vector.isEmpty {
                 items = try store.searchText(query, progress: { _, incomplete in partial = incomplete }, cancelled: { false })
             } else {
-                items = try store.searchVector(vector, namespace: namespace, kind: NativeSearchLibraryStore.parsedQuery(query).kind,
+                let parsed = SearchQuery(query)
+                guard parsed.isValid else { throw WindowsError.unsupported("Invalid library search filter.") }
+                items = try store.searchVector(vector, namespace: namespace, kind: parsed.contentKind,
+                    fileExtension: parsed.fileExtension,
                     progress: { _, incomplete in partial = incomplete }, cancelled: { false })
             }
             try NativeFiles.write(SearchWire.encode(items, status: partial ? "Local library · partial results within query budget" : "Local library"),

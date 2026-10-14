@@ -1,3 +1,33 @@
+# Validation snapshot: 0.1.21 Search categories, filters and Quick Keys
+
+2026-10-14. All 67 portable tests pass. Native Search fixtures check category
+callbacks, typed-prefix highlighting, caret/IME preservation, buffered painting,
+accessibility labels, stale action rejection and custom shortcut precedence.
+Library fixtures exercise file-extension restrictions before lexical/vector limits,
+including audio tracks in video and OCR fragments in PDF files. Quick Key tests
+cover exact matching, Unicode, limits, persistence, invalid destinations and the
+native settings editor's draft/save path without executing power actions.
+
+All 35 frozen-executable native checks pass. The separate active-layering check
+passes, including stable heights for blank scoped queries. Actual child-process
+Windows Index browsing returns four PDFs, 32 Swift files and 32 general files;
+filters and the native 32-result cap hold. Empty browsing uses Windows' wildcard
+because its AQS parser rejects an empty string. No regional, display, power,
+driver or input configuration is changed by these checks.
+
+Path validation regressions retain Unicode filenames, the 32,759 UTF-16-unit
+limit, root normalization and nested/explicit exclusions. ASCII metacharacters
+are rejected even beside combining marks. The synthetic predicate comparison is
+recorded in [Performance.md](Performance.md); complete scope checks remain in place.
+
+The static-runtime executable is 8,449,024 bytes. The complete native Setup installs
+with exit code 0; its installed hash matches the frozen package, preserving all
+five preference-file states, Swift 6.4.1, DDC off and physical brightness 100%.
+Installed counters and PID-scoped window response probes are recorded in
+[Performance.md](Performance.md), with cold initialization and computer-use limits.
+
+## Previous release evidence
+
 # Validation snapshot: 0.1.20 regional Search
 
 2026-10-14. The static-runtime app is checked against the 8.5 MB budget; release
@@ -21,8 +51,6 @@ Regional discovery runs on the existing Search worker. Native NLS enumeration is
 bounded and cached once; per-query preferences remain current. No polling thread,
 model, country map or currency SDK was added. Current checks do not establish
 coverage of every country or zero microfreezes; daily quotes depend on the provider.
-
-## Previous release evidence
 
 # Validation snapshot: 0.1.19 persistent Search library
 

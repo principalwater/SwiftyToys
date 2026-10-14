@@ -275,5 +275,16 @@
   "Search the web": "Search the web",
   "Open search": "Open search",
   "↑↓ Choose • Enter Open • Esc Close": "↑↓ Choose • Enter Open • Esc Close",
-  "Read-only design preview": "Read-only design preview"
+  "Read-only design preview": "Read-only design preview",
+  "All": "All",
+  "Apps": "Apps",
+  "Files": "Files",
+  "Actions": "Actions",
+  "Selected category": "Selected category",
+  "Enter Open • Tab Actions • Esc Close": "Enter Open • Tab Actions • Esc Close",
+  "Copy path": "Copy path",
+  "Copy result": "Copy result",
+  "Reveal in File Explorer": "Reveal in File Explorer",
+  "Search category could not be displayed.": "Search category could not be displayed.",
+  "Result actions could not be displayed.": "Result actions could not be displayed."
 }

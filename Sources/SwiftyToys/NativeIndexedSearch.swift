@@ -79,7 +79,20 @@ enum NativeIndexedSearch {
         guard kind == UINT(DRIVE_FIXED) || kind == UINT(DRIVE_REMOVABLE) || kind == UINT(DRIVE_CDROM) || kind == UINT(DRIVE_RAMDISK), try NativeFiles.exists(path) else { return nil }
         return path
     }
-    private static func indexedFiles(_ query: String) throws -> [SearchItem] {
+    static func indexWhere(_ query: SearchQuery) -> String {
+        guard query.isValid else { return "AND scope='file:' AND 1=0" }
+        var result = "AND scope='file:'"
+        if let ext = query.fileExtension {
+            result += " AND System.FileExtension='." + ext + "'"
+        }
+        if let kind = query.contentKind {
+            let extensions = SearchQuery.extensions(for: kind)
+            result += " AND (" + extensions.map { "System.FileExtension='." + $0 + "'" }
+                .joined(separator: " OR ") + ")"
+        }
+        return result
+    }
+    private static func indexedFiles(_ query: SearchQuery) throws -> [SearchItem] {
         var classID = GUID(Data1: 0x7d096c5f, Data2: 0xac08, Data3: 0x4f1f, Data4: (0xbe,0xb7,0x5c,0x22,0xc5,0x17,0xce,0x39))
         var managerID = GUID(Data1: 0xab310581, Data2: 0xac80, Data3: 0x11d1, Data4: (0x8d,0xf3,0x00,0xc0,0x4f,0xb6,0xef,0x69)), object: UnsafeMutableRawPointer?
         try check(CoCreateInstance(&classID, nil, DWORD(CLSCTX_LOCAL_SERVER.rawValue | CLSCTX_INPROC_SERVER.rawValue), &managerID, &object), "Open Windows Search")
@@ -93,10 +106,12 @@ enum NativeIndexedSearch {
         try check(helper.raw.pointee.lpVtbl.pointee.put_QueryMaxResults(helper.raw, 32), "Limit Windows Search results")
         try check(helper.raw.pointee.lpVtbl.pointee.put_QuerySyntax(helper.raw, 1), "Select native search syntax") // SEARCH_ADVANCED_QUERY_SYNTAX; native content locale/default all-property full-text search.
         try check(withWideString("System.ItemNameDisplay,System.ItemUrl,System.ItemTypeText") { helper.raw.pointee.lpVtbl.pointee.put_QuerySelectColumns(helper.raw, $0) }, "Select indexed item metadata")
-        try check(withWideString("AND scope='file:'") { helper.raw.pointee.lpVtbl.pointee.put_QueryWhereRestrictions(helper.raw, $0) }, "Restrict indexed results to files")
+        try check(withWideString(indexWhere(query)) { helper.raw.pointee.lpVtbl.pointee.put_QueryWhereRestrictions(helper.raw, $0) }, "Restrict indexed file category and type")
         var sqlPointer: PWSTR?, connectionPointer: PWSTR?
         defer { CoTaskMemFree(sqlPointer); CoTaskMemFree(connectionPointer) }
-        try check(withWideString(query) { helper.raw.pointee.lpVtbl.pointee.GenerateSQLFromUserQuery(helper.raw, $0, &sqlPointer) }, "Generate native indexed query")
+        // The native AQS parser rejects empty input; its wildcard keeps scoped browsing bounded.
+        let expression = query.indexedQuery.isEmpty ? "*" : query.indexedQuery
+        try check(withWideString(expression) { helper.raw.pointee.lpVtbl.pointee.GenerateSQLFromUserQuery(helper.raw, $0, &sqlPointer) }, "Generate native indexed query")
         try check(helper.raw.pointee.lpVtbl.pointee.get_ConnectionString(helper.raw, &connectionPointer), "Read native index connection")
         let sql = try nativeText(sqlPointer), connectionString = try nativeText(connectionPointer)
         var adoClass = GUID(Data1: 0x00000514, Data2: 0x0000, Data3: 0x0010, Data4: (0x80,0x00,0x00,0xaa,0x00,0x6d,0x2e,0xa4)), dispatchID = IID_IDispatch
@@ -122,7 +137,9 @@ enum NativeIndexedSearch {
                 let attributes = withWideString(try NativeFiles.windowsPath(path)) { GetFileAttributesW($0) }
                 if attributes != DWORD(INVALID_FILE_ATTRIBUTES) {
                     let kind = attributes & DWORD(FILE_ATTRIBUTE_DIRECTORY) != 0 ? "Folder" : "File"
-                    result.append(SearchItem(id: "index:" + path.lowercased(), title: title, subtitle: try field(2) ?? kind, path: path, kind: kind))
+                    let candidate = SearchItem(id: "index:" + path.lowercased(), title: title,
+                        subtitle: try field(2) ?? kind, path: path, kind: kind)
+                    if query.accepts(candidate) { result.append(candidate) }
                 }
             }
             _ = try invoke(rows, "MoveNext", flags: WORD(DISPATCH_METHOD))
@@ -130,9 +147,13 @@ enum NativeIndexedSearch {
         return result
     }
     static func query(_ text: String) throws -> [SearchItem] {
-        guard !text.trimmingWhitespace().isEmpty else { return [] }
-        guard text.utf16.count <= 512, !text.utf16.contains(0) else { throw WindowsError.unsupported("The Windows Search query is too long or invalid.") }
-        return try withCOM { try indexedFiles(text) }
+        let parsed = SearchQuery(text)
+        guard parsed.isValid, parsed.indexedQuery.utf16.count <= 512 else {
+            throw WindowsError.unsupported("The Search category or file filter is invalid or too long.")
+        }
+        guard parsed.category == .all || parsed.category == .files else { return [] }
+        guard !parsed.text.isEmpty || parsed.category == .files else { return [] }
+        return try withCOM { try indexedFiles(parsed) }
     }
     static func applications(onDegraded: (String) -> Void = { Console.writeLine($0) }) throws -> [SearchItem] {
         try withCOM {
@@ -204,10 +225,27 @@ enum NativeIndexedSearch {
             !validAppID("shell:AppsFolder\\app"), !validAppID("../app"), validAppID("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App") else {
             throw WindowsError.unsupported("Native indexed search action validation failed.")
         }
+        guard indexWhere(SearchQuery("files: ext:PDF report")) ==
+            "AND scope='file:' AND System.FileExtension='.pdf'",
+            indexWhere(SearchQuery("pdf: report")).containsText("System.FileExtension='.pdf'"),
+            !indexWhere(SearchQuery("video: report")).containsText("report"),
+            SearchQuery("ext:pdf' OR 1=1 report").isValid == false,
+            try query("apps: calculator").isEmpty else {
+            throw WindowsError.unsupported("Native indexed filter restrictions failed.")
+        }
         let indexed: [SearchItem], status: String
         do { indexed = try query("documents"); status = "available" }
         catch { indexed = []; status = "Windows Search unavailable; local fallback required" }
         guard indexed.count <= 32, indexed.allSatisfy({ $0.kind == "File" || $0.kind == "Folder" }) else { throw WindowsError.unsupported("Native indexed search result bounds failed.") }
+        if status == "available" {
+            for text in ["files:", "files: ext:pdf", "files: kind:code ext:swift"] {
+                let filter = SearchQuery(text)
+                let items = try query(text)
+                guard items.count <= 32, items.allSatisfy(filter.accepts) else {
+                    throw WindowsError.unsupported("Native indexed category browsing bounds failed.")
+                }
+            }
+        }
         let apps = try applications()
         guard apps.count <= 2048, apps.allSatisfy({ $0.kind == "Application" }) else { throw WindowsError.unsupported("Native application enumeration bounds failed.") }
         let virtual = apps.filter { $0.path.hasPrefix("shell:AppsFolder\\") }.count
