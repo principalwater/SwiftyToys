@@ -132,7 +132,7 @@ jobs:
       - name: Check native Search without model download or system changes
         shell: pwsh
         run: |
-          foreach ($check in @('--test-search-ui','--test-search-policy','--test-tokenizer','--test-embedding', '--test-model-catalog', '--test-search-library', '--test-search-content', '--test-search-library-runtime', '--test-search-library-supervisor')) {
+          foreach ($check in @('--test-search-region','--test-search-rates','--test-search-ui','--test-search-policy','--test-tokenizer','--test-embedding', '--test-model-catalog', '--test-search-library', '--test-search-content', '--test-search-library-runtime', '--test-search-library-supervisor')) {
             $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList $check -Wait -PassThru -NoNewWindow
             if ($process.ExitCode -ne 0) { throw "Native Search check failed: $check" }
           }

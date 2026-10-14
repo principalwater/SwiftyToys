@@ -1,3 +1,26 @@
+# Validation snapshot: 0.1.20 regional Search
+
+2026-10-14. The static-runtime app is 8,354,304 bytes (SHA-256 `d4361d5ecb6b933c5ce3c7722855ebc77b68727531dcd3e952f08c07c6daefde`).
+All 54 portable tests and 35 native checks pass, covering neutral-base exchange rates,
+Gregorian dates, finite values, region-aware parsing, Unicode digits, custom
+separators and strict Western/Indian grouping. Fixtures include RU, GB, JP, US,
+Canada, French Canada and Arabic formats; the implementation has no country map.
+
+The native rate fixture validates pair JSON, six-hour freshness, maximum age,
+malformed responses and a 32-pair cache. Actual WinHTTP requests succeeded for
+USD/RUB, USD/GBP, USD/JPY and USD/INR; USD/XYZ produced the unsupported-pair error.
+Eight final executable answer/provider probes verify currency conversion, regional
+numbers, local time, same-currency identity, unsupported-pair error propagation and
+cache labeling through the actual child IPC. Generated caches stay isolated;
+these tests do not change regional preferences.
+
+Regional discovery runs on the existing Search worker. Native NLS enumeration is
+bounded and cached once; per-query preferences remain current. No polling thread,
+model, country map or currency SDK was added. Current checks do not establish
+coverage of every country or zero microfreezes; daily quotes depend on the provider.
+
+## Previous release evidence
+
 # Validation snapshot: 0.1.19 persistent Search library
 
 2026-10-14. The complete Swift 6.4.1 package has a static-runtime executable of

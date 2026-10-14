@@ -20,6 +20,9 @@ func runCLI(_ args: [String]) throws -> Int32 {
         return NativeEmbedding.runWorker(pipeName:args[1],assetDirectory:testing ? args[2] : nil,model:model)
     }
     if command == "--test-model-catalog" { try NativeSearchModelCatalog.selfCheck(); return 0 }
+    if command == "--test-search-region" { try NativeSearchRegion.selfCheck(); return 0 }
+    if command == "--test-search-rates" { try NativeSearchRates.selfCheck(); return 0 }
+    if command == "--test-search-rates-live" { try NativeSearchRates.selfCheckLive(); return 0 }
     if command == "--test-search-library" { try NativeSearchLibraryStore.selfCheck(); return 0 }
     if command == "--test-search-content" { try NativeSearchContentSelfTest.run(); return 0 }
     if command == "--test-search-library-runtime" { try NativeSearchLibraryRuntime.selfCheck(); return 0 }
@@ -144,10 +147,21 @@ func runCLI(_ args: [String]) throws -> Int32 {
     }
     if command == "--search-answer" {
         guard args.count == 2 else { throw WindowsError.unsupported("Use --search-answer <expression or conversion>.") }
-        var answer = SearchAnswers.quick(args[1]) ?? NativeSearchClock.quick(args[1])
-        if answer == nil, let conversion = try? ConversionQuery(args[1]), !conversion.to.isEmpty,
-            ReferenceRates.currency(conversion.from) != nil, ReferenceRates.currency(conversion.to) != nil {
-            answer = try NativeSearchProcess.rates(cancelled:{false}).0.convert(conversion)
+        let region = NativeSearchRegion.current()
+        var answer = SearchAnswers.quick(args[1], region: region.region)
+            .map { NativeSearchRegion.format($0, context: region) }
+            ?? NativeSearchClock.quick(args[1], localeName: region.localeName)
+        if answer == nil, let conversion = NativeSearchRegion.currencyQuery(args[1], context: region) {
+            guard !conversion.to.isEmpty else {
+                throw WindowsError.unsupported("Windows has no regional currency. Specify a target currency.")
+            }
+            if conversion.from == conversion.to {
+                answer = SearchAnswer(title: "Currency conversion", value: NativeSearchRegion.number(conversion.amount, context: region) + " " + conversion.to, detail: "Same currency")
+            } else {
+                let rates = try NativeSearchProcess.rates(from: conversion.from, to: conversion.to, cancelled: { false })
+                answer = rates.0.convert(conversion, cached: rates.cached)
+                    .map { NativeSearchRegion.format($0, context: region) }
+            }
         }
         guard let answer else { throw WindowsError.unsupported("No calculation or supported conversion was recognized.") }
         Console.writeLine(answer.value + "\n" + answer.detail); return 0

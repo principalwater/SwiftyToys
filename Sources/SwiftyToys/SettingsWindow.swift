@@ -795,7 +795,7 @@ final class SettingsWindow {
         case 9:
             label("SwiftyToys Search",800,300,166,650,42,large:true)
             check("Enable SwiftyToys Search",801,300,228,650,on:searchPreferences.enabled)
-            label("Cmd + Space opens Search with the Mac keyboard preset. You can customize the Open search action on the Keyboard tile.",802,300,274,650,60)
+            label("Cmd + Space opens Search. Currency, units and number/time formats follow Windows regional settings; explicit conversion targets take priority.",802,300,274,650,60)
             button("Open Search",811,300,345,200)
             check("Enable local semantic search",803,300,410,650,on:searchPreferences.semantic)
             label("A persistent local library combines exact text and meaning. Your files stay on this PC. Use code:, pdf:, image:, audio: or video: to narrow results.",804,300,454,650,66)

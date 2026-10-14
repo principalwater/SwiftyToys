@@ -49,15 +49,22 @@ from providers are combined by path; app/file opening requires explicit selectio
 | Quick answer | Examples and scope |
 | --- | --- |
 | Calculator | `2+3*4`, `(2+3)*4`, `15% of 85`, `sqrt(144)`, `sin(pi/2)`. A bounded parser handles arithmetic, powers, percentages, constants and supported functions; trigonometric arguments use radians. |
-| Units | `5 miles in km`, `32F in C`, `1 GiB MB`. Length, mass, volume, time, storage and temperature conversions work offline. Omitting the destination, as in `5 miles`, selects the converter's default target. |
-| Currency | `120 USD RUB`, `$120`, `120€`. Symbols map to USD, EUR, GBP, JPY and RUB. An omitted target uses the Windows regional currency; if source and target match, the alternate is USD, or EUR when the home currency is USD. |
-| World clock | `time in London`, `time Tokyo`, `time UTC`. Date/time is a snapshot taken when the query runs, using Windows time-zone and daylight-saving rules. |
+| Units | `5 miles in km`, `32F in C`, `1 GiB MB`. Conversions work offline. An omitted target follows the Windows metric/US measurement preference; explicit targets always win. US and imperial gallons have distinct aliases. |
+| Currency | `120 USD GBP`, `120 USD`, `$120`, `120€`. An omitted target uses the Windows country/region currency: for example RUB in Russia, GBP in Britain or JPY in Japan. Local `$` and `¥` symbols respect the region; ISO codes remove ambiguity. A same-currency query returns its original amount. |
+| World clock | `time`, `time in London`, `time Tokyo`, `time UTC`. Windows supplies the local time zone and daylight-saving rules; results use the user's date/time format. |
 
-Currency conversion uses the official
-[Bank of Russia XML reference table](https://www.cbr.ru/development/SXML/).
-The published date appears with the result. The cached table can remain available
-offline; its date matters. These are reference rates, not live trading quotes.
-Fetching the table sends no query text. The model never supplies currency rates.
+Search reads Windows NLS regional settings independently of the application's UI
+language. It preserves user number separators, grouping and measurement preferences,
+including Unicode decimal digits. No built-in country-to-currency table or RU default
+is used. A location without a known currency requires an explicit target.
+
+Currency conversion uses [Frankfurter daily reference rates](https://frankfurter.dev/),
+with the source date shown in the user's format. Only the requested ISO currency pair
+is sent over HTTPS; amounts, query text and local files stay private. A bounded cache
+is fresh for six hours; connection failures may reuse a validated quote whose
+publication date is at most seven days old, marked cached. Unsupported pairs, malformed
+responses and older quotes produce a readable error. These are daily reference rates,
+not live trading quotes. The optional model never supplies currency rates.
 
 Clock queries accept 20 case-insensitive English aliases plus UTC: London, Paris,
 Berlin, Rome, Madrid, Moscow, Tokyo, Japan, New York, Los Angeles, San Francisco,

@@ -27,17 +27,6 @@ struct SearchTests {
         #expect(SearchAnswers.quick("32F")?.value == "0 °C")
         #expect(try ConversionQuery("$120 in rub") == ConversionQuery(amount:120,from:"usd",to:"rub"))
     }
-    @Test func ratesUsePublishedNominalAndDate() throws {
-        let bytes = Array("<ValCurs Date=\"13.10.2026\"><Valute ID=\"USD\"><CharCode>USD</CharCode><Nominal>1</Nominal><Value>80,1234</Value></Valute><Valute ID=\"JPY\"><CharCode>JPY</CharCode><Nominal>100</Nominal><Value>52,3456</Value></Valute></ValCurs>".utf8)
-        let rates = try ReferenceRates.parseCBR(bytes)
-        #expect(abs((rates.rates["JPY"] ?? 0) - 0.523456) < 1e-12)
-        let result = try rates.convert(ConversionQuery("120 usd rub"))
-        #expect(result?.value == "9614.808 RUB")
-        #expect(result?.detail.contains("13.10.2026") == true)
-        #expect(try rates.convert(ConversionQuery("10 btc rub")) == nil)
-        #expect(throws: (any Error).self) { try ReferenceRates.parseCBR(Array("<!DOCTYPE bad>".utf8)+bytes) }
-        #expect(throws: (any Error).self) { try ReferenceRates(date:"13.50.2026",rates:["USD":80]) }
-    }
     @Test func rankingAndWireHandleUnicodeAndHostileFields() throws {
         let first = SearchItem(id:"calc",title:"Calculator",subtitle:"Application",path:"shell:app",kind:"Application")
         let second = SearchItem(id:"note",title:"Калькулятор notes",subtitle:"line\nbreak",path:"C:\\Example\\tab\tname.txt",kind:"File")

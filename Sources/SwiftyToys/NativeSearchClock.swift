@@ -16,15 +16,19 @@ enum NativeSearchClock {
         "beijing":("China Standard Time","Beijing"),"hong kong":("China Standard Time","Hong Kong"),
         "toronto":("Eastern Standard Time","Toronto"),"seoul":("Korea Standard Time","Seoul"),
     ]
-    static func quick(_ text: String) -> SearchAnswer? {
+    static func quick(_ text: String, localeName: String? = nil) -> SearchAnswer? {
         let query = text.lowercased().trimmingWhitespace()
         let name: String
-        if query.hasPrefix("time in ") { name = String(query.dropFirst(8)) }
+        if query == "time" { name = "local" }
+        else if query.hasPrefix("time in ") { name = String(query.dropFirst(8)) }
         else if query.hasPrefix("time ") { name = String(query.dropFirst(5)) }
         else { return nil }
         var now = SYSTEMTIME(), local = SYSTEMTIME(); GetSystemTime(&now)
         var matched = false
         if name == "utc" { local = now; matched = true }
+        else if name == "local" || name == "here" {
+            matched = SystemTimeToTzSpecificLocalTimeEx(nil, &now, &local)
+        }
         else if let zone = zones[name] {
             for index in 0..<512 {
                 var information = DYNAMIC_TIME_ZONE_INFORMATION()
@@ -39,7 +43,10 @@ enum NativeSearchClock {
         }
         guard matched else { return nil }
         let hour = String(local.wHour), minute = String(local.wMinute), date = String(local.wYear)+"-"+String(local.wMonth)+"-"+String(local.wDay)
-        return SearchAnswer(title:"World clock",value:(hour.count == 1 ? "0" : "") + hour + ":" + (minute.count == 1 ? "0" : "") + minute,
-            detail:(zones[name]?.city ?? "UTC") + " · " + date + " · Windows time-zone rules")
+        let invariantTime = (hour.count == 1 ? "0" : "") + hour + ":" + (minute.count == 1 ? "0" : "") + minute
+        let displayedTime = localeName.flatMap { NativeSearchRegion.time(&local, localeName: $0) } ?? invariantTime
+        let displayedDate = localeName.flatMap { NativeSearchRegion.date(&local, localeName: $0) } ?? date
+        return SearchAnswer(title:"World clock",value:displayedTime,
+            detail:(zones[name]?.city ?? (name == "local" || name == "here" ? "Local time" : "UTC")) + " · " + displayedDate + " · Windows time-zone rules")
     }
 }

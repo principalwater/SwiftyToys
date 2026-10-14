@@ -157,16 +157,6 @@ private final class NativeSearchService: @unchecked Sendable {
         SearchItem(id:"action:sound",title:"Sound settings",subtitle:"Choose audio devices",path:"",kind:"Action"),
         SearchItem(id:"action:display",title:"Display settings",subtitle:"Resolution and display options",path:"",kind:"Action"),
     ]
-    private static func currencyQuery(_ text:String) -> ConversionQuery? {
-        guard let parsed = try? ConversionQuery(text), ReferenceRates.currency(parsed.from) != nil,
-            parsed.to.isEmpty || ReferenceRates.currency(parsed.to) != nil else { return nil }
-        if !parsed.to.isEmpty { return parsed }
-        var home = [WCHAR](repeating:0,count:8)
-        let count = GetLocaleInfoEx(nil,DWORD(LOCALE_SINTLSYMBOL),&home,Int32(home.count))
-        let localCurrency = count > 1 ? String(decoding:home.prefix(Int(count)-1),as:UTF16.self) : "USD"
-        let target = ReferenceRates.currency(localCurrency) ?? "USD"
-        return ConversionQuery(amount:parsed.amount,from:parsed.from,to:ReferenceRates.currency(parsed.from) == target ? (target == "USD" ? "EUR" : "USD") : target)
-    }
     private func publish(_ query: Query, items: [SearchItem], answer: SearchAnswer?, status: String) {
         guard !cancelled(query.generation) else { return }
         var results = Array(items.filter { $0.id.utf16.count <= 4096 }.prefix(query.text.isEmpty ? 32 : 31))
@@ -188,6 +178,7 @@ private final class NativeSearchService: @unchecked Sendable {
         var files: [SearchItem] = [], filesAt: UInt64 = 0, recent: [SearchItem] = []
         var rates: (ReferenceRates, cached: Bool)?
         var ratesAt: UInt64 = 0
+        var ratesPair = ""
         while !cancelled() {
             _ = WaitForSingleObject(event.raw, DWORD(INFINITE))
             if cancelled() { return }
@@ -197,16 +188,37 @@ private final class NativeSearchService: @unchecked Sendable {
             guard let query = job, !cancelled(query.generation) else { continue }
             let libraryQuery = NativeSearchLibraryStore.parsedQuery(query.text)
             let typedLibraryQuery = libraryQuery.kind != nil
-            var answer = SearchAnswers.quick(query.text) ?? NativeSearchClock.quick(query.text)
+            let region = NativeSearchRegion.current()
+            var answer = SearchAnswers.quick(query.text, region: region.region)
+                .map { NativeSearchRegion.format($0, context: region) }
+                ?? NativeSearchClock.quick(query.text, localeName: region.localeName)
             let actions = typedLibraryQuery ? [] : SearchRanking.results(Self.actions, query: query.text, limit: 6)
             publish(query,items:actions + (typedLibraryQuery ? [] : SearchRanking.results(recent,query:query.text)),answer:answer,status:"Searching…")
-            if answer == nil, let conversion = Self.currencyQuery(query.text) {
+            if answer == nil, let conversion = NativeSearchRegion.currencyQuery(query.text, context: region) {
                 var status = "Currency reference rates"
                 do {
-                    if rates == nil || GetTickCount64() - ratesAt > 20 * 60 * 1000 { rates = try NativeSearchProcess.rates(cancelled:{ self.cancelled(query.generation) }); ratesAt = GetTickCount64() }
-                    if let rates, let converted = rates.0.convert(conversion) { answer = converted; status += rates.cached ? " · cached reference rates" : " · reference rates" }
-                    else { status = "This currency is not available in the reference table." }
-                } catch { status = "Currency rates are unavailable. Connect to the internet and retry." }
+                    guard !conversion.to.isEmpty else {
+                        throw WindowsError.unsupported("Windows has no regional currency for this location. Specify a target, such as 120 USD EUR.")
+                    }
+                    if conversion.from == conversion.to {
+                        answer = NativeSearchRegion.format(SearchAnswer(title: "Currency conversion",
+                            value: SearchAnswers.number(conversion.amount) + " " + conversion.to,
+                            detail: "Same currency · " + conversion.to), context: region)
+                        status = "Quick result"
+                    } else {
+                        let pair = conversion.from + "/" + conversion.to
+                        if rates == nil || ratesPair != pair || GetTickCount64() - ratesAt > 20 * 60 * 1000 {
+                            rates = try NativeSearchProcess.rates(from: conversion.from, to: conversion.to,
+                                cancelled: { self.cancelled(query.generation) })
+                            ratesPair = pair; ratesAt = GetTickCount64()
+                        }
+                        if let rates, let converted = rates.0.convert(conversion, cached: rates.cached) {
+                            answer = NativeSearchRegion.format(converted, context: region)
+                            status += rates.cached ? " · cached reference rates" : " · reference rates"
+                        } else { status = "This currency pair is not available in the reference feed." }
+                    }
+                } catch WindowsError.unsupported(let reason) { status = reason }
+                catch { status = "Currency rates are unavailable. Connect to the internet and retry." }
                 publish(query,items:actions,answer:answer,status:status)
                 continue
             }

@@ -24,23 +24,25 @@ public enum SearchAnswers {
         if text.hasSuffix(".0") { text.removeLast(2) }
         return text
     }
-    public static func calculate(_ text: String) throws -> Double {
+    public static func calculate(_ text: String, region: SearchRegion = .invariant) throws -> Double {
         guard text.utf8.count <= 1024 else { throw SearchMathError.invalid }
-        var parser = Calculator(text)
+        var parser = try Calculator(text, region: region)
         let result = try parser.expression()
         parser.whitespace()
         guard parser.position == parser.bytes.count else { throw SearchMathError.invalid }
         guard result.isFinite else { throw SearchMathError.domain }
         return result
     }
-    public static func quick(_ text: String) -> SearchAnswer? {
-        if let conversion = try? UnitConversion(text) {
+    public static func quick(_ text: String, region: SearchRegion = .invariant) -> SearchAnswer? {
+        guard text.utf8.count <= 1024 else { return nil }
+        if let conversion = try? UnitConversion(text, region: region) {
             return SearchAnswer(title: "Unit conversion", value: number(conversion.value) + " " + conversion.target, detail: conversion.source)
         }
         // Ordinary words are queries. Display a domain error only for clearly mathematical input.
-        let looksLikeMath = Double(text) != nil || text.contains(where: { "+*/^%=()√×÷".contains($0) }) || text.first?.isNumber == true && Double(text) == nil && text.contains("-")
+        let normalized = try? region.normalizedExpression(text)
+        let looksLikeMath = normalized.flatMap(Double.init) != nil || text.contains(where: { "+*/^%=()√×÷".contains($0) }) || text.first?.isNumber == true && text.contains("-")
         guard looksLikeMath else { return nil }
-        do { return SearchAnswer(title: "Calculator", value: number(try calculate(text)), detail: "Enter or Copy copies the result.") }
+        do { return SearchAnswer(title: "Calculator", value: number(try calculate(text, region: region)), detail: "Enter or Copy copies the result.") }
         catch SearchMathError.domain { return SearchAnswer(title: "Calculator", value: "Undefined", detail: "Check the expression: division by zero or an invalid function argument.") }
         catch { return nil }
     }
@@ -51,12 +53,12 @@ private struct Calculator {
     var position = 0
     var depth = 0
     var operations = 0
-    init(_ text: String) {
+    init(_ text: String, region: SearchRegion) throws {
         var normalized = ""
         for character in text.lowercased() {
             switch character { case "×": normalized += "*"; case "÷": normalized += "/"; case "√": normalized += "sqrt "; default: normalized.append(character) }
         }
-        bytes = Array(normalized.utf8)
+        bytes = Array(try region.normalizedExpression(normalized).utf8)
     }
     mutating func whitespace() { while position < bytes.count, [9, 10, 13, 32].contains(bytes[position]) { position += 1 } }
     mutating func take(_ byte: UInt8) -> Bool { whitespace(); guard position < bytes.count, bytes[position] == byte else { return false }; position += 1; return true }
@@ -129,7 +131,7 @@ public struct UnitConversion: Sendable, Equatable {
     private static let groups: [[(String, Double, String)]] = [
         [("m meter meters metre metres",1,"m"),("km kilometer kilometers kilometre kilometres",1000,"km"),("cm centimeter centimeters",0.01,"cm"),("mm millimeter millimeters",0.001,"mm"),("mi mile miles",1609.344,"mi"),("ft foot feet",0.3048,"ft"),("in inch inches",0.0254,"in"),("yd yard yards",0.9144,"yd")],
         [("kg kilogram kilograms",1,"kg"),("g gram grams",0.001,"g"),("mg milligram milligrams",0.000001,"mg"),("lb lbs pound pounds",0.45359237,"lb"),("oz ounce ounces",0.028349523125,"oz"),("st stone",6.35029318,"st")],
-        [("l liter liters litre litres",1,"L"),("ml milliliter milliliters",0.001,"mL"),("gal gallon gallons",3.785411784,"US gal"),("cup cups",0.2365882365,"US cup")],
+        [("l liter liters litre litres",1,"L"),("ml milliliter milliliters",0.001,"mL"),("gal gallon gallons usgal usgallon usgallons",3.785411784,"US gal"),("ukgal ukgallon ukgallons impgal impgallon impgallons",4.54609,"imp gal"),("cup cups",0.2365882365,"US cup")],
         [("s sec second seconds",1,"s"),("min minute minutes",60,"min"),("h hr hour hours",3600,"h"),("d day days",86400,"d")],
         [("b byte bytes",1,"B"),("kb kilobyte kilobytes",1000,"kB"),("mb megabyte megabytes",1e6,"MB"),("gb gigabyte gigabytes",1e9,"GB"),("tb terabyte terabytes",1e12,"TB"),("kib",1024,"KiB"),("mib",1048576,"MiB"),("gib",1073741824,"GiB")],
     ]
@@ -145,16 +147,24 @@ public struct UnitConversion: Sendable, Equatable {
         default: return nil
         }
     }
-    public init(_ text: String) throws {
-        let parts = try ConversionQuery(text)
+    public init(_ text: String, region: SearchRegion = .invariant) throws {
+        let parts = try ConversionQuery(text, region: region)
         guard let from = Self.unit(parts.from) else { throw SearchMathError.invalid }
         let defaultTarget: String
-        switch from.group {
-        case 0: defaultTarget = from.symbol == "mi" ? "km" : from.symbol == "in" ? "cm" : from.symbol == "m" ? "ft" : "m"
-        case 1: defaultTarget = from.symbol == "kg" ? "lb" : "kg"
-        case 2: defaultTarget = from.symbol == "L" ? "gal" : "l"
-        case 3: defaultTarget = from.symbol == "h" ? "min" : "s"
-        case 4: defaultTarget = "b"
+        switch (from.group, region.usesUSMeasurement) {
+        case (0, true): defaultTarget = ["km", "mi"].contains(from.symbol) ? "mi" : ["cm", "mm", "in"].contains(from.symbol) ? "in" : "ft"
+        case (0, false): defaultTarget = from.symbol == "mi" ? "km" : from.symbol == "in" ? "cm" : "m"
+        case (1, true): defaultTarget = ["g", "mg", "oz"].contains(from.symbol) ? "oz" : "lb"
+        case (1, false): defaultTarget = "kg"
+        case (2, true): defaultTarget = "usgal"
+        case (2, false): defaultTarget = "l"
+        case (5, true): defaultTarget = "f"
+        case (5, false): defaultTarget = "c"
+        case (0, nil): defaultTarget = from.symbol == "mi" ? "km" : from.symbol == "in" ? "cm" : from.symbol == "m" ? "ft" : "m"
+        case (1, nil): defaultTarget = from.symbol == "kg" ? "lb" : "kg"
+        case (2, nil): defaultTarget = from.symbol == "L" ? "gal" : "l"
+        case (3, _): defaultTarget = from.symbol == "h" ? "min" : "s"
+        case (4, _): defaultTarget = "b"
         default: defaultTarget = from.symbol == "°C" ? "f" : "c"
         }
         guard let to = Self.unit(parts.to.isEmpty ? defaultTarget : parts.to), from.group == to.group else { throw SearchMathError.invalid }
@@ -169,17 +179,39 @@ public struct ConversionQuery: Sendable, Equatable {
     public let from: String
     public let to: String
     public init(amount:Double,from:String,to:String) { self.amount = amount; self.from = from; self.to = to }
-    public init(_ text: String) throws {
+    public init(_ text: String, region: SearchRegion = .invariant) throws {
         guard text.utf8.count <= 1024 else { throw SearchMathError.invalid }
         var text = String(text.lowercased().drop(while: \.isWhitespace).reversed().drop(while: \.isWhitespace).reversed())
-        let symbol = text.first.flatMap { ["$":"usd","€":"eur","£":"gbp","¥":"jpy","₽":"rub"][$0] }
-        if symbol != nil { text.removeFirst() }
-        let number = text.prefix { "+-0123456789.,".contains($0) }
-        guard !number.isEmpty, let amount = Double(String(number.map { $0 == "," ? "." : $0 })), amount.isFinite else { throw SearchMathError.invalid }
-        var words = text.dropFirst(number.count).split(whereSeparator: \.isWhitespace).map(String.init)
+        let symbols = ([region.currencySymbol.lowercased(), "$", "€", "£", "¥", "￥", "₽"])
+            .filter { !$0.isEmpty }.sorted { $0.count > $1.count }
+        let prefix = symbols.first { text.hasPrefix($0) }
+        let symbol = prefix.flatMap { region.currencySymbolCode($0) }
+        if let prefix {
+            guard symbol != nil else { throw SearchMathError.invalid }
+            text.removeFirst(prefix.count)
+            text = String(text.drop(while: \.isWhitespace))
+        }
+        let characters = Array(text)
+        let number = try region.numberPrefix(characters)
+        guard let amount = Double(number.text), amount.isFinite else { throw SearchMathError.invalid }
+        var words = String(characters[number.end...]).split(whereSeparator: \.isWhitespace).map(String.init)
+        var index = 0
+        while index + 1 < words.count {
+            if ["us", "uk", "imp", "imperial"].contains(words[index]),
+                ["gal", "gallon", "gallons"].contains(words[index + 1]) {
+                words[index] = (words[index] == "imperial" ? "imp" : words[index]) + "gal"
+                words.remove(at: index + 1)
+            }
+            index += 1
+        }
+        words = words.map { region.currencySymbolCode($0) ?? $0 }
         if let symbol { words.insert(symbol,at:0) }
         if words.count == 3, ["to", "in"].contains(words[1]) { words.remove(at: 1) }
-        guard (1...2).contains(words.count) else { throw SearchMathError.invalid }
+        guard (1...2).contains(words.count), words.allSatisfy({ word in
+            !word.isEmpty && word.unicodeScalars.allSatisfy {
+                (97...122).contains($0.value) || $0.value == 176
+            }
+        }) else { throw SearchMathError.invalid }
         self.amount = amount; from = words[0]; to = words.count == 2 ? words[1] : ""
     }
 }
