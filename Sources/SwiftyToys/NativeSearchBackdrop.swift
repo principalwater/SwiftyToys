@@ -412,7 +412,7 @@ final class NativeSearchBackdrop {
         }
         Console.writeLine("Search material stress: 20 reopens, exact owned HWND/GDI cleanup, USER aggregate \(minimumUser)...\(maximumUser) within warm minimum \(minimumWarmUser)+1; positive leak controls detected and cleaned.")
         try expect(PostThreadMessageW(GetCurrentThreadId(), UINT(WM_QUIT), 37, 0) &&
-            PostThreadMessageW(GetCurrentThreadId(), UINT(WM_QUIT), 37, 0), "queue duplicate quit fixture")
+            PostThreadMessageW(GetCurrentThreadId(), UINT(WM_QUIT), 91, 0), "queue distinct quit fixture")
         shutdown(); shutdown()
         try expect(PeekMessageW(&message, nil, UINT(WM_QUIT), UINT(WM_QUIT), UINT(PM_REMOVE)) &&
             message.wParam == 37, "preserve first quit")
@@ -427,13 +427,19 @@ final class NativeSearchBackdrop {
         guard !stopped, owner == GetCurrentThreadId(), sources == 0 else { return }
         stopped = true // Dispatched teardown messages cannot initialize another manager.
         guard let manager, let references = managerReferences else { return }
+        // COM teardown can pump messages; retain the caller's exit code before entering it.
+        var quit: Int32?
+        var queued = MSG()
+        for _ in 0..<1024 {
+            guard PeekMessageW(&queued, nil, UINT(WM_QUIT), UINT(WM_QUIT), UINT(PM_REMOVE)) else { break }
+            if quit == nil { quit = Int32(truncatingIfNeeded: queued.wParam) }
+        }
         references.close(manager)
         Self.manager = nil
         managerReferences = nil
         references.release()
         // XAML teardown is asynchronous; preserve quit while draining its owning thread.
         let deadline = GetTickCount64() + 1500
-        var quit: Int32?
         repeat {
             var message = MSG()
             var count = 0

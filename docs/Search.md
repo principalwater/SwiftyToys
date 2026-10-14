@@ -143,8 +143,8 @@ locator; opening uses the registered application. Filename matches remain
 available when content extraction or a codec is unavailable.
 
 Indexing is paced: at most 128 metadata entries or about 40 ms per two-second
-slice. Heavy extraction/inference waits for 30 seconds without user input,
-10 seconds without Search activity, no foreground fullscreen window and no
+slice. Heavy extraction/inference waits for Search to close, 30 seconds without
+user input, 10 seconds without Search activity, no foreground fullscreen window and no
 Windows Battery Saver. It runs in a background-priority owned child, one content
 slice or vector per step. User activity cancels heavy work while retaining
 completed data. A native provider that stalls inside a call is stopped by the

@@ -17,6 +17,45 @@ for the resident and watchdog separately. CPU percent is relative to one core,
 not divided by this machine's 24 logical processors. Keep identical settings,
 foreground workload, startup state and sampling duration for comparisons.
 
+## 0.1.22 visible Search guard
+
+Search visibility and its last activity tick share one mutex. Heavy-work admission,
+in-flight cancellation and cancellation classification use the same guard. Reading
+results keeps heavy content/model work suspended; dismissal starts a ten-second
+grace period. Metadata scanning and foreground query providers retain their limits.
+No additional poller or keyboard/mouse interception is introduced.
+
+[Native XAML teardown is asynchronous](https://learn.microsoft.com/en-us/uwp/api/windows.ui.xaml.hosting.windowsxamlmanager.close).
+The existing owner-thread drain is retained; queued quit codes are saved before
+entering framework teardown. The fixture uses distinct codes to detect accidental
+replacement of the first exit request.
+
+The installed 8,451,072-byte executable, SHA-256
+`b9fe88520a2eacef1728e78dd9267afdc8b066db8313e7923f1b19b4a3e86545`,
+was observed in three approximately 46-second intervals. With Search open,
+resident CPU averaged 0.034% of one core and library CPU 1.15%, with about
+5.6 MiB library private bytes and stable 184 handles. With Search dismissed,
+idle indexing resumed: library CPU averaged 47.1% and private bytes grew to
+73.9 MiB during model initialization/work. Reopening cancelled that child;
+the replacement library averaged 1.38%, returned to about 5.6 MiB and retained
+184 handles. Resident CPU was again 0.034%, about 16 MiB private bytes and
+535 handles. All sampled processes responded; the watchdog showed no measured
+CPU increment. These are lifecycle observations, not a controlled speedup.
+
+The first PID-scoped queue sample recorded one 50 ms control-window timeout
+during cold opening; Search had no timeouts. On reopening, 300 probes each had
+no timeouts: control p95 0.2039 ms / maximum 0.5153 ms, Search p95 0.0983 ms /
+maximum 0.213 ms. Search was visible in 299 of 300 reopened samples.
+Queue response does not measure rendered frames or end-to-end input latency.
+Cold initialization still has a cost; no GPU or weakest-hardware claim follows.
+
+Computer use exercised the installed read-only preview's native input, calculation
+updates and categories. The resident panel is omitted from that tool's window list;
+the preview uses the same controls but independent process/activity state.
+Screenshot capture failed twice, so visual smoothness was not verified.
+No preview/build/CLI process was attributed to resident CPU. Installation retained
+all five preference-file states, DDC off and physical brightness 100%.
+
 ## 0.1.21 Search path validation
 
 The scanner validates ASCII Win32 delimiters through Swift UTF8 views, then keeps

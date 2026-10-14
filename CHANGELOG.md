@@ -1,5 +1,14 @@
 # Changelog
 
+## SwiftyToys 0.1.22 — 2026-10-14
+
+- Suspend background content/model indexing for the entire time Search is open,
+  including reading results without typing. Dismissal retains the ten-second
+  grace period; native metadata scanning and query providers keep their bounds.
+- Use the same visibility gate to cancel an already-running indexing request.
+  No polling timer, new dependency or input/display configuration is added.
+- Preserve the first exit message before entering XAML/COM teardown.
+
 ## SwiftyToys 0.1.21 — 2026-10-14
 
 - Add All, Applications, Files and Actions categories, with panel-only keyboard

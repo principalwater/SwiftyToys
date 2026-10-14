@@ -1,3 +1,23 @@
+# Validation snapshot: 0.1.22 Search foreground indexing guard
+
+2026-10-14. All 67 portable tests and 35 frozen-executable native checks pass.
+The activity fixture verifies that a visible Search stays protected past the
+input grace period, dismissal preserves its boundary, and a backwards clock
+fails closed. Existing supervisor fixtures retain committed data, notifications,
+paused-scope pruning, bounded cancellation and owned-job cleanup.
+The Search lifecycle fixture posts distinct exit codes and verifies that teardown
+preserves the first once, releases native resources and cannot restart the manager.
+Five final lifecycle runs cover 100 reopens; active material layering also passes.
+
+The static Swift 6.4.1 executable is 8,451,072 bytes. No new timer, dependency,
+model download or display/input configuration is introduced. Installation and
+short process-counter observations are recorded in [Performance.md](Performance.md).
+Full native Setup installs with exit code 0 and preserves all five preference-file
+states, Swift 6.4.1, DDC off and physical brightness 100%.
+These checks do not establish absence of every system microfreeze.
+
+## Previous release evidence
+
 # Validation snapshot: 0.1.21 Search categories, filters and Quick Keys
 
 2026-10-14. All 67 portable tests pass. Native Search fixtures check category
@@ -25,8 +45,6 @@ with exit code 0; its installed hash matches the frozen package, preserving all
 five preference-file states, Swift 6.4.1, DDC off and physical brightness 100%.
 Installed counters and PID-scoped window response probes are recorded in
 [Performance.md](Performance.md), with cold initialization and computer-use limits.
-
-## Previous release evidence
 
 # Validation snapshot: 0.1.20 regional Search
 
