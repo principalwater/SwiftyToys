@@ -1,8 +1,8 @@
 # Validation snapshot: 0.1.19 persistent Search library
 
 2026-10-14. The complete Swift 6.4.1 package has a static-runtime executable of
-8,290,304 bytes, SHA-256
-`681bed8f6e262d52ffee75a51e2d01dca984b56d894f764e521ef44888fc8323`.
+8,291,840 bytes, SHA-256
+`ab2d2117bf217d7c505c37f6314666d9f487a888745e68c79f7a88f1aa3730f3`.
 All 41 portable tests and all 33 frozen-package native checks pass. Native checks
 cover the model catalog, persistent SQLite store/scanner/watchers, extraction,
 worker protocol, deadlines, scope changes, existing input/display policies and UI.
@@ -12,6 +12,10 @@ change notifications across child replacement, malformed-message rejection, hard
 IPC deadline cleanup, paused exclusion pruning and derived-only reset. Source
 files survive reset. Query-side scope checks reject stale exact and semantic
 library matches before publication, without filtering independent Shell/Index providers.
+Metadata catch-up delivers notifications once and drains subsequent bounded
+slices, rather than assuming one 40 ms step completes an enumeration. A generated
+one-entry-per-slice scanner fixture separately verifies persistent continuation
+through five slices without re-enqueuing the directory.
 
 Search material ownership passed 20 reopen cycles: exact owned HWND/descendant
 and GDI cleanup, zero retained sources and a fixed process USER envelope. Temporary
@@ -31,7 +35,7 @@ at most one byte of pixel difference. These checks establish no general corpus
 quality, exact upstream parity or weakest-hardware timing guarantee.
 
 The live samples use the same frozen production pipeline before the final
-fixture-only GDI control correction; their executable hash, timings and memory
+fixture-only GDI control and metadata-drain corrections; their executable hashes, timings and memory
 limits are in [Performance.md](Performance.md). Models and media encoders are
 optional downloads, excluded from the installer. Media Foundation entry points
 load lazily from System32, retaining readable missing-component errors. No display,

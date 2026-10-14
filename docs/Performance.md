@@ -47,8 +47,10 @@ CPU increment. Foreground work was not controlled. Process counters do not
 attribute GPU load or prove absence of system microfreezes; future comparisons
 must retain equivalent settings, lifecycle and workloads.
 
-Two separate 61.2-second installed 0.1.19 observations used the final executable
-hash in Validation.md. The first recorded resident CPU about 0.051% of one core,
+Two separate 61.2-second installed 0.1.19 observations used executable
+`681bed8f6e262d52ffee75a51e2d01dca984b56d894f764e521ef44888fc8323`,
+before the final fixture-only metadata-drain correction. The first recorded
+resident CPU about 0.051% of one core,
 private bytes falling from 4.36 to 4.27 MiB, and 289–290 handles. Watchdog private
 bytes stayed at 2.85 MiB, 181 handles, with no measured CPU increment. The library
 child initially used at most about 0.92% of one core in five-second metadata bins;

@@ -66,11 +66,29 @@ extension NativeSearchLibraryRuntime {
     }
     let watcher = try NativeSearchLibraryWatcher(roots: [documents])
     defer { _ = watcher.stop() }
+    func scanUntilFiles(_ files: Int, worker: LibraryRuntimeFixtureChild,
+      directories: [String] = []) throws -> String {
+      let check = try NativeSearchLibraryStore(databasePath: database, readOnly: true)
+      let deadline = GetTickCount64() + 10000
+      var notice = try worker.step(heavy: false, directories: directories)
+      var observed = try check.status()
+      // A 40 ms slice may yield; subsequent steps must continue the original delivery without re-enqueuing it.
+      while observed.directories > 0 && GetTickCount64() < deadline {
+        Sleep(10)
+        notice = try worker.step(heavy: false)
+        observed = try check.status()
+      }
+      guard observed.files == files, observed.directories == 0 else {
+        throw WindowsError.unsupported("Library metadata fixture expected \(files) files and a drained queue; "
+          + "observed files \(observed.files), queued directories \(observed.directories). Worker: \(notice)")
+      }
+      return notice
+    }
     do {
       let worker = try LibraryRuntimeFixtureChild()
       defer { worker.child.stop(wait: true) }
       _ = try worker.configure(folder: documents, reset: true, refresh: true)
-      let indexed = try worker.step(heavy: false)
+      let indexed = try scanUntilFiles(1, worker: worker)
       guard indexed.containsText("files 1") else { throw WindowsError.unsupported("Owned library worker did not index its generated file.") }
       let extracted = try worker.step(heavy: true)
       guard extracted.containsText("fragments 1") else { throw WindowsError.unsupported("Owned library worker failed its bounded text fixture.") }
@@ -102,7 +120,7 @@ extension NativeSearchLibraryRuntime {
       guard resumed.containsText("fragments 1"), resumed.containsText("skipped 1") else {
         throw WindowsError.unsupported("Restarted library worker lost terminal task state.")
       }
-      let catchup = try worker.step(heavy: false, directories: dirty)
+      let catchup = try scanUntilFiles(2, worker: worker, directories: dirty)
       guard catchup.containsText("files 2") else {
         throw WindowsError.unsupported("Restarted child did not apply retained supervisor notifications.")
       }
