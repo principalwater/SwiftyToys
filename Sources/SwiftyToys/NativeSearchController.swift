@@ -18,6 +18,7 @@ final class NativeSearchController {
         if panel == nil {
             panel = try NativeSearchWindow(onQuery: { [weak self] query in
                 guard let self, let panel = self.panel else { return }
+                NativeSearchLibraryActivity.setVisible(panel.window.map { IsWindowVisible($0) } ?? false)
                 if query.allSatisfy(\.isWhitespace) {
                     self.service?.invalidate(generation:panel.generation)
                     _ = panel.delivery.post(NativeSearchSnapshot(generation:panel.generation,results:[],
@@ -31,6 +32,7 @@ final class NativeSearchController {
             }, onActivate: { [weak self] id in self?.activate(id) }, onPreview: { [weak self] id in
                 guard let self, let panel = self.panel else { return }; self.service?.preview(id: id, generation: panel.generation)
             }, onCopy: { [weak self] id in self?.copy(id) }, onDismiss: { [weak self] in
+                NativeSearchLibraryActivity.setVisible(false)
                 guard let self, let panel = self.panel else { return }; self.service?.invalidate(generation:panel.generation)
             }, onReveal: { [weak self] id in self?.reveal(id) })
         }
@@ -85,7 +87,7 @@ final class NativeSearchController {
         guard EmptyClipboard(), SetClipboardData(UINT(CF_UNICODETEXT), memory) != nil else { throw WindowsError.api("Copy search result", GetLastError()) }
         transferred = true
     }
-    func stop() { service?.stop(); service = nil; panel = nil }
+    func stop() { NativeSearchLibraryActivity.setVisible(false); service?.stop(); service = nil; panel = nil }
     deinit { stop() }
 }
 

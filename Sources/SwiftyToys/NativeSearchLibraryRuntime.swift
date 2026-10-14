@@ -6,11 +6,33 @@ import WinSDK
 let searchLibraryMessage: UINT = 0x8062
 
 enum NativeSearchLibraryActivity {
-  private static let last = Mutex(UInt64(0))
-  static func touch() { last.withLock { $0 = GetTickCount64() } }
-  static func age() -> UInt64 {
-    let tick = last.withLock { $0 }, now = GetTickCount64()
-    return now >= tick ? now - tick : 0
+  private static let state = Mutex((tick: UInt64(0), visible: false))
+  static func touch() { state.withLock { $0.tick = GetTickCount64() } }
+  static func setVisible(_ visible: Bool) {
+    state.withLock {
+      guard $0.visible != visible else { return }
+      $0.visible = visible; $0.tick = GetTickCount64()
+    }
+  }
+  static func isIdle(at now: UInt64 = GetTickCount64()) -> Bool {
+    state.withLock { !$0.visible && now >= $0.tick && now - $0.tick >= 10000 }
+  }
+  static func selfCheck() throws {
+    let saved = state.withLock { value in
+      let saved = value; value = (100, true); return saved
+    }
+    defer { state.withLock { $0 = saved } }
+    guard !isIdle(at: 100000) else {
+      throw WindowsError.unsupported("Visible Search allowed heavy indexing after its input grace period.")
+    }
+    setVisible(false)
+    guard !isIdle() else {
+      throw WindowsError.unsupported("Search dismissal omitted the indexing grace period.")
+    }
+    state.withLock { $0 = (100, false) }
+    guard !isIdle(at: 99), !isIdle(at: 10099), isIdle(at: 10100) else {
+      throw WindowsError.unsupported("Dismissed Search did not preserve its indexing grace period.")
+    }
   }
 }
 
@@ -280,7 +302,7 @@ final class NativeSearchLibraryManager: @unchecked Sendable {
         let cancelled: @Sendable () -> Bool = {
           if self.changed(generation) { return true }
           guard heavyRequest else { return false }
-          if NativeSearchLibraryRuntime.inputAge() < 30000 || NativeSearchLibraryActivity.age() < 10000 {
+          if NativeSearchLibraryRuntime.inputAge() < 30000 || !NativeSearchLibraryActivity.isIdle() {
             userInterrupted.withLock { $0 = true }; return true
           }
           return gate.withLock {
@@ -334,7 +356,7 @@ final class NativeSearchLibraryManager: @unchecked Sendable {
         _ = WaitForSingleObject(wake.raw, delay)
       } catch {
         intentionallyCancelled = changed(generation) || userInterrupted.withLock({ $0 }) || (heavy &&
-          (NativeSearchLibraryRuntime.inputAge() < 30000 || NativeSearchLibraryActivity.age() < 10000))
+          (NativeSearchLibraryRuntime.inputAge() < 30000 || !NativeSearchLibraryActivity.isIdle()))
         stopWorker(); configured = nil
         if intentionallyCancelled {
           let memory = !NativeSearchLibraryRuntime.hasMemoryHeadroom()
@@ -380,7 +402,7 @@ enum NativeSearchLibraryRuntime {
   static func mayDoHeavyWork() -> Bool {
     var power = SYSTEM_POWER_STATUS()
     guard GetSystemPowerStatus(&power), power.SystemStatusFlag != 1 else { return false }
-    return inputAge() >= 30000 && NativeSearchLibraryActivity.age() >= 10000
+    return inputAge() >= 30000 && NativeSearchLibraryActivity.isIdle()
       && hasMemoryHeadroom() && !fullscreen()
   }
   static func hasMemoryHeadroom(minimum: UInt64 = 512 * 1024 * 1024) -> Bool {
@@ -417,6 +439,7 @@ enum NativeSearchLibraryRuntime {
     guard namespace(preferences: preferences, model: model) != plainNamespace,
       namespace(preferences: preferences, model: model).containsText(NativeEmbeddingAssets.mediaFiles[0].sha256)
     else { throw WindowsError.unsupported("Media index namespace omitted its encoder identity.") }
+    try NativeSearchLibraryActivity.selfCheck()
     NativeSearchLibraryActivity.touch()
     guard !mayDoHeavyWork() else { throw WindowsError.unsupported("Active Search did not block heavy indexing.") }
     for (file, vector, limit, release) in [
