@@ -73,24 +73,33 @@ final class NativeSearchLibraryScanner {
     }
     /// Validation is lexical here; traversal separately verifies every native parent component.
     static func canonical(_ path: String) -> String? {
-        let bytes = Array(path.utf8.prefix(3))
-        guard bytes.count == 3, ((65...90).contains(bytes[0]) || (97...122).contains(bytes[0])),
-            bytes[1] == 58, bytes[2] == 92, path.utf16.count < 32760,
-            !path.utf16.contains(0), !path.dropFirst(2).contains(":"), !path.contains("/") else {
+        let bytes = path.utf8
+        let prefix = Array(bytes.prefix(3))
+        guard prefix.count == 3,
+            ((65...90).contains(prefix[0]) || (97...122).contains(prefix[0])),
+            prefix[1] == 58, prefix[2] == 92, path.utf16.count < 32760,
+            !bytes.contains(0), !bytes.dropFirst(2).contains(58), !bytes.contains(47) else {
             return nil
         }
-        let parts = path.dropFirst(3).split(separator: "\\", omittingEmptySubsequences: false)
-        guard !parts.contains(where: { $0 == "." || $0 == ".." || $0.hasSuffix(" ") ||
-            $0.hasSuffix(".") || $0.contains("*") || $0.contains("?") }) else { return nil }
+        // Win32 separators/metacharacters are ASCII code units, even beside combining marks.
+        let parts = bytes.dropFirst(3).split(separator: 92, omittingEmptySubsequences: false)
+        guard !parts.contains(where: { ($0.count == 1 && $0.first == 46) ||
+            ($0.count == 2 && $0.first == 46 && $0.last == 46) || $0.last == 32 ||
+            $0.last == 46 || $0.contains(42) || $0.contains(63) }) else { return nil }
         var normalized = path.lowercased()
-        while normalized.count > 3 && normalized.hasSuffix("\\") { normalized.removeLast() }
+        while normalized.hasSuffix("\\") && normalized.utf8.count > 3 { normalized.removeLast() }
         return normalized
     }
     static func permitted(_ path: String, excludedPaths: [String] = []) -> Bool {
         guard let value = canonical(path) else { return false }
-        let parts = value.dropFirst(3).split(separator: "\\")
-        guard !parts.contains(where: { excludedDirectories.contains(String($0)) }) else { return false }
-        let name = String(parts.last ?? "")
+        return permittedCanonical(value, excludedPaths: excludedPaths)
+    }
+    private static func permittedCanonical(_ value: String, excludedPaths: [String]) -> Bool {
+        let parts = value.utf8.dropFirst(3).split(separator: 92)
+        guard !parts.contains(where: {
+            excludedDirectories.contains(String(decoding: $0, as: UTF8.self))
+        }) else { return false }
+        let name = parts.last.map { String(decoding: $0, as: UTF8.self) } ?? ""
         if excludedFiles.contains(name) || name.hasPrefix(".env.") || name.hasSuffix(".pem") ||
             name.hasSuffix(".key") || name.hasSuffix(".pfx") || name.hasSuffix(".p12") ||
             name.hasSuffix(".kdbx") || name.hasSuffix(".sqlite") || name.hasSuffix(".sqlite3") ||
@@ -98,7 +107,8 @@ final class NativeSearchLibraryScanner {
         return !excludedPaths.contains(where: { value == $0 || value.hasPrefix($0 + "\\") })
     }
     private func inScope(_ path: String) -> Bool {
-        guard let value = Self.canonical(path), Self.permitted(path, excludedPaths: excludedPaths)
+        guard let value = Self.canonical(path),
+            Self.permittedCanonical(value, excludedPaths: excludedPaths)
         else { return false }
         return roots.contains { root in
             value == root || value.hasPrefix(root.hasSuffix("\\") ? root : root + "\\")
@@ -135,7 +145,8 @@ final class NativeSearchLibraryScanner {
         let configuredRoots = self.roots
         if !resume {
         try store.pruneScope { path in
-            guard let value = Self.canonical(path), Self.permitted(path, excludedPaths: self.excludedPaths)
+            guard let value = Self.canonical(path),
+                Self.permittedCanonical(value, excludedPaths: self.excludedPaths)
             else { return false }
             if roots == nil { return true }
             return configuredRoots.contains { value == $0 || value.hasPrefix($0.hasSuffix("\\") ? $0 : $0 + "\\") }

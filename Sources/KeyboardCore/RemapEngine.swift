@@ -50,8 +50,9 @@ public struct RemapEngine {
         }
     }
 
-    /// Processes one physical event; the application name is a normalized executable basename.
-    public mutating func process(key: UInt16, down: Bool, application: String = "", enabled: Bool = true) -> RemapResult
+    /// Processes one physical event, with an optional native window scope for shortcut rules.
+    public mutating func process(key: UInt16, down: Bool, application: String = "",
+        shortcutScope: String = "", enabled: Bool = true) -> RemapResult
     {
         var result = RemapResult()
         let previous = pressed[key]
@@ -142,7 +143,8 @@ public struct RemapEngine {
         let altGrHeld = pressed[165] != nil
         let rule =
             enabled && !altGrHeld
-            ? matchingShortcut(logical, modifiers: sourceMask, application: application) : nil
+            ? matchingShortcut(logical, modifiers: sourceMask, application: application,
+                shortcutScope: shortcutScope) : nil
         if let rule {
             swallowedUps.insert(key)
             result.suppress = true
@@ -191,10 +193,11 @@ public struct RemapEngine {
         }
         return global
     }
-    private func matchingShortcut(_ key: UInt16, modifiers: UInt8, application: String) -> RemapRule? {
+    private func matchingShortcut(_ key: UInt16, modifiers: UInt8, application: String,
+        shortcutScope: String) -> RemapRule? {
         var global: RemapRule?
         for rule in rules where rule.source.modifiers == modifiers && KeyChord.matches(rule.source.key, key)
-            && (rule.application.isEmpty || rule.application == application)
+            && (rule.application.isEmpty || rule.application == application || rule.application == shortcutScope)
             && !(rule.source.modifiers == 0 && rule.target?.modifiers == 0) {
             if !rule.application.isEmpty { return rule }
             if global == nil { global = rule }

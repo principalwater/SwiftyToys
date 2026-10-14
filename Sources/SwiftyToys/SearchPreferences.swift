@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import BrightnessCore
+import SearchCore
 import WinSDK
 
 struct SearchPreferences: Sendable {
@@ -11,7 +12,11 @@ struct SearchPreferences: Sendable {
     var modelRepository = "onnx-community/embeddinggemma-2-ONNX"
     var media = false
     var indexPaused = false
+    var quickKeys = SearchQuickKeys() { didSet { quickKeysError = nil } }
+    private var quickKeysError: SearchQuickKeysError?
     init(contents: String) {
+        var quickKeyLines: [String] = []
+        var quickKeyBytes = 0
         for line in contents.split(whereSeparator: \.isNewline) {
             let pair = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
             guard pair.count == 2 else { continue }
@@ -24,8 +29,18 @@ struct SearchPreferences: Sendable {
             case "model": modelRepository = String(pair[1])
             case "media": media = pair[1] == "1"
             case "indexPaused": indexPaused = pair[1] == "1"
+            case "quickKey":
+                quickKeyBytes += pair[1].utf8.count + 1
+                if quickKeyBytes <= 8_192 && quickKeyLines.count < 32 {
+                    quickKeyLines.append(String(pair[1]))
+                } else { quickKeysError = .limit }
             default: break
             }
+        }
+        if quickKeysError == nil {
+            do { quickKeys = try SearchQuickKeys(serialized: quickKeyLines.joined(separator: "\n")) }
+            catch let error as SearchQuickKeysError { quickKeysError = error }
+            catch { quickKeysError = .syntax }
         }
     }
     init() {
@@ -65,6 +80,7 @@ struct SearchPreferences: Sendable {
             + "Semantic results use the persistent library."
     }
     func validate() throws {
+        if let quickKeysError { throw WindowsError.unsupported(quickKeysError.description) }
         guard folders.count <= 32, excludedPaths.count <= 64,
             folder.utf8.count + exclusions.utf8.count <= 24_000,
             !folder.contains("\0"), !exclusions.contains("\0"),
@@ -80,13 +96,20 @@ struct SearchPreferences: Sendable {
             throw WindowsError.unsupported("Select local drives or existing local folders outside system/private locations. Use full paths such as C:\\Folder, one folder or exclusion per line, and a model ID in owner/model form.")
         }
     }
-    func save() throws {
-        try validate()
+    var serialized: String {
         var contents = "enabled=\(enabled ? 1 : 0)\r\nsemantic=\(semantic ? 1 : 0)\r\n"
             + "allLocalDrives=\(allLocalDrives ? 1 : 0)\r\nmodel=\(modelRepository)\r\n"
             + "media=\(media ? 1 : 0)\r\nindexPaused=\(indexPaused ? 1 : 0)\r\n"
         for path in folders { contents += "folder=\(path)\r\n" }
         for path in excludedPaths { contents += "exclude=\(path)\r\n" }
+        for line in quickKeys.serialized.split(whereSeparator: \.isNewline) {
+            contents += "quickKey=\(line)\r\n"
+        }
+        return contents
+    }
+    func save() throws {
+        try validate()
+        let contents = serialized
         try NativeFiles.write(Array(contents.utf8), to: NativeFiles.path("search.ini"))
     }
 }

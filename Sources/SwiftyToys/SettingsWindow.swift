@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import BrightnessCore
 import KeyboardCore
+import SearchCore
 import WinSDK
 import WindowsDisplayABI
 
@@ -387,7 +388,7 @@ final class SettingsWindow {
     }
 
     private func captureDraft() {
-        draftText[page] = [218, 230, 231, 232, 233, 303, 305, 307, 317, 348, 351, 806, 823, 831].reduce(into: [:]) { values, id in if controls[id] != nil { values[id] = text(id) } }
+        draftText[page] = [218, 230, 231, 232, 233, 303, 305, 307, 317, 348, 351, 806, 823, 831, 846].reduce(into: [:]) { values, id in if controls[id] != nil { values[id] = text(id) } }
         draftChecks[page] = [219, 315, 346, 405, 422, 423, 801, 803, 822, 839].reduce(into: [:]) { values, id in if controls[id] != nil { values[id] = checked(id) } }
         draftSelections[page] = [216, 341, 343, 345, 355, 404, 459].reduce(into: [:]) { values, id in if let control = controls[id] { values[id] = Int(SendMessageW(control, UINT(CB_GETCURSEL), 0, 0)) } }
         pageOffsets[page] = scrollOffset
@@ -797,38 +798,46 @@ final class SettingsWindow {
             check("Enable SwiftyToys Search",801,300,228,650,on:searchPreferences.enabled)
             label("Cmd + Space opens Search. Currency, units and number/time formats follow Windows regional settings; explicit conversion targets take priority.",802,300,274,650,60)
             button("Open Search",811,300,345,200)
-            check("Enable local semantic search",803,300,410,650,on:searchPreferences.semantic)
-            label("A persistent local library combines exact text and meaning. Your files stay on this PC. Use code:, pdf:, image:, audio: or video: to narrow results.",804,300,454,650,66)
-            check("Automatically include all available local drives",822,300,535,650,on:searchPreferences.allLocalDrives)
-            label("Additional folders · one per line",805,300,587,520,24)
-            _ = control("EDIT",searchPreferences.folder,806,300,621,520,72,style:DWORD(WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL))
-            button("Browse…",816,838,621,112)
-            label("Excluded folders · one per line",830,300,717,650,24)
-            _ = control("EDIT",searchPreferences.exclusions,831,300,751,650,72,style:DWORD(WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL))
-            label("System, cache, linked, cloud-only and credential files are excluded. Heavy content analysis waits for idle time; indexing can pause and resume.",807,300,849,650,66)
-            label(searchLibraryText,841,300,929,650,72)
-            button(searchPreferences.indexPaused ? "Resume indexing" : "Pause indexing",840,300,1018,220)
-            button("Index status",842,540,1018,180)
-            button("Rebuild library",843,740,1018,210)
-            label("Embedding model · Hugging Face repository ID",824,300,1087,650,24)
-            combo(NativeSearchModelCatalog.builtIns.map(\.repositoryID),823,300,1121,650,editable:true)
+            label("Quick Keys · one per line",844,300,410,650,30)
+            label("Use alias = command name, such as calc = Calculator. Type the alias in Search, then press Enter. Leave empty to keep normal matching.",845,300,454,650,60)
+            if let field = control("EDIT",searchPreferences.quickKeys.editorText,846,300,532,650,90,
+                style:DWORD(WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL)) {
+                SendMessageW(field, UINT(EM_SETLIMITTEXT), 8_192, 0)
+            }
+            label("Commands: " + SearchCommands.items.map(\.title).joined(separator: ", "),
+                847,300,648,650,92)
+            check("Enable local semantic search",803,300,760,650,on:searchPreferences.semantic)
+            label("A persistent local library combines exact text and meaning. Your files stay on this PC. Use code:, pdf:, image:, audio: or video: to narrow results.",804,300,804,650,66)
+            check("Automatically include all available local drives",822,300,885,650,on:searchPreferences.allLocalDrives)
+            label("Additional folders · one per line",805,300,937,520,24)
+            _ = control("EDIT",searchPreferences.folder,806,300,971,520,72,style:DWORD(WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL))
+            button("Browse…",816,838,971,112)
+            label("Excluded folders · one per line",830,300,1067,650,24)
+            _ = control("EDIT",searchPreferences.exclusions,831,300,1101,650,72,style:DWORD(WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL))
+            label("System, cache, linked, cloud-only and credential files are excluded. Heavy content analysis waits for idle time; indexing can pause and resume.",807,300,1199,650,66)
+            label(searchLibraryText,841,300,1279,650,72)
+            button(searchPreferences.indexPaused ? "Resume indexing" : "Pause indexing",840,300,1368,220)
+            button("Index status",842,540,1368,180)
+            button("Rebuild library",843,740,1368,210)
+            label("Embedding model · Hugging Face repository ID",824,300,1437,650,24)
+            combo(NativeSearchModelCatalog.builtIns.map(\.repositoryID),823,300,1471,650,editable:true)
             if let field = controls[823] { setText(field,searchPreferences.modelRepository) }
-            button("Find models",826,300,1178,180)
-            button("Check compatibility",827,500,1178,230)
-            button("Model card",828,750,1178,200)
-            label("Recommended: EmbeddingGemma 2. Other models need a supported native ONNX/tokenizer adapter; incompatible models receive an explanation.",829,300,1244,650,66)
-            check("Include image, audio and video encoders · about 535 MB extra",839,300,1325,650,on:searchPreferences.media)
-            label(searchModelStatus.text,808,300,1381,650,84)
-            button("Runtime license",819,300,1484,240)
-            button("Model license",820,560,1484,220)
-            check("I accept the Microsoft runtime terms and the selected model license",821,300,1542,650,on:false)
-            button("Download selected model",812,300,1606,280)
-            button("Cancel download",813,600,1606,170)
-            button("Remove model",814,790,1606,160)
-            label("Models run in bounded native workers. The basic app stays small; weights are downloaded separately and remain optional.",809,300,1662,650,66)
-            button("Save search settings",810,300,1738,280)
-            button("Refresh model status",815,600,1738,260)
-            button("Status details",817,300,1798,180)
+            button("Find models",826,300,1528,180)
+            button("Check compatibility",827,500,1528,230)
+            button("Model card",828,750,1528,200)
+            label("Recommended: EmbeddingGemma 2. Other models need a supported native ONNX/tokenizer adapter; incompatible models receive an explanation.",829,300,1594,650,66)
+            check("Include image, audio and video encoders · about 535 MB extra",839,300,1675,650,on:searchPreferences.media)
+            label(searchModelStatus.text,808,300,1731,650,84)
+            button("Runtime license",819,300,1834,240)
+            button("Model license",820,560,1834,220)
+            check("I accept the Microsoft runtime terms and the selected model license",821,300,1892,650,on:false)
+            button("Download selected model",812,300,1956,280)
+            button("Cancel download",813,600,1956,170)
+            button("Remove model",814,790,1956,160)
+            label("Models run in bounded native workers. The basic app stays small; weights are downloaded separately and remain optional.",809,300,2012,650,66)
+            button("Save search settings",810,300,2088,280)
+            button("Refresh model status",815,600,2088,260)
+            button("Status details",817,300,2148,180)
             updateSearchModel(searchModelStatus)
             if !preview { _ = try? command(815,[]) }
         default:
@@ -1066,12 +1075,15 @@ final class SettingsWindow {
             if id == Int(IDOK) { return 0 }
             do {
                 if id == 810 {
+                    do { searchPreferences.quickKeys = try SearchQuickKeys(editorText: text(846)) }
+                    catch { throw WindowsError.unsupported(String(describing: error)) }
                     searchPreferences.enabled = checked(801); searchPreferences.semantic = checked(803); searchPreferences.folder = text(806)
                     searchPreferences.allLocalDrives = checked(822); searchPreferences.exclusions = text(831)
                     searchPreferences.modelRepository = text(823); searchPreferences.media = checked(839)
                     status(try command(810,[searchPreferences.enabled ? "1" : "0",searchPreferences.semantic ? "1" : "0",searchPreferences.folder,
                         searchPreferences.allLocalDrives ? "1" : "0", searchPreferences.exclusions,
-                        searchPreferences.modelRepository, searchPreferences.media ? "1" : "0"]))
+                        searchPreferences.modelRepository, searchPreferences.media ? "1" : "0",
+                        searchPreferences.quickKeys.serialized]))
                     return 0
                 }
                 if (811...815).contains(id) {

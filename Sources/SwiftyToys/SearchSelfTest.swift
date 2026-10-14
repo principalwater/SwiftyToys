@@ -21,6 +21,58 @@ func testNativeSearchPolicy() throws {
     let defaults = SearchPreferences(contents: "")
     try expect(defaults.allLocalDrives && !defaults.media && !defaults.indexPaused,
         "local scope is automatic; media download and pause remain explicit")
+    try expect(defaults.quickKeys.match("calc") == nil, "Quick Keys are opt-in")
+    var commandPreferences = defaults
+    commandPreferences.quickKeys = try SearchQuickKeys(editorText:
+        "calc = Calculator\nзвук = Sound settings\nsleep = Sleep")
+    let commandRoundTrip = SearchPreferences(contents: commandPreferences.serialized)
+    try expect(commandRoundTrip.quickKeys == commandPreferences.quickKeys
+        && commandRoundTrip.quickKeys.match("CALC")?.id == "action:calculator"
+        && commandRoundTrip.quickKeys.match("sleep")?.id == "action:sleep"
+        && commandRoundTrip.quickKeys.match("cal") == nil,
+        "bounded Quick Keys round-trip without executing commands or writing preferences")
+    try commandRoundTrip.validate()
+    for invalid in ["quickKey=calc|action:unknown\n", "quickKey=calc|cmd.exe\n",
+        "quickKey=calc|action:calculator\nquickKey=CALC|action:sleep\n"] {
+        let preferences = SearchPreferences(contents: invalid)
+        var rejected = false
+        do { try preferences.validate() } catch { rejected = true }
+        try expect(rejected && preferences.quickKeys.match("calc") == nil,
+            "invalid saved Quick Keys fail closed before preference writes")
+    }
+    let oversizedKeys = (0..<33).map { "quickKey=key\($0)|action:calculator\n" }.joined()
+    var repaired = SearchPreferences(contents: oversizedKeys)
+    var rejected = false
+    do { try repaired.validate() } catch { rejected = true }
+    try expect(rejected && repaired.quickKeys.match("key0") == nil,
+        "more than 32 persisted Quick Keys reject the complete alias set")
+    repaired.quickKeys = SearchQuickKeys()
+    try repaired.validate()
+    var savedGUIValues: [String] = []
+    let editor = try SettingsWindow(brightness: 70, keyboard: configuration, preview: true) { id, values in
+        if id == 810 { savedGUIValues = values }
+        return "Read-only settings check"
+    }
+    guard let settingsWindow = editor.window else {
+        throw WindowsError.unsupported("Search Quick Keys settings window is unavailable.")
+    }
+    defer { DestroyWindow(settingsWindow) }
+    SendMessageW(settingsWindow, UINT(WM_COMMAND), 129, 0)
+    let viewport = withWideString("SwiftyToys.SettingsViewport") {
+        FindWindowExW(settingsWindow, nil, $0, nil)
+    }
+    guard let viewport, let field = GetDlgItem(viewport, 846) else {
+        throw WindowsError.unsupported("Search Quick Keys editor is unavailable.")
+    }
+    _ = withWideString("calc = Calculator\r\nзвук = Sound settings") { SetWindowTextW(field, $0) }
+    SendMessageW(settingsWindow, UINT(WM_COMMAND), 100, 0)
+    SendMessageW(settingsWindow, UINT(WM_COMMAND), 129, 0)
+    SendMessageW(settingsWindow, UINT(WM_COMMAND), 810, 0)
+    try expect(savedGUIValues.count == 8, "Search settings saves the complete eight-field contract")
+    let savedGUIKeys = try SearchQuickKeys(serialized: savedGUIValues[7])
+    try expect(savedGUIKeys.match("calc")?.id == "action:calculator"
+        && savedGUIKeys.match("ЗВУК")?.id == "action:sound",
+        "native Quick Keys editor retains drafts across Overview and serializes safe commands")
     let saved = SearchPreferences(contents: "allLocalDrives=0\nfolder=C:\\First\nfolder=D:\\Second\nexclude=C:\\Excluded\nmodel=sentence-transformers/all-MiniLM-L6-v2\nmedia=1\nindexPaused=1\n")
     try expect(saved.folders == ["C:\\First", "D:\\Second"] && saved.excludedPaths == ["C:\\Excluded"]
         && saved.media && saved.indexPaused && !saved.allLocalDrives
@@ -53,5 +105,5 @@ func testNativeSearchPolicy() throws {
     try expect(NativeSearchClock.quick("time in utc")?.value.count == 5,"native world clock")
     let item = SearchItem(id:"x",title:"Unicode — файл",subtitle:"tab\tnewline\n",path:"C:\\Example\\file.txt",kind:"File")
     try expect(try SearchWire.decode(SearchWire.encode([item])).items == [item],"IPC data roundtrip")
-    Console.writeLine("PASS: Mac search routing, customized shortcuts, rollback-compatible actions, model opt-in, local scope and bounded IPC")
+    Console.writeLine("PASS: Mac search routing, customized shortcuts, rollback-compatible actions, model opt-in, local scope, native Quick Keys editor and bounded IPC")
 }

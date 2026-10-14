@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import Synchronization
+import SearchCore
 import WinSDK
 import WindowsDisplayABI
 
@@ -133,6 +134,8 @@ final class NativeSearchWindow {
     private var materialSize: (Int32,Int32,UINT,Bool)?
     private var changingQuery = false
     private var composing = false
+    private(set) var category: SearchCategory = .all
+    private var displayedCategory: SearchCategory = .all
     private var dismissing = false
     private var previewID: String?
     private var previewExpanded = false
@@ -163,7 +166,7 @@ final class NativeSearchWindow {
         let initialScale = Double(GetDpiForSystem()) / 96
         window = withWideString("SwiftyToys.NativeSearch") { name in withWideString(localization.text("SwiftyToys Search")) {
             CreateWindowExW(DWORD(designPreview ? WS_EX_APPWINDOW : WS_EX_TOOLWINDOW) | DWORD(WS_EX_CONTROLPARENT), name, $0, DWORD(WS_POPUP) | DWORD(WS_THICKFRAME | WS_CLIPCHILDREN),
-                0, 0, Int32(720*initialScale), Int32(132*initialScale), nil, nil, GetModuleHandleW(nil), Unmanaged.passUnretained(self).toOpaque())
+                0, 0, Int32(720*initialScale), Int32(166*initialScale), nil, nil, GetModuleHandleW(nil), Unmanaged.passUnretained(self).toOpaque())
         } }
         guard let window else { throw WindowsError.api("Create search panel", GetLastError()) }
         producer = NativeSearchDelivery(window)
@@ -177,12 +180,15 @@ final class NativeSearchWindow {
         try child("STATIC", "Choose a result", 13, style: DWORD(SS_NOPREFIX | SS_ENDELLIPSIS))
         try child("EDIT", "Press Space or Preview to inspect a result.", 14, style: DWORD(WS_TABSTOP | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL))
         try child("STATIC", "Search apps and files", 15)
-        try child("STATIC", "↑↓ Choose   Enter Open   Tab Results   Space Preview   Esc Close", 16)
+        try child("STATIC", "Enter Open • Tab Actions • Esc Close", 16)
         try child("BUTTON", "Open", 6, style: DWORD(WS_TABSTOP | BS_OWNERDRAW))
         try child("BUTTON", "Preview", 3, style: DWORD(WS_TABSTOP | BS_OWNERDRAW))
         try child("BUTTON", "Copy", 5, style: DWORD(WS_TABSTOP | BS_OWNERDRAW))
         try child("BUTTON", "Close", 4, style: DWORD(WS_TABSTOP | BS_OWNERDRAW))
         try child("STATIC", "Search apps, files, or calculate", 17, style:DWORD(SS_NOTIFY))
+        for (index, category) in SearchCategory.allCases.enumerated() {
+            try child("BUTTON", category == .applications ? "Apps" : category.title, 20+index, style:DWORD(WS_TABSTOP | BS_OWNERDRAW))
+        }
         if let edit = controls[1] {
             guard SendMessageW(edit,UINT(EM_SETTEXTMODE),WPARAM(TM_PLAINTEXT.rawValue),0)==0 else {
                 throw WindowsError.unsupported("Windows Search input could not enter plain-text mode.")
@@ -205,7 +211,7 @@ final class NativeSearchWindow {
                 throw WindowsError.api("Prepare native search composition",GetLastError())
             }
         }
-        try theme(); try typography(); try updateIcons(); arrange()
+        try refreshCategories(); try theme(); try typography(); try updateIcons(); arrange()
         for id in [3,5,6] { EnableWindow(controls[id], false) }
     }
     @discardableResult private func child(_ kind: String, _ text: String, _ id: Int, style: DWORD = 0) throws -> HWND {
@@ -218,6 +224,37 @@ final class NativeSearchWindow {
     private func checkThread() { precondition(GetCurrentThreadId() == uiThread, "Search UI must be updated on its owning thread") }
     private func setText(_ id: Int, _ text: String) { if let control = controls[id], self.text(id) != text { _ = withWideString(text) { SetWindowTextW(control, $0) } } }
     private func label(_ id: Int, _ english: String) { setText(id,localization.text(english)) }
+    private func refreshCategories() throws {
+        guard let services=queryAccessibility else { return }
+        for (index, item) in SearchCategory.allCases.enumerated() {
+            guard let button=controls[20+index] else { continue }
+            let name=localization.text(item == .applications ? "Apps" : item.title) + (item==displayedCategory ? ", " + localization.text("Selected category") : "")
+            let named=withWideString(name) {
+                services.pointee.lpVtbl.pointee.SetHwndPropStr(services,button,DWORD(bitPattern:searchClientObject),0,Self.queryNameProperty,$0)
+            }
+            guard named >= 0 else { throw WindowsError.status("Label Search category",named) }
+            InvalidateRect(button,nil,false)
+        }
+    }
+    private func withoutCategoryPrefix(_ text:String) -> String {
+        let trimmed=text.drop(while:\.isWhitespace), lower=trimmed.lowercased()
+        for prefix in SearchCategory.allCases.map(\.prefix).filter({ !$0.isEmpty }) + ["applications:"] {
+            if lower.hasPrefix(prefix) { return String(trimmed.dropFirst(prefix.count).drop(while:\.isWhitespace)) }
+        }
+        return text
+    }
+    /// A category change preserves the query and its content filters, and cancels retained actions.
+    func selectCategory(_ next:SearchCategory) {
+        checkThread(); guard !composing else { return }
+        let visible=withoutCategoryPrefix(text(1))
+        guard next != category || visible != text(1) else { return }
+        category=next
+        if visible != text(1) {
+            changingQuery=true; setText(1,visible); changingQuery=false
+            SendMessageW(controls[1],UINT(EM_SETSEL),WPARAM(visible.utf16.count),LPARAM(visible.utf16.count))
+        }
+        SetFocus(controls[1]); queryChanged()
+    }
     private func updateQueryHint() {
         guard let hint=controls[17],let field=controls[1] else { return }
         let visible = !composing && GetWindowTextLengthW(field)==0
@@ -301,18 +338,19 @@ final class NativeSearchWindow {
         guard let window else { return }
         var client = RECT(); GetClientRect(window, &client)
         let width = Int(Double(client.right) / scale), height = Int(Double(client.bottom) / scale)
-        let showPreview = previewExpanded && height >= 240
-        let split = showPreview ? max(268, width * 56 / 100) : width, footer = max(94, height - 40)
+        let showPreview = previewExpanded && height >= 274
+        let split = showPreview ? max(268, width * 56 / 100) : width, footer = max(128, height - 40)
         let hasResults = !results.isEmpty
         let dpi = GetDpiForWindow(window)
         let layout = (client.right,client.bottom,dpi,showPreview,hasResults)
         let layoutChanged = arranged.map { $0 != layout } ?? true
         if layoutChanged {
             arranged = layout
-            label(16,width < 680 ? "Enter Open • Esc Close" : "↑↓ Choose • Enter Open • Esc Close")
+            label(16,width < 680 ? "Enter Open • Esc Close" : "Enter Open • Tab Actions • Esc Close")
             for (id, x, y, w, h) in [(10,26,28,24,24),(1,66,22,width-94,40),(11,0,0,1,1),(17,74,22,width-110,40),
-                (2,14,94,split-28,max(1,footer-100)),(12,0,0,1,1),(13,split+18,96,width-split-40,42),
-                (14,split+18,152,width-split-40,max(1,footer-160)),(15,26,68,width-52,18),(16,24,footer+8,max(1,width-356),22),
+                (20,26,68,70,28),(21,102,68,92,28),(22,200,68,82,28),(23,288,68,96,28),
+                (2,14,128,split-28,max(1,footer-134)),(12,0,0,1,1),(13,split+18,130,width-split-40,42),
+                (14,split+18,186,width-split-40,max(1,footer-194)),(15,26,102,width-52,18),(16,24,footer+8,max(1,width-356),22),
                 (6,width-304,footer+3,68,30),(3,width-232,footer+3,82,30),(5,width-146,footer+3,64,30),(4,width-78,footer+3,60,30)] {
                 if let control = controls[id] {
                     let hiddenPreview = (id == 13 || id == 14) && !showPreview
@@ -357,12 +395,13 @@ final class NativeSearchWindow {
         var area=RECT(); GetWindowRect(window,&area)
         var monitor=MONITORINFO(); monitor.cbSize=DWORD(MemoryLayout<MONITORINFO>.size)
         guard GetMonitorInfoW(MonitorFromWindow(window,DWORD(MONITOR_DEFAULTTONEAREST)),&monitor) else { arrange(); return }
-        let resultHeight = results.isEmpty ? 134 : 140+min(results.count,6)*58
-        let desired = previewExpanded ? max(340,resultHeight) : resultHeight
+        let resultHeight = results.isEmpty ? 168 : 174+min(results.count,6)*58
+        let desired = previewExpanded ? max(374,resultHeight) : resultHeight
         let requested = Int32((Double(desired)*scale).rounded(.up))
-        let stable = text(1).allSatisfy(\.isWhitespace) ? requested : max(requested,area.bottom-area.top)
+        let reset=category == .all && text(1).allSatisfy(\.isWhitespace)
+        let stable = reset ? requested : max(requested,area.bottom-area.top)
         let height=min(stable,monitor.rcWork.bottom-area.top)
-        if height != area.bottom-area.top { SetWindowPos(window,nil,0,0,area.right-area.left,max(Int32(132*scale),height),UINT(SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE)) }
+        if height != area.bottom-area.top { SetWindowPos(window,nil,0,0,area.right-area.left,max(Int32(166*scale),height),UINT(SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE)) }
         else { arrange() }
     }
     func show(query: String = "") throws {
@@ -379,7 +418,7 @@ final class NativeSearchWindow {
         let area = monitor.rcWork
         // Moving first lets WM_DPICHANGED update fonts/icons before sizing for the destination monitor.
         SetWindowPos(window,nil,area.left,area.top,0,0,UINT(SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE))
-        let width = min(Int32(720 * scale), area.right-area.left), height = min(Int32((134 * scale).rounded(.up)), area.bottom-area.top)
+        let width = min(Int32(720 * scale), area.right-area.left), height = min(Int32((168 * scale).rounded(.up)), area.bottom-area.top)
         SetWindowPos(window, nil, area.left+(area.right-area.left-width)/2, area.top+(area.bottom-area.top-height)/3,
             width, height, UINT(SWP_NOZORDER | SWP_NOACTIVATE))
         results = []; resultStrings = []; queryPending = false; previewExpanded = false
@@ -399,7 +438,14 @@ final class NativeSearchWindow {
         generation &+= 1; queryPending = true; previewID = nil; producer?.cancelPreview()
         updateQueryHint()
         for id in [3,5,6] { EnableWindow(controls[id], false) }
-        onQuery(text(1))
+        let query=text(1)
+        let submitted=category == .all ? query : category.prefix + " " + withoutCategoryPrefix(query)
+        let scope=SearchQuery(submitted).category
+        if displayedCategory != scope {
+            displayedCategory=scope
+            do { try refreshCategories() } catch { label(15,"Search category could not be displayed.") }
+        }
+        onQuery(submitted)
         if queryPending, !pendingStatusQueued, let window {
             // Quick replies can settle before the pending label is drawn; keep one queued notice.
             pendingStatusQueued = PostMessageW(window,searchPendingMessage,0,0)
@@ -494,6 +540,47 @@ final class NativeSearchWindow {
     }
     private func copy() { guard let selected else { return }; onCopy(selected.id) }
     private func reveal() { guard let selected, ["File","Folder","Application"].contains(selected.kind) else { return }; onReveal(selected.id) }
+    private enum ResultAction: Int, CaseIterable { case open=1, preview, copy, reveal }
+    private func resultActions() -> [(ResultAction,String)] {
+        guard let selected, !composing else { return [] }
+        let local=["File","Folder","Application"].contains(selected.kind)
+        var actions: [(ResultAction,String)] = selected.id=="answer" ? [] : [(.open,"Open")]
+        actions.append((.preview,"Preview"))
+        actions.append((.copy,local ? "Copy path" : "Copy result"))
+        if local { actions.append((.reveal,"Reveal in File Explorer")) }
+        return actions
+    }
+    private func perform(_ action:ResultAction, generation:UInt64, resultID:String) {
+        guard generation==self.generation, selected?.id==resultID,
+            resultActions().contains(where:{$0.0==action}) else { return }
+        switch action {
+        case .open: activate()
+        case .preview: preview()
+        case .copy: copy()
+        case .reveal: reveal()
+        }
+    }
+    @discardableResult private func resultMenu(at point:POINT?=nil) -> Bool {
+        let actions=resultActions()
+        guard let window, let selected, !actions.isEmpty, let menu=CreatePopupMenu() else { return false }
+        defer { DestroyMenu(menu) }
+        for (action, title) in actions {
+            let added=withWideString(localization.text(title)) { AppendMenuW(menu,UINT(MF_STRING),UINT_PTR(action.rawValue),$0) }
+            guard added else { label(15,"Result actions could not be displayed."); return true }
+        }
+        var anchor=point ?? POINT()
+        if point==nil, let list=controls[2] {
+            let index=SendMessageW(list,UINT(LB_GETCURSEL),0,0)
+            var row=RECT()
+            _=withUnsafeMutablePointer(to:&row) { SendMessageW(list,UINT(LB_GETITEMRECT),WPARAM(index),LPARAM(Int(bitPattern:$0))) }
+            anchor=POINT(x:row.left+Int32(20*scale),y:row.top+Int32(20*scale))
+            MapWindowPoints(list,nil,&anchor,1)
+        }
+        let expected=generation, resultID=selected.id
+        let choice=BC_TrackPopupMenu(menu,UINT(TPM_RETURNCMD|TPM_RIGHTBUTTON),anchor.x,anchor.y,0,window,nil)
+        if let action=ResultAction(rawValue:Int(choice)) { perform(action,generation:expected,resultID:resultID) }
+        return true
+    }
     private func copyAnswerFromEdit() -> Bool {
         guard let edit=controls[1], selected?.id=="answer" else { return false }
         var start:DWORD=0, end:DWORD=0
@@ -503,16 +590,27 @@ final class NativeSearchWindow {
         guard start==end else { return false }
         copy(); return true
     }
-    private func key(_ key: WPARAM, target: HWND) -> Bool {
+    private func requestsResultMenu(_ key:WPARAM,target:HWND,control:Bool,shift:Bool) -> Bool {
+        !composing && (target == controls[1] || target == controls[2]) && !resultActions().isEmpty &&
+            (key == WPARAM(VK_TAB) && !control && !shift || key == WPARAM(VK_F10) && shift || key == WPARAM(VK_APPS))
+    }
+    private func key(_ key: WPARAM, target: HWND, control:Bool?=nil, shift:Bool?=nil) -> Bool {
+        let control=control ?? (GetKeyState(Int32(VK_CONTROL)) < 0)
+        let shift=shift ?? (GetKeyState(Int32(VK_SHIFT)) < 0)
         if target == controls[1], composing { return false }
+        if control, !shift, key >= 0x30, key <= 0x33 {
+            selectCategory(SearchCategory.allCases[Int(key-0x30)]); return true
+        }
+        if requestsResultMenu(key,target:target,control:control,shift:shift) { return resultMenu() }
+        if key == WPARAM(0x52), control, target == controls[1] || target == controls[2] { reveal(); return true }
         if key == WPARAM(VK_ESCAPE) { hide(); return true }
         if key == WPARAM(VK_RETURN), target == controls[1] || target == controls[2] {
-            if GetKeyState(Int32(VK_CONTROL)) < 0 { reveal() } else { activate() }; return true
+            if control { reveal() } else { activate() }; return true
         }
         if key == WPARAM(VK_DOWN), target == controls[1] || target == controls[2] { moveSelection(1); return true }
         if key == WPARAM(VK_UP), target == controls[1] || target == controls[2] { moveSelection(-1); return true }
         if key == WPARAM(VK_SPACE), target == controls[2] { preview(); return true }
-        if key == WPARAM(0x43), GetKeyState(Int32(VK_CONTROL)) < 0 {
+        if key == WPARAM(0x43), control {
             if target == controls[1] { return copyAnswerFromEdit() }
             if target == controls[2] { copy(); return true }
         }
@@ -553,7 +651,26 @@ final class NativeSearchWindow {
             if id == 5, notification == Int(BN_CLICKED) { copy() }
             if id == 6, notification == Int(BN_CLICKED) { activate() }
             if id == 4, notification == Int(BN_CLICKED) { hide() }
+            if notification == Int(BN_CLICKED), (20...23).contains(id) { selectCategory(SearchCategory.allCases[id-20]) }
             return 0
+        case UINT(WM_CONTEXTMENU):
+            if HWND(bitPattern:Int(value))==controls[2], !composing {
+                if data == -1 { _=resultMenu() }
+                else {
+                    let point=POINT(x:LONG(Int16(truncatingIfNeeded:data & 0xffff)),y:LONG(Int16(truncatingIfNeeded:(data >> 16) & 0xffff)))
+                    var local=point
+                    MapWindowPoints(nil,controls[2],&local,1)
+                    let index=SendMessageW(controls[2],UINT(LB_ITEMFROMPOINT),0,LPARAM((Int(local.y)&0xffff)<<16 | (Int(local.x)&0xffff)))
+                    if index >> 16 == 0, !queryPending {
+                        var row=RECT()
+                        let found=withUnsafeMutablePointer(to:&row) { SendMessageW(controls[2],UINT(LB_GETITEMRECT),WPARAM(index & 0xffff),LPARAM(Int(bitPattern:$0))) }
+                        if found != LRESULT(LB_ERR), PtInRect(&row,local) {
+                            SendMessageW(controls[2],UINT(LB_SETCURSEL),WPARAM(index & 0xffff),0); selectionChanged(); _=resultMenu(at:point)
+                        }
+                    }
+                }
+                return 0
+            }
         case UINT(WM_CLOSE): hide(); return 0
         case UINT(WM_ACTIVATE):
             if !designPreview, value & 0xffff == WPARAM(WA_INACTIVE), IsWindowVisible(window) {
@@ -562,7 +679,7 @@ final class NativeSearchWindow {
             }; break
         case UINT(WM_GETMINMAXINFO):
             if let info=UnsafeMutablePointer<MINMAXINFO>(bitPattern:Int(data)) {
-                let minimum = previewExpanded ? 340 : results.isEmpty ? 132 : 198
+                let minimum = previewExpanded ? 374 : results.isEmpty ? 166 : 232
                 info.pointee.ptMinTrackSize=POINT(x:Int32(560*scale),y:Int32((Double(minimum)*scale).rounded(.up)))
             }; return 0
         case UINT(WM_NCCALCSIZE): return 0
@@ -611,7 +728,7 @@ final class NativeSearchWindow {
             let inset=Int32(8*scale)
             RoundRect(dc,inset,inset,area.right-inset,area.bottom-inset,Int32(24*scale),Int32(24*scale))
         }
-        if !results.isEmpty { MoveToEx(dc,Int32(22*scale),Int32(90*scale),nil); LineTo(dc,area.right-Int32(22*scale),Int32(90*scale)) }
+        if !results.isEmpty { MoveToEx(dc,Int32(22*scale),Int32(124*scale),nil); LineTo(dc,area.right-Int32(22*scale),Int32(124*scale)) }
         SelectObject(dc,oldBrush); SelectObject(dc,oldPen); DeleteObject(pen)
     }
     private func drawBuffered(_ target: HDC, in area: RECT, _ draw: (HDC) -> Bool) {
@@ -660,11 +777,14 @@ final class NativeSearchWindow {
         guard let dc=item.hDC, controls[Int(item.CtlID)] != nil, !fonts.isEmpty, brushes.count==3 else { return false }
         let saved=SaveDC(dc); guard saved != 0 else { return false }; defer { RestoreDC(dc,saved) }
         var area=item.rcItem; FillRect(dc,&area,brushes[0])
-        let disabled=item.itemState & UINT(ODS_DISABLED) != 0, pressed=item.itemState & UINT(ODS_SELECTED) != 0
+        let categoryIndex=Int(item.CtlID)-20
+        let selectedCategory=SearchCategory.allCases.indices.contains(categoryIndex) && SearchCategory.allCases[categoryIndex]==displayedCategory
+        let disabled=item.itemState & UINT(ODS_DISABLED) != 0, pressed=item.itemState & UINT(ODS_SELECTED) != 0 || selectedCategory
         let brush=SelectObject(dc,brushes[pressed ? 2 : 0]), pen=CreatePen(Int32(PS_SOLID),1,borderColor),oldPen=SelectObject(dc,pen)
         RoundRect(dc,area.left+1,area.top+1,area.right-1,area.bottom-1,Int32(22*scale),Int32(22*scale))
         SelectObject(dc,brush); SelectObject(dc,oldPen); DeleteObject(pen)
-        SetBkMode(dc,Int32(TRANSPARENT)); SetTextColor(dc,disabled ? GetSysColor(Int32(COLOR_GRAYTEXT)) : textColor); SelectObject(dc,fonts[0])
+        let color=highContrast && pressed ? GetSysColor(Int32(COLOR_HIGHLIGHTTEXT)) : textColor
+        SetBkMode(dc,Int32(TRANSPARENT)); SetTextColor(dc,disabled ? GetSysColor(Int32(COLOR_GRAYTEXT)) : color); SelectObject(dc,fonts[0])
         let label=text(Int(item.CtlID)); _=withWideString(label) { DrawTextW(dc,$0,-1,&area,UINT(DT_CENTER|DT_VCENTER|DT_SINGLELINE)) }
         if item.itemState & UINT(ODS_FOCUS) != 0 { InflateRect(&area,-4,-4); DrawFocusRect(dc,&area) }
         return true
@@ -736,9 +856,18 @@ final class NativeSearchWindow {
             try expect(after.bottom-after.top >= before.bottom-before.top,"successive nonempty queries do not shrink frame")
         }
         panel?.setText(1,"")
+        panel?.selectCategory(.files)
+        for count in [6,1,0] {
+            var before=RECT(); GetWindowRect(window,&before)
+            let rows=(0..<count).map { NativeSearchResult(id:"row:\($0)",title:"Example \($0)",subtitle:"Text",kind:"File") }
+            _=try panel?.apply(NativeSearchSnapshot(generation:panel!.generation,results:rows,status:"Empty scoped catalog",quickAnswer:nil))
+            var after=RECT(); GetWindowRect(window,&after)
+            try expect(after.bottom-after.top==before.bottom-before.top,"empty scoped catalog updates preserve the established frame")
+        }
+        panel?.selectCategory(.all)
         _=try panel?.apply(NativeSearchSnapshot(generation:panel!.generation,results:[],status:"Search apps and files",quickAnswer:nil))
         var cleared=RECT(); GetWindowRect(window,&cleared)
-        try expect(cleared.bottom-cleared.top==Int32((134*panel!.scale).rounded(.up)),"cleared query resets compact frame")
+        try expect(cleared.bottom-cleared.top==Int32((168*panel!.scale).rounded(.up)),"cleared query resets compact frame")
         Console.writeLine("PASS: active material excludes input/results/preview/actions at their native visible regions through expansion and collapse")
     }
     static func selfCheck() throws {
@@ -762,11 +891,82 @@ final class NativeSearchWindow {
             }
         }
         try checkBounds()
-        for (width,height) in [(560,132),(560,360),(940,620),(720,468)] {
+        for (width,height) in [(560,166),(560,394),(940,654),(720,502)] {
             SetWindowPos(window,nil,0,0,Int32(Double(width)*panel.scale),Int32(Double(height)*panel.scale),UINT(SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE))
             try checkBounds()
         }
         try expect(!(try accessibleName(edit)).isEmpty && !(try accessibleName(list)).isEmpty,"real edit/list accessible names")
+        do {
+            var scopedQueries:[String]=[], actions:[String]=[]
+            let scoped=try NativeSearchWindow(localization:Localization(pack:.english),onQuery:{scopedQueries.append($0)},
+                onActivate:{actions.append("open:"+$0)},onPreview:{actions.append("preview:"+$0)},
+                onCopy:{actions.append("copy:"+$0)},onReveal:{actions.append("reveal:"+$0)})
+            let field=scoped.controls[1]!, host=scoped.window!, rows=scoped.controls[2]!
+            scoped.changingQuery=true; scoped.setText(1,"files:report"); scoped.changingQuery=false
+            SendMessageW(field,UINT(EM_SETSEL),2,4)
+            ValidateRect(field,nil)
+            let prefixedSelection=SendMessageW(field,UINT(EM_GETSEL),0,0)
+            scoped.queryChanged()
+            try expect(scoped.category == .all && scoped.displayedCategory == .files && scopedQueries.last=="files:report" &&
+                scoped.text(1)=="files:report" && SendMessageW(field,UINT(EM_GETSEL),0,0)==prefixedSelection && !GetUpdateRect(field,nil,false),
+                "typed file prefix updates only category display and preserves native input text/caret/paint")
+            try expect(try accessibleName(scoped.controls[22]!)=="Files, Selected category" && accessibleName(scoped.controls[20]!)=="All",
+                "typed file prefix exposes the actual scope through MSAA")
+            scoped.selectCategory(.all)
+            try expect(scoped.displayedCategory == .all && scoped.text(1)=="report" && scopedQueries.last=="report",
+                "All explicitly removes a typed category prefix and resets the displayed scope")
+            scoped.setText(1,"files:another report")
+            try expect(scoped.displayedCategory == .files,"editing a new category prefix updates its display")
+            scoped.setText(1,"another report")
+            try expect(scoped.displayedCategory == .all && scoped.category == .all,"deleting a typed prefix returns to All without retaining a hidden scope")
+            scoped.setText(1,"files: kind:pdf invoice")
+            scoped.selectCategory(.files)
+            try expect(scoped.category == .files && scoped.text(1)=="kind:pdf invoice" && scopedQueries.last=="files: kind:pdf invoice",
+                "category change removes only a category prefix and preserves file filters")
+            try expect(try accessibleName(scoped.controls[22]!)=="Files, Selected category" && accessibleName(scoped.controls[20]!)=="All",
+                "category buttons expose their selected category through native MSAA")
+            SendMessageW(field,UINT(EM_SETSEL),2,4)
+            ValidateRect(field,nil)
+            let prior=SendMessageW(field,UINT(EM_GETSEL),0,0)
+            scoped.selectCategory(.applications)
+            try expect(scoped.text(1)=="kind:pdf invoice" && SendMessageW(field,UINT(EM_GETSEL),0,0)==prior && !GetUpdateRect(field,nil,false),
+                "switching a plain category does not redraw, move or replace query text/caret")
+            scoped.setText(1,"")
+            scoped.selectCategory(.actions)
+            try expect(scopedQueries.last=="actions: " && scoped.resultActions().isEmpty,
+                "empty category query reaches the catalog and retained actions remain blocked")
+            try expect(!scoped.requestsResultMenu(WPARAM(VK_TAB),target:field,control:false,shift:false),"pending/no-result Tab keeps native traversal")
+            let count=scopedQueries.count
+            scoped.compositionChanged(true)
+            scoped.selectCategory(.all)
+            try expect(scoped.category == .actions && scopedQueries.count==count && !scoped.key(0x30,target:field,control:true,shift:false),
+                "IME composition blocks category shortcuts and leaves input to Windows")
+            scoped.compositionChanged(false)
+            for index in 0..<4 {
+                try expect(scoped.key(WPARAM(0x30+index),target:field,control:true,shift:false) && scoped.category==SearchCategory.allCases[index],
+                    "native Ctrl+0/1/2/3 selects a category")
+            }
+            SendMessageW(host,UINT(WM_COMMAND),23,LPARAM(Int(bitPattern:scoped.controls[23]!)))
+            try expect(scoped.category == .actions,"category button command selects the same scope")
+            let file=NativeSearchResult(id:"file",title:"Document",subtitle:"Example",kind:"File")
+            _=try scoped.apply(NativeSearchSnapshot(generation:scoped.generation,results:[file],status:"Ready",quickAnswer:nil))
+            try expect(scoped.resultActions().map(\.0)==[.open,.preview,.copy,.reveal] &&
+                scoped.requestsResultMenu(WPARAM(VK_TAB),target:field,control:false,shift:false) &&
+                scoped.requestsResultMenu(WPARAM(VK_F10),target:rows,control:false,shift:true) &&
+                !scoped.requestsResultMenu(WPARAM(VK_TAB),target:field,control:false,shift:true),
+                "ready file actions include native Tab/Shift+F10 and preserve backward focus traversal")
+            let ready=scoped.generation
+            scoped.perform(.copy,generation:ready,resultID:"file")
+            try expect(actions==["copy:file"],"result menu action delegates its callback once")
+            scoped.queryChanged()
+            scoped.perform(.reveal,generation:ready,resultID:"file")
+            try expect(actions==["copy:file"] && scoped.resultActions().isEmpty,"query invalidation rejects an action chosen from a stale menu")
+            let answer=NativeSearchResult(id:"answer",title:"14",subtitle:"2+3*4",kind:"Calculator")
+            _=try scoped.apply(NativeSearchSnapshot(generation:scoped.generation,results:[answer],status:"Ready",quickAnswer:"14"))
+            try expect(scoped.resultActions().map(\.0)==[.preview,.copy],"quick answers show Copy result without file commands")
+            scoped.perform(.reveal,generation:scoped.generation,resultID:"answer")
+            try expect(actions==["copy:file"],"unsupported result-menu command cannot invoke a callback")
+        }
         do {
             var lastQuery=""
             let typing=try NativeSearchWindow(localization:Localization(pack:.english),onQuery:{lastQuery=$0},onActivate:{_ in},onPreview:{_ in},onCopy:{_ in})
@@ -815,7 +1015,7 @@ final class NativeSearchWindow {
         for count in [1,6] {
             let rows=(0..<count).map { NativeSearchResult(id:"row:\($0)",title:"Example \($0)",subtitle:"Text",kind:"File") }
             _=try panel.apply(NativeSearchSnapshot(generation:generation,results:rows,status:"Fixture",quickAnswer:nil))
-            SetWindowPos(window,nil,0,0,Int32(720*panel.scale),Int32((Double(140+count*58)*panel.scale).rounded(.up)),UINT(SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE))
+            SetWindowPos(window,nil,0,0,Int32(720*panel.scale),Int32((Double(174+count*58)*panel.scale).rounded(.up)),UINT(SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE))
             var row=RECT(), bounds=RECT(); GetClientRect(list,&bounds)
             _=withUnsafeMutablePointer(to:&row) { SendMessageW(list,UINT(LB_GETITEMRECT),WPARAM(count-1),LPARAM(Int(bitPattern:$0))) }
             try expect(row.top >= 0 && row.bottom <= bounds.bottom,
@@ -920,7 +1120,7 @@ final class NativeSearchWindow {
         SendMessageW(edit,UINT(EM_SETSEL),0,3)
         try expect(!panel.copyAnswerFromEdit() && copies==["answer"],"selected query text keeps native Copy")
         _=try panel.apply(current)
-        for id in [1,2,14,3,4,5,6] { try expect(GetWindowLongPtrW(panel.controls[id]!,Int32(GWL_STYLE)) & LONG_PTR(WS_TABSTOP) != 0,"keyboard tab stops") }
+        for id in [1,2,14,3,4,5,6,20,21,22,23] { try expect(GetWindowLongPtrW(panel.controls[id]!,Int32(GWL_STYLE)) & LONG_PTR(WS_TABSTOP) != 0,"keyboard tab stops") }
         try expect(GetNextDlgTabItem(window,edit,false)==list && GetNextDlgTabItem(window,list,false)==panel.controls[14],"native tab order")
         panel.previewExpanded=false; panel.arrange()
         try expect(GetNextDlgTabItem(window,list,false)==panel.controls[6],"collapsed preview stays outside tab order")
@@ -928,7 +1128,7 @@ final class NativeSearchWindow {
             panel.previewExpanded=expanded
             var limits=MINMAXINFO()
             _=withUnsafeMutablePointer(to:&limits) { SendMessageW(window,UINT(WM_GETMINMAXINFO),0,LPARAM(Int(bitPattern:$0))) }
-            try expect(limits.ptMinTrackSize.y==Int32((Double(expanded ? 340 : 198)*panel.scale).rounded(.up)),"state-dependent minimum height")
+            try expect(limits.ptMinTrackSize.y==Int32((Double(expanded ? 374 : 232)*panel.scale).rounded(.up)),"state-dependent minimum height")
             SetWindowPos(window,nil,0,0,Int32(560*panel.scale),limits.ptMinTrackSize.y,UINT(SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE))
             try checkBounds()
         }
@@ -987,7 +1187,7 @@ final class NativeSearchWindow {
                 NativeSearchSnapshot(generation:smooth.generation,results:rows,status:"Stable results",quickAnswer:"4")
             }
             _=try smooth.apply(snapshot())
-            SetWindowPos(smoothWindow,nil,0,0,Int32(720*smooth.scale),Int32((256*smooth.scale).rounded(.up)),UINT(SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE))
+            SetWindowPos(smoothWindow,nil,0,0,Int32(720*smooth.scale),Int32((290*smooth.scale).rounded(.up)),UINT(SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE))
             var counts=[Int](repeating:0,count:5)
             try counts.withUnsafeMutableBufferPointer { buffer in
                 let reference=DWORD_PTR(UInt(bitPattern:buffer.baseAddress!))
@@ -1027,6 +1227,10 @@ final class NativeSearchWindow {
                 try expect(smooth.previewExpanded && buffer[0]==positions,"pending query preserves expanded preview geometry")
                 let many=(0..<20).map { NativeSearchResult(id:"item:\($0)",title:"Item \($0)",subtitle:"Text",kind:"File") }
                 _=try smooth.apply(NativeSearchSnapshot(generation:smooth.generation,results:many,status:"Progressive",quickAnswer:nil))
+                var viewport=RECT(); GetClientRect(smoothList,&viewport)
+                let rowHeight=SendMessageW(smoothList,UINT(LB_GETITEMHEIGHT),0,0)
+                try expect(rowHeight > 0 && Int(viewport.bottom) >= Int(rowHeight)*2,
+                    "scroll preservation fixture has two completely visible native rows")
                 SendMessageW(smoothList,UINT(LB_SETCURSEL),10,0)
                 SendMessageW(smoothList,UINT(LB_SETTOPINDEX),9,0)
                 var changed=many
@@ -1104,7 +1308,9 @@ final class NativeSearchWindow {
     deinit {
         producer?.close(); backdrop?.close(); backdrop=nil
         if let services=queryAccessibility {
-            if let edit=controls[1] { var property=Self.queryNameProperty; _=services.pointee.lpVtbl.pointee.ClearHwndProps(services,edit,DWORD(bitPattern:searchClientObject),0,&property,1) }
+            for id in [1,20,21,22,23] {
+                if let control=controls[id] { var property=Self.queryNameProperty; _=services.pointee.lpVtbl.pointee.ClearHwndProps(services,control,DWORD(bitPattern:searchClientObject),0,&property,1) }
+            }
             _=services.pointee.lpVtbl.pointee.Release(services)
         }
         if let window { DestroyWindow(window) }

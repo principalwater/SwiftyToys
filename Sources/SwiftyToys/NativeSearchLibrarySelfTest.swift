@@ -12,6 +12,7 @@ extension NativeSearchLibraryStore {
         let corpus = directory + "\\corpus"
         let databasePath = directory + "\\library.sqlite3"
         let budgetDatabase = directory + "\\budget.sqlite3"
+        let fileKindDatabase = directory + "\\file-kind.sqlite3"
         try NativeFiles.createDirectory(directory)
         try NativeFiles.createDirectory(corpus)
         var paths: [String] = []
@@ -19,13 +20,14 @@ extension NativeSearchLibraryStore {
             for path in paths { try? NativeFiles.remove(path) }
             for suffix in ["", "-journal", "-wal", "-shm"] { try? NativeFiles.remove(databasePath + suffix) }
             for suffix in ["", "-journal", "-wal", "-shm"] { try? NativeFiles.remove(budgetDatabase + suffix) }
+            for suffix in ["", "-journal", "-wal", "-shm"] { try? NativeFiles.remove(fileKindDatabase + suffix) }
             _ = withWideString(corpus + "\\.git") { RemoveDirectoryW($0) }
             _ = withWideString(corpus + "\\git") { RemoveDirectoryW($0) }
             _ = withWideString(corpus) { RemoveDirectoryW($0) }
             _ = withWideString(directory) { RemoveDirectoryW($0) }
         }
         for index in 0..<80 {
-            let path = corpus + "\\note\(index).txt"
+            let path = corpus + "\\note\(index)" + (index == 0 ? ".swift" : ".txt")
             try NativeFiles.write(Array("fixture text \(index)".utf8), to: path)
             paths.append(path)
         }
@@ -46,6 +48,34 @@ extension NativeSearchLibraryStore {
             "C:\\Example\\.ssh\\key", "C:\\Example\\AGENTS.md", "C:\\Example\\secret.pem"] {
             try expect(!NativeSearchLibraryScanner.permitted(path), "excluded scope rejected")
         }
+        for (path, canonical) in [
+            ("C:\\", "c:\\"), ("C:\\Example\\\\", "c:\\example"),
+            ("C:\\Example\\Résumé\\文書.swift", "c:\\example\\résumé\\文書.swift"),
+            ("C:\\Example\\\u{301}Résumé.swift", "c:\\example\\\u{301}résumé.swift"),
+            ("C:\\\u{301}Example\\e\u{301}.swift", "c:\\\u{301}example\\e\u{301}.swift"),
+        ] {
+            try expect(NativeSearchLibraryScanner.canonical(path) == canonical &&
+                NativeSearchLibraryScanner.permitted(path), "Unicode and root canonicalization")
+        }
+        for path in ["C:\\Example\\x*\u{301}.swift", "C:\\Example\\x?\u{301}.swift",
+            "C:\\Example\\x:\u{301}stream", "C:\\Example/\u{301}file.swift",
+            "C:\\Example\\\0\u{301}file.swift", "C:\\Example\\folder.\\file.swift",
+            "C:\\Example\\folder \\file.swift"] {
+            try expect(NativeSearchLibraryScanner.canonical(path) == nil &&
+                !NativeSearchLibraryScanner.permitted(path), "ASCII path protections near combining marks")
+        }
+        let longest = "C:\\" + String(repeating: "文", count: 32756)
+        try expect(longest.utf16.count == 32759 &&
+            NativeSearchLibraryScanner.canonical(longest) != nil &&
+            NativeSearchLibraryScanner.canonical(longest + "文") == nil,
+            "UTF-16 native path limit retained")
+        let excluded = ["c:\\example\\résumé"]
+        try expect(!NativeSearchLibraryScanner.permitted("C:\\Example\\Résumé\\文書.swift",
+            excludedPaths: excluded) && NativeSearchLibraryScanner.permitted(
+                "C:\\Example\\RésuméElsewhere\\文書.swift", excludedPaths: excluded) &&
+            !NativeSearchLibraryScanner.permitted("C:\\Example\\文書\\.SSH\\secret") &&
+            !NativeSearchLibraryScanner.permitted("C:\\Example\\\u{301}name\\.git\\config"),
+            "nested and explicit scope exclusions retained")
         func finish(_ scanner: NativeSearchLibraryScanner) throws {
             for _ in 0..<1000 {
                 if scanner.finished { return }
@@ -56,6 +86,10 @@ extension NativeSearchLibraryStore {
         var firstID: Int64 = 0
         do {
             let store = try NativeSearchLibraryStore(databasePath: databasePath)
+            let sourcePath = corpus + "\\note0.swift"
+            let sourceMetadata = try NativeSearchLibraryScanner.metadata(path: sourcePath)
+            try store.observe(path: sourcePath, parent: corpus, size: sourceMetadata.size,
+                modified: sourceMetadata.modified, generation: "fixture")
             let scanner = try NativeSearchLibraryScanner(store: store, roots: [corpus])
             _ = try scanner.scanSlice(maximumEntries: 16, milliseconds: 100, cancelled: { false })
             let status = try store.status()
@@ -167,11 +201,25 @@ extension NativeSearchLibraryStore {
             try expect(try store.pendingFragments(fileID: mediaWaiting.id).isEmpty &&
                 store.status().failedFiles == 0, "media availability requeues without changing namespace")
             try expect(try store.searchText("code: INV-123", cancelled: { false }).count == 1,
-                "exact content and modality filter")
+                "exact content and source-file type filter")
             try expect(try store.searchText("pdf: INV-123", cancelled: { false }).isEmpty,
-                "modality excludes incompatible fragments")
+                "file type excludes incompatible files")
             try expect(try store.searchVector([1, 0, 0, 0], namespace: "fixture-model-adapter-context-v1",
                 cancelled: { false }).count == 1, "persisted vector retrieval")
+            let extensionFilter = NativeSearchContent.fileExtension(file.path)
+            try expect(try store.searchText("files: ext:" + extensionFilter + " INV-123",
+                cancelled: { false }).count == 1 && store.searchText("ext:pdf INV-123",
+                cancelled: { false }).isEmpty, "extension filters content before result limits")
+            try expect(try store.searchText("files: ext:swift", cancelled: { false }).count == 2 &&
+                store.searchText("files: ext:txt", cancelled: { false }).count == 32,
+                "bounded extension browsing includes metadata without extracted fragments")
+            try expect(try store.searchText("kind:unknown INV-123", cancelled: { false }).isEmpty,
+                "invalid recognized filter cannot broaden library search")
+            try expect(try store.searchVector([1, 0, 0, 0], namespace: "fixture-model-adapter-context-v1",
+                fileExtension: extensionFilter, cancelled: { false }).count == 1 &&
+                store.searchVector([1, 0, 0, 0], namespace: "fixture-model-adapter-context-v1",
+                fileExtension: "pdf", cancelled: { false }).isEmpty,
+                "extension filters vectors before result limits")
             try store.configure(namespace: "fixture-model-adapter-context-v2", dimensions: 4)
             try expect(try store.status().vectors == 0 && store.status().fragments == 3,
                 "model invalidation retains extracted text")
@@ -216,7 +264,7 @@ extension NativeSearchLibraryStore {
             let prepared = GetTickCount64()
             try store.transaction {
                 for index in 0..<10_000 {
-                    try store.observe(path: corpus + "\\synthetic\(index).txt", parent: corpus,
+                    try store.observe(path: corpus + "\\synthetic\(index).swift", parent: corpus,
                         size: 100, modified: "fixture", generation: "fixture")
                 }
                 while let first = try store.pendingFiles(limit: 32).first {
@@ -298,6 +346,41 @@ extension NativeSearchLibraryStore {
             try expect(watcher.stop() && watcher.finishStopped(), "surviving watcher drains at shutdown")
         }
         try checkStorageBudgetRecovery(databasePath: budgetDatabase)
+        try checkFileKindFiltering(databasePath: fileKindDatabase)
         Console.writeLine("PASS: native persistent library, 81-file traversal, exclusions, cancellation, pause, unchanged skip, restart cursor, exact/type/vector retrieval, model invalidation and pruning")
+    }
+
+    private static func checkFileKindFiltering(databasePath: String) throws {
+        let store = try NativeSearchLibraryStore(databasePath: databasePath)
+        let namespace = "fixture-file-kinds-v1"
+        try store.configure(namespace: namespace, dimensions: 2)
+        let video = databasePath + "-aaa-video.mp4"
+        let audio = databasePath + "-zzz-audio.mp3"
+        let pdf = databasePath + "-document.pdf"
+        for (path, kind) in [(video, "audio"), (audio, "audio"), (pdf, "image")] {
+            try store.observe(path: path, parent: "fixture", size: 10,
+                modified: "fixture", generation: "fixture")
+            guard let file = try store.pendingFiles(limit: 1).first else {
+                throw WindowsError.unsupported("File-kind fixture has no pending file.")
+            }
+            try store.replaceFragments(file: file, fragments: [.init(
+                text: "seaside fixture", kind: kind, location: "fixture")])
+        }
+        for fragment in try store.pendingFragments(limit: 32) {
+            try store.commitVector(fragmentID: fragment.id, namespace: namespace,
+                vector: fragment.file.path == audio ? [0.9, 0.1] : [1, 0])
+        }
+        guard try store.searchText("audio: seaside", limit: 1,
+            cancelled: { false }).first?.path == audio,
+            try store.searchText("video: seaside", limit: 1,
+                cancelled: { false }).first?.path == video,
+            try store.searchVector([1, 0], namespace: namespace, limit: 1, kind: "audio",
+                cancelled: { false }).first?.path == audio,
+            try store.searchVector([1, 0], namespace: namespace, limit: 1, kind: "video",
+                cancelled: { false }).first?.path == video,
+            try store.searchVector([1, 0], namespace: namespace, limit: 1, kind: "document",
+                cancelled: { false }).first?.path == pdf else {
+            throw WindowsError.unsupported("File-kind filtering must precede limits and retain matching-file modalities.")
+        }
     }
 }

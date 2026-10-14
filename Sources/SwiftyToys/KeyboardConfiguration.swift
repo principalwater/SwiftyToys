@@ -3,6 +3,7 @@ import BrightnessCore
 import KeyboardCore
 
 struct KeyboardConfiguration: Sendable {
+    static let searchWindowScope = "swiftytoys.exe|search"
     var enabled = true
     var rules: [RemapRule] = RemapRule.macPreset
     var excluded = ["mstsc.exe"]
@@ -125,6 +126,19 @@ struct KeyboardConfiguration: Sendable {
         Console.writeLine("PASS: legacy Mac preset upgrade, saved deletions and customized rules preserved")
         let search = try KeyboardConfiguration(contents:"# macPresetVersion=1\n# searchRule\tWin+Space\tOpen search\t\n")
         guard search.fileContents.containsText("# searchRule\t"), try KeyboardConfiguration(contents:search.fileContents).rules == search.rules else { throw WindowsError.unsupported("Search action did not remain rollback-compatible.") }
+        let routed = try KeyboardConfiguration(contents: nil).routingSearch(enabled: true)
+        let scoped = routed.rules.filter { $0.application == Self.searchWindowScope }
+        guard scoped.count == 5,
+            try KeyboardConfiguration(contents: nil).routingSearch(enabled: false).rules
+                .allSatisfy({ $0.application != Self.searchWindowScope }) else {
+            throw WindowsError.unsupported("Search shortcuts escaped their transient window scope.")
+        }
+        var custom = try KeyboardConfiguration(contents: nil)
+        custom.rules.append(try RemapRule(from: "Win+1", to: "Ctrl+9"))
+        let preserved = try custom.routingSearch(enabled: true)
+        guard preserved.rules.filter({ $0.source.description == "Win+1" }).count == 1 else {
+            throw WindowsError.unsupported("Search routing replaced a user shortcut.")
+        }
     }
 
     /// Route only the original Mac search preset. User-edited shortcuts and exclusions keep their existing meaning.
@@ -139,6 +153,15 @@ struct KeyboardConfiguration: Sendable {
         let reveal = try KeyChord("Win+Enter")
         if enabled, effective.rules.count < 64, !effective.rules.contains(where:{ $0.source == reveal }) {
             effective.rules.append(try RemapRule(from:"Win+Enter",to:"Ctrl+Enter",application:"swiftytoys.exe"))
+        }
+        if enabled {
+            for key in ["0", "1", "2", "3", "R"] {
+                let source = try KeyChord("Win+" + key)
+                if effective.rules.count < 64, !effective.rules.contains(where: { $0.source == source }) {
+                    effective.rules.append(try RemapRule(from: source.description, to: "Ctrl+" + key,
+                        application: Self.searchWindowScope))
+                }
+            }
         }
         return effective
     }

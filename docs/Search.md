@@ -19,7 +19,10 @@ provides an Open Search button and the enable/disable setting.
 | Ctrl + Enter | Reveal a selected local file, folder or application item in Explorer. The effective Mac preset maps Cmd + Enter to this chord within SwiftyToys, preserving custom rules. |
 | Cmd + C | With the Mac copy preset, copy a selected result path, action title or quick answer from the result list. In the query field, selected text keeps normal text-copy behavior; with no text selected, the selected quick answer is copied. |
 | Space / Preview | Space in the result list requests a preview. Space in the query remains text input. |
-| Tab / Shift + Tab | Move through visible native controls. Preview joins the tab order only when expanded. |
+| Cmd + 1 / 2 / 3 | With the Mac preset, select Applications / Files / Actions inside Search; Cmd + 0 selects All. Native Ctrl equivalents work too. Existing user rules take priority. |
+| Cmd + R | Reveal the selected result with the Mac preset inside Search; native Ctrl + R also works. |
+| Tab / Shift + F10 / right click | Open the selected result's native action menu when results are ready. Right click selects the row under the pointer. |
+| Shift + Tab | Move backward through native controls. Tab retains normal focus navigation while results are pending or there is no selection. |
 | Esc / Close | Dismiss the panel and invalidate pending work. Losing activation also dismisses it, except while an owned dialog is active. |
 
 Plain-text previews support selection, scrolling and normal text copying. Other
@@ -30,8 +33,45 @@ query to Google.
 
 The app-specific Cmd+Enter rule is added only when an existing rule does not own
 that chord and the effective rule budget has room. Native Ctrl+Enter remains the
-panel's reveal shortcut. Virtual Windows apps open AppsFolder; local items are
+panel's reveal shortcut. Category and Cmd+R additions are scoped to this panel,
+not other application windows. Virtual Windows apps open AppsFolder; local items are
 selected in their containing folder.
+
+## Categories, filters and Quick Keys
+
+Choose **All**, **Applications**, **Files** or **Actions** above the result list.
+Typed `apps:`, `files:` and `actions:` prefixes work too. Applications and Actions
+skip filesystem, currency and model work. Empty Applications/Actions queries browse
+their catalog; empty Files queries return a bounded set from available indexes.
+
+| Filter | Example |
+| --- | --- |
+| File category | `files: report` |
+| File type | `kind:pdf report`, `audio: concert`, `video: holiday` |
+| Extension | `ext:swift allocator`, `files: ext:pdf` |
+| Combined | `files: kind:code ext:swift allocation` |
+
+Supported types are code, text, document, pdf, image/photo, audio and video.
+Type filters describe the file: a video's soundtrack remains searchable under
+video, rather than appearing as a separate audio file. Filters apply before result
+limits in each provider. Ordinary drive paths and unknown prefixes remain search
+text; malformed recognized filters show an error. Prefixes and command names use
+English across UI language packs. All includes the explicit web-search result;
+scoped categories do not.
+
+On the Search tile, enter one **Quick Key** per line, such as
+`calc = Calculator` or `bt = Bluetooth settings`, then save. Up to 32 aliases of
+1–16 letters, numbers, hyphens or underscores are supported. Command names are
+listed beside the editor. Aliases match a complete query, ignoring letter case,
+in All or Actions. They select a built-in result and require Enter/Open to execute,
+including Lock screen and Sleep. Partial aliases keep ordinary search behavior.
+Quick Keys start empty and cannot run shell commands or arbitrary destinations.
+
+The navigation follows familiar [Spotlight search patterns](https://support.apple.com/guide/mac-help/find-what-you-need-with-spotlight-mchlp1008/mac)
+and [Quick Key actions](https://support.apple.com/guide/mac-help/take-actions-and-shortcuts-in-spotlight-mchl4953dfeb/mac).
+SwiftyToys currently provides these categories, filters, its built-in commands and
+text/metadata previews. It does not add clipboard history, Apple's app intents,
+Siri or a generative assistant; the optional local model matches indexed content.
 
 ## Basic providers and quick answers
 

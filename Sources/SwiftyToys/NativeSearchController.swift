@@ -146,24 +146,16 @@ private final class NativeSearchService: @unchecked Sendable {
     }
     func stop() { state.withLock { $0.stopped = true; $0.query = nil }; SetEvent(event.raw) }
     private func cancelled(_ generation: UInt64? = nil) -> Bool { state.withLock { state in state.stopped || (generation.map { $0 != state.generation } ?? false) } }
-    private static let actions: [SearchItem] = [
-        SearchItem(id:"action:settings",title:"SwiftyToys Settings",subtitle:"Open the tool overview",path:"",kind:"Action"),
-        SearchItem(id:"action:windows-settings",title:"Windows Settings",subtitle:"Configure Windows",path:"",kind:"Action"),
-        SearchItem(id:"action:calculator",title:"Calculator",subtitle:"Open Windows Calculator",path:"",kind:"Action"),
-        SearchItem(id:"action:explorer",title:"File Explorer",subtitle:"Browse files and folders",path:"",kind:"Action"),
-        SearchItem(id:"action:lock",title:"Lock screen",subtitle:"Lock this Windows session",path:"",kind:"Action"),
-        SearchItem(id:"action:sleep",title:"Sleep",subtitle:"Put this computer to sleep",path:"",kind:"Action"),
-        SearchItem(id:"action:bluetooth",title:"Bluetooth settings",subtitle:"Manage paired devices",path:"",kind:"Action"),
-        SearchItem(id:"action:sound",title:"Sound settings",subtitle:"Choose audio devices",path:"",kind:"Action"),
-        SearchItem(id:"action:display",title:"Display settings",subtitle:"Resolution and display options",path:"",kind:"Action"),
-    ]
+    private static let actions = SearchCommands.items
     private func publish(_ query: Query, items: [SearchItem], answer: SearchAnswer?, status: String) {
         guard !cancelled(query.generation) else { return }
-        var results = Array(items.filter { $0.id.utf16.count <= 4096 }.prefix(query.text.isEmpty ? 32 : 31))
-        if !query.text.isEmpty {
+        let parsed = SearchQuery(query.text)
+        var results = Array(items.filter { $0.id.utf16.count <= 4096 && parsed.accepts($0) }
+            .prefix(parsed.text.isEmpty ? 32 : 31))
+        if parsed.isValid, parsed.category == .all, !parsed.text.isEmpty {
             let allowed = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~".utf8), hex = Array("0123456789ABCDEF".utf8)
-            let encoded = query.text.utf8.flatMap { byte -> [UInt8] in allowed.contains(byte) ? [byte] : [37,hex[Int(byte >> 4)],hex[Int(byte & 15)]] }
-            let web = SearchItem(id:"web",title:"Search the web",subtitle:query.text,path:"https://www.google.com/search?q=" + String(decoding:encoded,as:UTF8.self),kind:"Website")
+            let encoded = parsed.text.utf8.flatMap { byte -> [UInt8] in allowed.contains(byte) ? [byte] : [37,hex[Int(byte >> 4)],hex[Int(byte & 15)]] }
+            let web = SearchItem(id:"web",title:"Search the web",subtitle:parsed.text,path:"https://www.google.com/search?q=" + String(decoding:encoded,as:UTF8.self),kind:"Website")
             results.append(web)
         }
         if let answer { results.insert(SearchItem(id:"answer",title:answer.value,subtitle:answer.detail,path:"",kind:answer.title),at:0) }
@@ -186,15 +178,45 @@ private final class NativeSearchService: @unchecked Sendable {
             while WaitForSingleObject(event.raw, 90) == DWORD(WAIT_OBJECT_0), !cancelled() {}
             let job = state.withLock { state in let value = state.query; state.query = nil; return value }
             guard let query = job, !cancelled(query.generation) else { continue }
-            let libraryQuery = NativeSearchLibraryStore.parsedQuery(query.text)
-            let typedLibraryQuery = libraryQuery.kind != nil
-            let region = NativeSearchRegion.current()
-            var answer = SearchAnswers.quick(query.text, region: region.region)
-                .map { NativeSearchRegion.format($0, context: region) }
-                ?? NativeSearchClock.quick(query.text, localeName: region.localeName)
-            let actions = typedLibraryQuery ? [] : SearchRanking.results(Self.actions, query: query.text, limit: 6)
-            publish(query,items:actions + (typedLibraryQuery ? [] : SearchRanking.results(recent,query:query.text)),answer:answer,status:"Searching…")
-            if answer == nil, let conversion = NativeSearchRegion.currencyQuery(query.text, context: region) {
+            let parsed = SearchQuery(query.text)
+            guard parsed.isValid else {
+                publish(query, items: [], answer: nil,
+                    status: "Invalid filter. Use files: kind:pdf or files: ext:pdf before your search.")
+                continue
+            }
+            let term = parsed.text
+            let alias = parsed.category == .all || parsed.category == .actions
+                ? query.preferences.quickKeys.match(term) : nil
+            let actions = parsed.category == .all || parsed.category == .actions
+                ? alias.map { [$0] } ?? SearchRanking.results(Self.actions, query: term, limit: 9) : []
+            if parsed.category == .actions || alias != nil {
+                publish(query, items: actions, answer: nil,
+                    status: alias == nil ? "Actions · Enter to run" : "Quick Key · Enter to run")
+                continue
+            }
+            if parsed.category == .applications {
+                publish(query, items: SearchRanking.results(recent.filter(parsed.accepts), query: term),
+                    answer: nil, status: "Searching applications…")
+                do {
+                    let apps = try NativeSearchProcess.applications(term,
+                        cancelled: { self.cancelled(query.generation) })
+                    recent = apps
+                    publish(query, items: apps, answer: nil, status: "Applications")
+                } catch {
+                    publish(query, items: [], answer: nil, status: "Applications are unavailable. Retry Search.")
+                }
+                continue
+            }
+            let region = parsed.category == .all ? NativeSearchRegion.current() : nil
+            var answer: SearchAnswer?
+            if let region {
+                answer = SearchAnswers.quick(term, region: region.region)
+                    .map { NativeSearchRegion.format($0, context: region) }
+                    ?? NativeSearchClock.quick(term, localeName: region.localeName)
+            }
+            publish(query,items:actions + SearchRanking.results(recent.filter(parsed.accepts),query:term),answer:answer,status:"Searching…")
+            if let region, answer == nil,
+                let conversion = NativeSearchRegion.currencyQuery(term, context: region) {
                 var status = "Currency reference rates"
                 do {
                     guard !conversion.to.isEmpty else {
@@ -222,52 +244,52 @@ private final class NativeSearchService: @unchecked Sendable {
                 publish(query,items:actions,answer:answer,status:status)
                 continue
             }
-            if answer != nil, Double(query.text) == nil { publish(query,items:actions,answer:answer,status:"Quick result"); continue }
-            if !typedLibraryQuery, GetTickCount64() - filesAt > 15000 || filesAt == 0 {
+            if answer != nil, Double(term) == nil { publish(query,items:actions,answer:answer,status:"Quick result"); continue }
+            if GetTickCount64() - filesAt > 15000 || filesAt == 0 {
                 let roots = [FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Downloads].compactMap { try? NativeSearchFiles.knownFolder($0) }
                 let collected = NativeSearchFiles.collect(roots:roots,cancelled:{ self.cancelled(query.generation) })
                 guard !cancelled(query.generation) else { continue }
                 files = collected; filesAt = GetTickCount64()
             }
-            var results = actions + (typedLibraryQuery ? [] : SearchRanking.results(files,query:query.text,limit:24))
+            var results = actions + SearchRanking.results(files.filter(parsed.accepts),query:term,limit:24)
             publish(query,items:results,answer:answer,status:"Local filenames")
             var libraryStatus = "Local library"
-            if let indexed = try? NativeSearchProcess.library(query.text, cancelled: { self.cancelled(query.generation) }) {
+            if let indexed = try? NativeSearchProcess.library(parsed.libraryQuery, cancelled: { self.cancelled(query.generation) }) {
                 var seen = Set<String>()
-                let libraryItems = indexed.items.filter { query.preferences.permitsLibraryPath($0.path) }
+                let libraryItems = indexed.items.filter { parsed.accepts($0) && query.preferences.permitsLibraryPath($0.path) }
                 results = (actions + libraryItems + results).filter { seen.insert(($0.path.isEmpty ? $0.id : $0.path).lowercased()).inserted }
                 libraryStatus = indexed.status
                 publish(query,items:results,answer:answer,status:indexed.status)
             }
-            var status = typedLibraryQuery ? libraryStatus : "Apps and files"
-            if answer == nil, !typedLibraryQuery {
-                if let apps = try? NativeSearchProcess.applications(query.text,cancelled:{ self.cancelled(query.generation) }) {
+            var status = parsed.category == .files ? libraryStatus : "Apps and files"
+            if answer == nil, parsed.category == .all {
+                if let apps = try? NativeSearchProcess.applications(term,cancelled:{ self.cancelled(query.generation) }) {
                     recent = apps
                     results = actions + apps + results.filter { $0.kind != "Action" }
                     publish(query,items:results,answer:answer,status:"Apps and local files")
                 }
             }
             guard !cancelled(query.generation) else { continue }
-            if !typedLibraryQuery { do {
-                let indexed = try NativeSearchProcess.query(query.text, cancelled: { self.cancelled(query.generation) })
+            do {
+                let indexed = try NativeSearchProcess.query(parsed.libraryQuery, cancelled: { self.cancelled(query.generation) })
                 var seen = Set<String>()
-                results = (actions + indexed.items + results).filter { seen.insert(($0.path.isEmpty ? $0.id : $0.path).lowercased()).inserted }
+                results = (actions + indexed.items.filter(parsed.accepts) + results).filter { seen.insert(($0.path.isEmpty ? $0.id : $0.path).lowercased()).inserted }
                 recent += indexed.items; recent = Array(recent.prefix(64)); status = indexed.status
-            } catch { status = "Windows Index unavailable · local filenames and apps" } }
+            } catch { status = "Windows Index unavailable · local filenames and apps" }
             guard !cancelled(query.generation) else { continue }
             publish(query,items:results,answer:answer,status:status)
-            if answer == nil, query.preferences.semantic, !query.text.isEmpty, !cancelled(query.generation) {
+            if answer == nil, query.preferences.semantic, !term.isEmpty, !cancelled(query.generation) {
                 do {
                     let model = try NativeSearchModelCatalog.descriptor(repositoryID: query.preferences.modelRepository)
-                    let semanticText = libraryQuery.text
+                    let semanticText = term
                     guard !semanticText.isEmpty else { continue }
                     publish(query,items:results,answer:answer,status:status + " · searching the local library by meaning…")
                     let vector = try NativeEmbedding.queryVector(semanticText, model: model, cancelled: { self.cancelled(query.generation) })
-                    let semantic = try NativeSearchProcess.library(query.text,
+                    let semantic = try NativeSearchProcess.library(parsed.libraryQuery,
                         namespace: NativeSearchLibraryRuntime.namespace(preferences: query.preferences, model: model),
                         vector: vector, cancelled: { self.cancelled(query.generation) })
                     var seen = Set<String>()
-                    let libraryItems = semantic.items.filter { query.preferences.permitsLibraryPath($0.path) }
+                    let libraryItems = semantic.items.filter { parsed.accepts($0) && query.preferences.permitsLibraryPath($0.path) }
                     results = (actions + libraryItems + results).filter { seen.insert(($0.path.isEmpty ? $0.id : $0.path).lowercased()).inserted }
                     publish(query,items:results,answer:answer,status:semantic.status + (semantic.items.isEmpty
                         ? " · no saved semantic matches; check Index status" : " · semantic matches"))

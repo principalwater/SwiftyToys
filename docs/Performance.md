@@ -17,6 +17,51 @@ for the resident and watchdog separately. CPU percent is relative to one core,
 not divided by this machine's 24 logical processors. Keep identical settings,
 foreground workload, startup state and sampling duration for comparisons.
 
+## 0.1.21 Search path validation
+
+The scanner validates ASCII Win32 delimiters through Swift UTF8 views, then keeps
+Unicode case folding and the UTF-16 path limit. Scope checks reuse that validated
+canonical path, rather than validating it twice. Traversal still checks native
+parent components, reparse points, local drives and exclusions; no trusted-path
+cache or skipped scope check was added.
+
+A short synthetic predicate benchmark used static Swift 6.4.1, `-Osize`, native
+background priority and 267-byte paths. The previous predicate processed 81,000
+paths in 10,078 ms before its time cap; the new predicate processed all 89,000 in
+1,875 ms, about 5.9 times the normalized throughput. This isolates path validation;
+it does not measure whole-database refresh, model work or a whole-app speedup.
+
+Computer-use preview input did not reset the Windows physical-input age in this
+session. The preview also has independent Search activity state. Its typing cannot
+establish that resident heavy indexing should be suspended; distinguish such
+automation from physical input and actual resident queries when interpreting CPU.
+
+The final 8,449,024-byte executable, SHA-256
+`d767fe059486f14ae40b8ff5f8cf2623b0198ef0013d51b6b41615bb4e7852d0`,
+was installed through the complete native Setup. Two approximately one-minute
+samples opened/dismissed resident Search 12 times each through its own CLI,
+without changing preferences. Resident CPU averaged 0.36% and 1.17% of one core;
+the library averaged 1.64% and 1.25%, with about 5.6 MiB private bytes and stable
+184 handles. The watchdog showed no measured CPU increment and stable 181 handles.
+A subsequent 46-second settling sample showed no resident CPU increment,
+private bytes about 17.2 MiB and handles declining from 550 to 546.
+
+After warming, 300 PID-scoped `WM_NULL` probes for each resident window recorded
+no 50 ms timeouts: control-window p95 0.2404 ms / maximum 0.5495 ms; Search p95
+0.0987 ms / maximum 0.2307 ms. Earlier cold/opening observations recorded one
+control and two class-selected Search timeouts; class-selected Search could also
+address the separate preview process. Cold initialization is not guaranteed smooth.
+These probes measure message-queue response, not rendered frame or input latency.
+
+When resident Search activity ceased and Windows considered input idle, a separate
+library child used about 70.2% of one core across 41 seconds and about 108.7 MiB
+private bytes. Optional content/model indexing is allowed to use CPU in that state;
+the application is not a zero-load service. All sampled processes responded.
+Preview/build/CLI processes were kept separate. Computer use read native accessibility
+and previously exercised the unchanged input/category controls, but final screenshot
+capture and subsequent input delivery failed. These observations do not establish
+absence of system microfreezes, GPU attribution or weakest-hardware performance.
+
 ## 0.1.19 persistent Search library
 
 The library owns a separate low-priority process. Metadata admission is limited
