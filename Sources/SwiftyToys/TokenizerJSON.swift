@@ -23,7 +23,7 @@ final class TokenizerMappedJSON {
 }
 
 indirect enum SmallJSON {
-    case object([String: SmallJSON]), array([SmallJSON]), string(String), integer(Int), bool(Bool), null
+    case object([String: SmallJSON]), array([SmallJSON]), string(String), integer(Int), number(Double), bool(Bool), null
     var object: [String: SmallJSON]? { if case .object(let value) = self { value } else { nil } }
     var array: [SmallJSON]? { if case .array(let value) = self { value } else { nil } }
     var string: String? { if case .string(let value) = self { value } else { nil } }
@@ -123,6 +123,24 @@ struct TokenizerJSONReader {
             let word = Array(literal.utf8)
             if offset + word.count <= bytes.count, bytes[offset..<offset + word.count].elementsEqual(word) { offset += word.count; return value }
         }
-        return .integer(try integer())
+        whitespace()
+        let start = offset
+        if offset < bytes.count, bytes[offset] == 45 { offset += 1 }
+        guard offset < bytes.count, (48...57).contains(bytes[offset]) else { throw TokenizerFailure("Invalid JSON number") }
+        if bytes[offset] == 48 { offset += 1 }
+        else { while offset < bytes.count, (48...57).contains(bytes[offset]) { offset += 1 } }
+        for marker: UInt8 in [46, 101] {
+            if offset < bytes.count, bytes[offset] == marker || marker == 101 && bytes[offset] == 69 {
+                offset += 1
+                if marker == 101, offset < bytes.count, bytes[offset] == 43 || bytes[offset] == 45 { offset += 1 }
+                let digits = offset
+                while offset < bytes.count, (48...57).contains(bytes[offset]) { offset += 1 }
+                guard offset > digits else { throw TokenizerFailure("Invalid JSON number digits") }
+            }
+        }
+        let text = String(decoding: bytes[start..<offset], as: UTF8.self)
+        if let value = Int(text) { return .integer(value) }
+        guard let value = Double(text), value.isFinite else { throw TokenizerFailure("Invalid JSON number range") }
+        return .number(value)
     }
 }

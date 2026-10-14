@@ -36,6 +36,8 @@ final class TrayApplication {
     private var search: NativeSearchController?
     private var searchPreferences = SearchPreferences()
     private var searchModel: NativeSearchModelManager?
+    private var searchLibrary: NativeSearchLibraryManager?
+    private var maintainingSearchModel = false
     private let tools = DesktopTools()
     private let sleepGate = SleepGate()
     private var systemIndicator: SystemIndicator?
@@ -73,6 +75,7 @@ final class TrayApplication {
             extended: DWORD(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TOPMOST))
         guard let window, let osd else { throw WindowsError.api("CreateWindow", GetLastError()) }
         searchModel = NativeSearchModelManager(destination: MessageDestination(window))
+        searchLibrary = try NativeSearchLibraryManager(destination: MessageDestination(window), preferences: searchPreferences)
         configureBrightnessRepeat()
         WTSRegisterSessionNotification(window, DWORD(NOTIFY_FOR_THIS_SESSION))
         remapper = try KeyboardRemapper(
@@ -167,7 +170,19 @@ final class TrayApplication {
         }
         switch message {
         case searchModelMessage:
-            if let status = searchModel?.take() { dashboard?.updateSearchModel(status) }
+            if let status = searchModel?.take() {
+                dashboard?.updateSearchModel(status)
+                if !status.busy, maintainingSearchModel {
+                    maintainingSearchModel = false
+                    search?.preferences = searchPreferences
+                }
+                if !status.busy, searchLibrary == nil {
+                    searchLibrary = try? NativeSearchLibraryManager(destination: MessageDestination(window), preferences: searchPreferences)
+                }
+            }
+            return 0
+        case searchLibraryMessage:
+            if let text = searchLibrary?.take() { dashboard?.updateSearchLibrary(text) }
             return 0
         case mouseScrollResultMessage:
             applyingMouseScroll = value == 4
@@ -515,7 +530,9 @@ final class TrayApplication {
     private func showSearch() throws {
         guard searchPreferences.enabled else { try shellOpen("search-ms:"); return }
         if search == nil {
-            search = NativeSearchController(preferences:searchPreferences,action:{ [weak self] action in
+            var preferences = searchPreferences
+            if maintainingSearchModel { preferences.semantic = false }
+            search = NativeSearchController(preferences:preferences,action:{ [weak self] action in
                 guard let self else { return }
                 switch action {
                 case "settings": try self.showDashboard()
@@ -537,20 +554,48 @@ final class TrayApplication {
     private func dashboardCommand(_ id: Int, _ values: [String]) throws -> String {
         switch id {
         case 810:
-            guard values.count == 3, values.prefix(2).allSatisfy({ $0 == "0" || $0 == "1" }) else { throw WindowsError.unsupported("Invalid search preferences.") }
+            guard !maintainingSearchModel else { throw WindowsError.unsupported("Wait for the model operation or cancel its download before saving Search settings.") }
+            guard values.count == 7, [0,1,3,6].allSatisfy({ values[$0] == "0" || values[$0] == "1" }) else { throw WindowsError.unsupported("Invalid search preferences.") }
             var preferences = SearchPreferences(contents:"")
             preferences.enabled = values[0] == "1"; preferences.semantic = values[1] == "1"; preferences.folder = values[2]
+            preferences.allLocalDrives = values[3] == "1"; preferences.exclusions = values[4]
+            preferences.modelRepository = values[5]; preferences.media = values[6] == "1"
+            preferences.indexPaused = searchPreferences.indexPaused
             if !preferences.enabled { preferences.semantic = false }
             try preferences.save()
             search?.stop(); search = nil; searchPreferences = preferences
+            NativeEmbedding.close()
+            searchLibrary?.apply(preferences)
             try reloadRemapper()
             try? searchModel?.start("status")
             return "Search settings saved. Cmd + Space uses SwiftyToys Search when the Mac preset is active."
         case 811: try showSearch(); return "Search opened."
-        case 812: try searchModel?.start("download"); return "Downloading optional model…"
+        case 812, 814:
+            guard !maintainingSearchModel, searchModel?.busy == false else { throw WindowsError.unsupported("Wait for the current model operation or cancel its download first.") }
+            let library = searchLibrary
+            searchLibrary = nil
+            maintainingSearchModel = true
+            search?.stop(); search = nil
+            do {
+                try searchModel?.start(id == 812 ? "download" : "remove", repositoryID: values.first,
+                    includeMedia: values.last == "1", prepare: {
+                        library?.stop()
+                        NativeEmbedding.closeForRemoval()
+                    })
+            } catch { searchLibrary = library; maintainingSearchModel = false; throw error }
+            return id == 812 ? "Downloading selected model…" : "Removing selected model…"
         case 813: searchModel?.cancel(); return "Cancelling optional download…"
-        case 814: try searchModel?.start("remove"); return "Removing optional model…"
-        case 815: try searchModel?.start("status"); return "Checking optional model…"
+        case 815: try searchModel?.start("status",repositoryID:values.first,includeMedia:values.count > 1 ? values[1] == "1" : nil); return "Checking selected model…"
+        case 826: try searchModel?.start("catalog",repositoryID:values.first); return "Finding models on Hugging Face…"
+        case 827: try searchModel?.start("resolve",repositoryID:values.first); return "Checking native compatibility…"
+        case 840:
+            searchPreferences.indexPaused.toggle(); try searchPreferences.save()
+            searchLibrary?.apply(searchPreferences)
+            return searchPreferences.indexPaused ? "Indexing paused. Saved results remain available." : "Indexing resumed. Heavy analysis waits for idle time."
+        case 842: searchLibrary?.refresh(); return "Checking local library status…"
+        case 843:
+            guard let searchLibrary else { throw WindowsError.unsupported("Wait for the model operation before rebuilding the local library.") }
+            searchLibrary.requestReset(); return "Rebuilding the derived Search library. Your files remain unchanged."
         case 211:
             guard let value = values.first.flatMap(Int.init), (0...100).contains(value) else { throw WindowsError.unsupported("Brightness must be 0–100%.") }
             requestDisplay(DisplayRequest(1, value: value))
@@ -792,7 +837,7 @@ final class TrayApplication {
         brightnessRepeat.reset()
         guard !exiting else { return }
         exiting = true
-        search?.stop(); search = nil; searchModel?.cancel()
+        search?.stop(); search = nil; searchModel?.cancel(); searchLibrary?.stop(); searchLibrary = nil
         dashboard = nil
         remapper?.stop()
         remapper = nil

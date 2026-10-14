@@ -254,8 +254,8 @@ final class NativeSearchBackdrop {
             while PeekMessageW(&message, nil, UINT(WM_QUIT), UINT(WM_QUIT), UINT(PM_REMOVE)) {}
             if let priorQuit { PostQuitMessage(priorQuit) }
         }
-        func settle() {
-            let deadline = GetTickCount64() + 200
+        func settle(milliseconds: UInt64 = 200) {
+            let deadline = GetTickCount64() + milliseconds
             repeat {
                 var count = 0
                 while count < 256, GetTickCount64() < deadline,
@@ -267,6 +267,28 @@ final class NativeSearchBackdrop {
                 }
                 _ = MsgWaitForMultipleObjectsEx(0, nil, 10, DWORD(QS_ALLINPUT), DWORD(MWMO_INPUTAVAILABLE))
             } while GetTickCount64() < deadline
+        }
+        func children(of window: HWND) -> Set<Int> {
+            var result = Set<Int>()
+            withUnsafeMutablePointer(to: &result) { output in
+                _ = EnumChildWindows(window, { child, data in
+                    if let child, let output = UnsafeMutablePointer<Set<Int>>(bitPattern: Int(data)) {
+                        output.pointee.insert(Int(bitPattern: child))
+                    }
+                    return true
+                }, LPARAM(Int(bitPattern: output)))
+            }
+            return result
+        }
+        func resources() -> (gdi: DWORD, user: DWORD) {
+            (GetGuiResources(GetCurrentProcess(), DWORD(GR_GDIOBJECTS)),
+                GetGuiResources(GetCurrentProcess(), DWORD(GR_USEROBJECTS)))
+        }
+        func checkFrame(_ window: HWND) throws {
+            guard let frame = CreateRectRgn(0,0,0,0) else { throw WindowsError.api("Read Search frame fixture",GetLastError()) }
+            defer { DeleteObject(frame) }
+            try expect(GetWindowRgn(window,frame) != 0 && PtInRegion(frame,320,4) &&
+                !PtInRegion(frame,320,88) && !PtInRegion(frame,320,180),"continuous content excluded from Acrylic frame")
         }
         let parent = withWideString("STATIC") {
             CreateWindowExW(DWORD(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE), $0, nil, DWORD(WS_POPUP) | DWORD(WS_CLIPCHILDREN),
@@ -287,19 +309,20 @@ final class NativeSearchBackdrop {
         _ = withWideString("Visible result") { SendMessageW(controls[2], UINT(LB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0))) }
         try expect(GetWindowTextLengthW(controls[0]) > 0 && GetWindowTextLengthW(controls[1]) > 0 &&
             SendMessageW(controls[2], UINT(LB_GETCOUNT), 0, 0) == 1, "nonempty overlapping native controls")
+        let expectedChildren = Set(controls.map { Int(bitPattern: $0) })
         var warmedResources: (gdi: DWORD, user: DWORD)?
-        // Drain deferred XAML work through two warm-ups, then require four stable reopen cycles.
-        for cycle in 0..<6 {
+        var minimumWarmUser = DWORD.max, minimumUser = DWORD.max, maximumUser: DWORD = 0
+        // USER is an OS aggregate: observed transient framework objects fluctuate by one without new HWNDs.
+        // Bound that envelope for eighteen measured reopens; owned HWNDs and GDI still require exact cleanup.
+        // This checks GUI resource growth, not COM references, GPU allocations or private memory.
+        for cycle in 0..<20 {
             let backdrop = try NativeSearchBackdrop(parent: parent)
             try expect(backdrop.resize(width: 640, height: 360, cornerRadius: 16, highContrast: true),"high contrast material sizing")
             var fallback: boolean = 0
             try SearchXamlReferences.check(backdrop.acrylic.pointee.lpVtbl.pointee.get_AlwaysUseFallback(backdrop.acrylic, &fallback), "Read Search contrast fallback")
             try expect(fallback != 0, "high contrast fallback")
             try expect(backdrop.resize(width: 640, height: 360, cornerRadius: 16, highContrast: false),"material sizing")
-            guard let frame = CreateRectRgn(0,0,0,0) else { throw WindowsError.api("Read Search frame fixture",GetLastError()) }
-            defer { DeleteObject(frame) }
-            try expect(GetWindowRgn(backdrop.window,frame) != 0 && PtInRegion(frame,320,4) &&
-                !PtInRegion(frame,320,88) && !PtInRegion(frame,320,180),"continuous content excluded from Acrylic frame")
+            try checkFrame(backdrop.window)
             try expect(IsWindow(backdrop.window) && !IsWindowVisible(parent) && !IsWindowVisible(backdrop.window), "hidden HWND ownership")
             var bounds = RECT()
             try expect(GetClientRect(backdrop.window, &bounds) && bounds.right == 640 && bounds.bottom == 360, "native child sizing")
@@ -316,38 +339,78 @@ final class NativeSearchBackdrop {
             try expect(SendMessageW(backdrop.window, UINT(WM_NCHITTEST), 0, LPARAM(50 | (50 << 16))) == LRESULT(HTTRANSPARENT), "transparent HWND hit testing")
             // Let lazy framework work run while a warm-up island still owns its content.
             if cycle < 2 { settle() }
+            var sourceWindows = children(of: backdrop.window)
+            sourceWindows.insert(Int(bitPattern: backdrop.window))
             backdrop.close(); backdrop.close()
             try expect(!IsWindow(backdrop.window), "source HWND destruction")
             let releaseDeadline = GetTickCount64() + 1500
             settle()
-            var resources = (gdi: GetGuiResources(GetCurrentProcess(), DWORD(GR_GDIOBJECTS)),
-                user: GetGuiResources(GetCurrentProcess(), DWORD(GR_USEROBJECTS)))
-            // Close schedules OS work; wait boundedly without relaxing the exact resource baseline.
-            while let warmedResources, resources != warmedResources, GetTickCount64() < releaseDeadline {
-                settle()
-                resources = (GetGuiResources(GetCurrentProcess(),DWORD(GR_GDIOBJECTS)),
-                    GetGuiResources(GetCurrentProcess(),DWORD(GR_USEROBJECTS)))
+            var counts = resources()
+            if cycle < 2 {
+                let sampleDeadline = GetTickCount64() + 200
+                repeat {
+                    minimumWarmUser = min(minimumWarmUser, counts.user)
+                    settle(milliseconds: 10); counts = resources()
+                } while GetTickCount64() < sampleDeadline
             }
+            func ownedWindowsReleased() -> Bool {
+                sourceWindows.allSatisfy { !IsWindow(HWND(bitPattern: $0)) } &&
+                    children(of: parent) == expectedChildren && sources == 0
+            }
+            func balanced(_ baseline: (gdi: DWORD, user: DWORD)) -> Bool {
+                ownedWindowsReleased() && counts.gdi == baseline.gdi &&
+                    counts.user >= DWORD(expectedChildren.count + 1) && counts.user <= baseline.user + 1
+            }
+            while let warmedResources, !balanced(warmedResources), GetTickCount64() < releaseDeadline {
+                settle(milliseconds: 10)
+                counts = resources()
+            }
+            try expect(ownedWindowsReleased(), "all source descendants destroyed and exact native parent child inventory restored")
             if let warmedResources {
-                var windows: [String] = []
-                if resources != warmedResources {
-                    withUnsafeMutablePointer(to: &windows) { output in
-                        _ = EnumWindows({ window, data in
-                            var process: DWORD = 0
-                            let thread = GetWindowThreadProcessId(window, &process)
-                            if process == GetCurrentProcessId(), let output = UnsafeMutablePointer<[String]>(bitPattern: Int(data)) {
-                                var name = [WCHAR](repeating: 0, count: 128)
-                                let count = GetClassNameW(window, &name, Int32(name.count))
-                                output.pointee.append(String(decoding: name.prefix(Int(count)), as: UTF16.self) +
-                                    (thread == GetCurrentThreadId() ? "@ui" : "@worker"))
-                            }
-                            return true
-                        }, LPARAM(Int(bitPattern: output)))
-                    }
+                try expect(counts.gdi == warmedResources.gdi, "exact GDI cleanup after reopen \(cycle + 1)")
+                try expect(balanced(warmedResources), "bounded USER growth after reopen \(cycle + 1) (warm minimum \(warmedResources.user), current \(counts.user), ceiling \(warmedResources.user + 1))")
+                minimumUser = min(minimumUser, counts.user); maximumUser = max(maximumUser, counts.user)
+            } else if cycle == 1 {
+                try expect(minimumWarmUser >= DWORD(expectedChildren.count + 1) && minimumWarmUser < DWORD.max,
+                    "valid warmed native resource counts")
+                let baseline = (gdi: counts.gdi, user: minimumWarmUser)
+                warmedResources = baseline
+                var leakedChildren: [HWND] = []
+                defer { for child in leakedChildren { _ = DestroyWindow(child) } }
+                for _ in 0..<3 {
+                    let child = withWideString("STATIC") { CreateWindowExW(0, $0, nil, DWORD(WS_CHILD),
+                        0, 0, 8, 8, parent, nil, GetModuleHandleW(nil), nil) }
+                    guard let child else { throw WindowsError.api("Create positive HWND leak control", GetLastError()) }
+                    leakedChildren.append(child)
                 }
-                try expect(resources == warmedResources, "material resources return to warmed baseline after reopen \(cycle + 1) (GDI \(warmedResources.gdi)/\(resources.gdi), USER \(warmedResources.user)/\(resources.user), process window classes \(windows.joined(separator: ", ")))")
-            } else if cycle == 1 { warmedResources = resources }
+                // Deleted regions may occupy cached GDI slots; a memory DC has an immediate counted lifetime.
+                let beforeDC = resources().gdi
+                guard let dc = CreateCompatibleDC(nil) else { throw WindowsError.api("Create positive GDI leak control", GetLastError()) }
+                var dcOwned = true
+                defer { if dcOwned { DeleteDC(dc) } }
+                counts = resources()
+                try expect(children(of: parent) != expectedChildren, "owned-child leak control is detected")
+                try expect(counts.user > baseline.user + 1, "USER leak control exceeds the fixed envelope")
+                let retainedDC = counts.gdi
+                try expect(GetObjectType(dc) == DWORD(OBJ_MEMDC) && retainedDC == beforeDC + 1 && retainedDC > baseline.gdi,
+                    "GDI leak control is detected (warm \(baseline.gdi), before DC \(beforeDC), retained DC \(retainedDC))")
+                try expect(DeleteDC(dc), "release positive GDI leak control"); dcOwned = false
+                let releasedDC = resources().gdi
+                try expect(releasedDC == beforeDC,
+                    "GDI control restores its exact count (before \(beforeDC), retained \(retainedDC), released \(releasedDC))")
+                Console.writeLine("Search GDI leak control: before \(beforeDC), retained \(retainedDC), released \(releasedDC).")
+                for child in leakedChildren { try expect(DestroyWindow(child), "release positive HWND leak control") }
+                leakedChildren.removeAll()
+                let controlDeadline = GetTickCount64() + 1500
+                repeat {
+                    counts = resources()
+                    if balanced(baseline) { break }
+                    settle(milliseconds: 10)
+                } while GetTickCount64() < controlDeadline
+                try expect(balanced(baseline), "positive leak controls restore exact ownership/GDI and bounded USER baseline")
+            }
         }
+        Console.writeLine("Search material stress: 20 reopens, exact owned HWND/GDI cleanup, USER aggregate \(minimumUser)...\(maximumUser) within warm minimum \(minimumWarmUser)+1; positive leak controls detected and cleaned.")
         try expect(PostThreadMessageW(GetCurrentThreadId(), UINT(WM_QUIT), 37, 0) &&
             PostThreadMessageW(GetCurrentThreadId(), UINT(WM_QUIT), 37, 0), "queue duplicate quit fixture")
         shutdown(); shutdown()

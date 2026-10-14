@@ -12,6 +12,9 @@ to a native API does not give that API a return-time guarantee.
 | Display actor/executor | Native WDDM/AMD/DDC and calibration recovery | One admitted command; unchanged successful bindings do not rewrite brightness |
 | Shell/HID observer | Consumer reports and deferred recognized flyouts | One pending notification, bounded ordered transitions/final masks, failed-post retry |
 | Independent watchdog | Recover a terminated owner's exact saved output | It handles process death, not an indefinitely blocked live driver |
+| Search query workers | Read-only Shell/library lookups and query-vector inference | Owned bounded jobs, cancellation and stale-result rejection; no document inference on each keystroke |
+| Search library supervisor | Pace metadata/content/vector work and publish counters | Native event waits; heavy work requires idle input, inactive Search, no fullscreen app or Battery Saver |
+| Search library child | SQLite writes, OS extraction and CPU embeddings | Background CPU/I/O priority, persistent progress, per-request deadline; only its owned job is stopped on a hung reader |
 
 The v0.1.6–0.1.9 copied-desktop renderer could keep a stale opaque bitmap visible
 if its refresh/native thread stalled. It is removed: there is no full-screen copy,

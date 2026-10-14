@@ -18,6 +18,31 @@ func testNativeSearchPolicy() throws {
     try expect(explicit.rules.count == 1 && explicit.rules[0].action == "open search","rollback-compatible action parses")
     try expect(!SearchPreferences(contents:"enabled=0\nsemantic=0\n").enabled,"feature switch")
     try expect(!SearchPreferences(contents:"").semantic,"model is opt-in")
+    let defaults = SearchPreferences(contents: "")
+    try expect(defaults.allLocalDrives && !defaults.media && !defaults.indexPaused,
+        "local scope is automatic; media download and pause remain explicit")
+    let saved = SearchPreferences(contents: "allLocalDrives=0\nfolder=C:\\First\nfolder=D:\\Second\nexclude=C:\\Excluded\nmodel=sentence-transformers/all-MiniLM-L6-v2\nmedia=1\nindexPaused=1\n")
+    try expect(saved.folders == ["C:\\First", "D:\\Second"] && saved.excludedPaths == ["C:\\Excluded"]
+        && saved.media && saved.indexPaused && !saved.allLocalDrives
+        && saved.modelRepository == NativeSearchModelDescriptor.miniLM.repositoryID,
+        "search library/model settings preserve repeated locations and opt-ins")
+    for invalid in ["exclude=relative-folder\n", "exclude=C:\\..\\Outside\n", "folder=C:\\Windows\n"] {
+        var rejected = false
+        do { try SearchPreferences(contents: invalid).validate() } catch { rejected = true }
+        try expect(rejected, "invalid library scope rejected before preferences are written")
+    }
+    var scoped = saved
+    scoped.exclusions = "C:\\First\\Private"
+    try expect(scoped.permitsLibraryPath("c:\\FIRST\\sample.swift")
+        && scoped.permitsLibraryPath("D:\\Second\\recording.wav")
+        && scoped.permitsLibraryPath("C:\\First\\Private-archive\\note.txt")
+        && !scoped.permitsLibraryPath("C:\\First\\Private\\note.txt")
+        && !scoped.permitsLibraryPath("C:\\First-other\\note.txt")
+        && !scoped.permitsLibraryPath("\\\\example.invalid\\share\\note.txt"),
+        "current paused scope gates stale library results without filesystem work")
+    try expect(!defaults.permitsLibraryPath("C:\\Example\\.agent-private\\note.txt")
+        && !SearchPreferences(contents: "enabled=0\n").permitsLibraryPath("C:\\Example\\note.txt"),
+        "private and disabled library scope reject stored matches")
     try expect(!NativeSearchFiles.validFolder("\\\\example.invalid\\share"),"network scope rejected")
     try expect(!NativeSearchFiles.validFolder("C:\\Example\\..\\Outside"),"traversal scope rejected")
     try expect(!NativeSearchFiles.validFolder("C:\\Example\\.agent-private"),"private workspace excluded")

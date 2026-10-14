@@ -26,8 +26,20 @@ enum NativeSearchProcess {
         }
         return (try ReferenceRates(date:date,rates:rates),cached)
     }
-    private static func perform(_ query: String, operation: String, timeout: UInt64, cancelled: () -> Bool) throws -> [UInt8] {
+    static func library(_ query: String, namespace: String = "", vector: [Float] = [],
+        cancelled: () -> Bool) throws -> (items: [SearchItem], status: String) {
+        guard vector.count <= 1024, vector.allSatisfy(\.isFinite) else { throw WindowsError.unsupported("Invalid library query vector.") }
+        var payload = NativeEmbeddingWriter()
+        try payload.string(query, maximum: 4096); try payload.string(namespace, maximum: 1024)
+        payload.integer(UInt32(vector.count))
+        for value in vector { payload.integer(value.bitPattern) }
+        return try SearchWire.decode(perform("", operation: "--search-library-worker", timeout: 2500,
+            cancelled: cancelled, payload: payload.bytes))
+    }
+    private static func perform(_ query: String, operation: String, timeout: UInt64, cancelled: () -> Bool,
+        payload: [UInt8]? = nil) throws -> [UInt8] {
         guard query.utf8.count <= 4096, !query.utf8.contains(0) else { throw WindowsError.unsupported("Search query is too long.") }
+        guard payload == nil || payload!.count <= 16384 else { throw WindowsError.unsupported("Library request exceeds its size limit.") }
         guard !cancelled() else { throw WindowsError.unsupported("Search cancelled.") }
         var guid = GUID(), characters = [WCHAR](repeating: 0, count: 40)
         guard CoCreateGuid(&guid) >= 0, StringFromGUID2(&guid, &characters, Int32(characters.count)) > 0 else { throw WindowsError.unsupported("Create search job identity.") }
@@ -37,7 +49,7 @@ enum NativeSearchProcess {
         try NativeEmbeddingAssets.privateDirectory(folder)
         let request = folder + "\\query.txt", result = folder + "\\result.bin"
         defer { try? NativeFiles.remove(request); try? NativeFiles.remove(result); _ = withWideString(folder) { RemoveDirectoryW($0) } }
-        try NativeFiles.write(Array(query.utf8), to: request)
+        try NativeFiles.write(payload ?? Array(query.utf8), to: request)
         let executable = executablePath()
         var command = Array(([quoteArgument(executable), operation, quoteArgument(folder)]).joined(separator: " ").utf16) + [0]
         var startup = STARTUPINFOW(), information = PROCESS_INFORMATION(); startup.cb = DWORD(MemoryLayout<STARTUPINFOW>.size)
@@ -61,14 +73,18 @@ enum NativeSearchProcess {
             }
         }
         var code: DWORD = 0
-        guard GetExitCodeProcess(process.raw, &code), code == 0 else { throw WindowsError.unsupported("Windows Search is unavailable. Local filename results remain available.") }
+        guard GetExitCodeProcess(process.raw, &code), code == 0 else {
+            throw WindowsError.unsupported(operation == "--search-library-worker"
+                ? "The local library is not ready. Check Index status in Search settings; basic results remain available."
+                : "Windows Search is unavailable. Local filename results remain available.")
+        }
         return try NativeFiles.read(result, maximum: 1_048_576)
     }
     static func selfCheck() throws {
-        var preferences = SearchPreferences(contents: "semantic=1\nfolder=C:\\fixture\n")
+        var preferences = SearchPreferences(contents: "semantic=1\nallLocalDrives=0\nfolder=C:\\fixture\n")
         guard preferences.semanticSetupMessage(folderAvailable: true, documentCount: 0).lowercased().containsText("no supported text"),
             preferences.semanticSetupMessage(folderAvailable: false, documentCount: 1).containsText("Choose"),
-            preferences.semanticSetupMessage(folderAvailable: true, documentCount: 1).containsText("enabled") else {
+            preferences.semanticSetupMessage(folderAvailable: true, documentCount: 1).containsText("indexed") else {
             throw WindowsError.unsupported("Semantic folder readiness was misreported.")
         }
         preferences.semantic = false
@@ -90,7 +106,7 @@ enum NativeSearchProcess {
         guard withWideString(variable, { name in withWideString("\"") { SetEnvironmentVariableW(name, $0) } }) else {
             throw WindowsError.api("Prepare cancelled Search fixture", GetLastError())
         }
-        for operation in ["--search-worker", "--search-apps-worker", "--search-rates-worker"] {
+        for operation in ["--search-worker", "--search-apps-worker", "--search-rates-worker", "--search-library-worker"] {
             var checks = 0
             do {
                 _ = try perform("test", operation: operation, timeout: 1, cancelled: { checks += 1; return true })
@@ -101,7 +117,7 @@ enum NativeSearchProcess {
         }
         Console.writeLine("PASS: cancelled Search providers stop before filesystem or child-process setup")
     }
-    static func runWorker(folder: String, rates:Bool = false, applications:Bool = false) throws -> Int32 {
+    static func runWorker(folder: String, rates:Bool = false, applications:Bool = false, library:Bool = false) throws -> Int32 {
         let root = try jobs()
         guard let last = folder.lastIndex(of: "\\"), equalWindowsNames(String(folder[..<last]), root),
             folder[folder.index(after: last)...].utf8.count == 36,
@@ -111,6 +127,28 @@ enum NativeSearchProcess {
             var fields: [String:StateField] = ["date":.string(current.0.date),"cached":.bool(current.cached)]
             for (currency,value) in current.0.rates { fields[currency] = .string(String(value)) }
             try NativeFiles.write(StateJSON.encode(fields),to:folder + "\\result.bin")
+            return 0
+        }
+        if library {
+            var request = NativeEmbeddingReader(bytes: try NativeFiles.read(folder + "\\query.txt", maximum: 16384))
+            let query = try request.string(maximum: 4096), namespace = try request.string(maximum: 1024)
+            let count = Int(try request.integer())
+            guard count <= 1024 else { throw WindowsError.unsupported("Invalid library request dimensions.") }
+            var vector: [Float] = []
+            for _ in 0..<count { vector.append(Float(bitPattern: try request.integer())) }
+            try request.finished()
+            guard vector.allSatisfy(\.isFinite) else { throw WindowsError.unsupported("Invalid library vector values.") }
+            let store = try NativeSearchLibraryStore(databasePath: NativeSearchLibraryStore.databasePath(), readOnly: true)
+            var partial = false
+            let items: [SearchItem]
+            if vector.isEmpty {
+                items = try store.searchText(query, progress: { _, incomplete in partial = incomplete }, cancelled: { false })
+            } else {
+                items = try store.searchVector(vector, namespace: namespace, kind: NativeSearchLibraryStore.parsedQuery(query).kind,
+                    progress: { _, incomplete in partial = incomplete }, cancelled: { false })
+            }
+            try NativeFiles.write(SearchWire.encode(items, status: partial ? "Local library · partial results within query budget" : "Local library"),
+                to: folder + "\\result.bin")
             return 0
         }
         guard let query = String(validating: try NativeFiles.read(folder + "\\query.txt", maximum: 4096), as: UTF8.self), !query.utf8.contains(0) else { throw WindowsError.unsupported("Invalid search query.") }

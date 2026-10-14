@@ -9,6 +9,29 @@ import WindowsDisplayABI
 func runCLI(_ args: [String]) throws -> Int32 {
     let command = args[0].lowercased()
     if command == "--process-path-fixture" { return 0 }
+    if command == "--library-worker" {
+        guard args.count == 2 else { throw WindowsError.unsupported("Invalid library worker request.") }
+        return NativeSearchLibraryRuntime.runWorker(pipeName: args[1])
+    }
+    if command == "--embedding-worker-model" || command == "--embedding-worker-model-test" {
+        let testing = command == "--embedding-worker-model-test"
+        guard args.count == (testing ? 4 : 3) else { throw WindowsError.unsupported("Invalid model worker request.") }
+        let model = try NativeSearchModelCatalog.descriptor(repositoryID: args[testing ? 3 : 2])
+        return NativeEmbedding.runWorker(pipeName:args[1],assetDirectory:testing ? args[2] : nil,model:model)
+    }
+    if command == "--test-model-catalog" { try NativeSearchModelCatalog.selfCheck(); return 0 }
+    if command == "--test-search-library" { try NativeSearchLibraryStore.selfCheck(); return 0 }
+    if command == "--test-search-content" { try NativeSearchContentSelfTest.run(); return 0 }
+    if command == "--test-search-library-runtime" { try NativeSearchLibraryRuntime.selfCheck(); return 0 }
+    if command == "--test-search-library-supervisor" { try NativeSearchLibraryRuntime.selfCheckSupervisor(); return 0 }
+    if command == "--test-search-library-models" {
+        guard args.count == 3 else { throw WindowsError.unsupported("Use --test-search-library-models <verified Gemma folder> <verified MiniLM folder>.") }
+        try NativeSearchLibraryRuntime.selfCheckModels(gemmaDirectory: args[1], miniLMDirectory: args[2]); return 0
+    }
+    if command == "--search-media-inference-test" {
+        guard args.count == 2 else { throw WindowsError.unsupported("Use --search-media-inference-test <verified test asset folder>.") }
+        try NativeEmbeddingMediaSelfTest.run(assetDirectory: args[1]); return 0
+    }
     if command == "--embedding-worker" {
         guard args.count == 2 else { throw WindowsError.unsupported("Invalid embedding worker request.") }
         return NativeEmbedding.runWorker(pipeName:args[1])
@@ -16,6 +39,10 @@ func runCLI(_ args: [String]) throws -> Int32 {
     if command == "--embedding-worker-test" {
         guard args.count == 3 else { throw WindowsError.unsupported("Invalid embedding test worker request.") }
         return NativeEmbedding.runWorker(pipeName:args[1],assetDirectory:args[2])
+    }
+    if command == "--search-library-worker" {
+        guard args.count == 2 else { throw WindowsError.unsupported("Invalid library query worker request.") }
+        return try NativeSearchProcess.runWorker(folder:args[1],library:true)
     }
     if command == "--search-worker" {
         guard args.count == 2 else { throw WindowsError.unsupported("Invalid search worker request.") }
@@ -89,6 +116,11 @@ func runCLI(_ args: [String]) throws -> Int32 {
     if command == "--test-embedding-live" {
         guard args.count == 2 else { throw WindowsError.unsupported("Use --test-embedding-live <verified test asset folder>.") }
         try NativeEmbedding.selfCheck(assetDirectory:args[1]); return 0
+    }
+    if command == "--test-embedding-model-live" {
+        guard args.count == 3 else { throw WindowsError.unsupported("Use --test-embedding-model-live <verified test asset folder> <owner/model>.") }
+        let model = try NativeSearchModelCatalog.descriptor(repositoryID: args[2])
+        try NativeEmbedding.selfCheck(assetDirectory: args[1], model: model); return 0
     }
     if command == "--download-search-model" {
         guard args.count == 2, args[1] == "--accept-component-licenses" else { throw WindowsError.unsupported("Read the supplied Microsoft Windows ML Runtime and Apache 2.0 licenses, then use --download-search-model --accept-component-licenses.") }

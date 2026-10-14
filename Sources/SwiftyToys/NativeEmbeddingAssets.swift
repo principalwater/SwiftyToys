@@ -51,9 +51,22 @@ enum NativeEmbeddingAssets {
     static let runtime = NativeEmbeddingAsset(name: "onnxruntime.dll", host: "", remotePath: "", bytes: 23086440, sha256: "6c916621c1807eba630388868bff8eb4cc9718b9fa17464fc9368eb14ad0f33e")
     static let package = NativeEmbeddingAsset(name: "winml.zip", host: "api.nuget.org", remotePath: "/v3-flatcontainer/microsoft.windows.ai.machinelearning/2.4.89/microsoft.windows.ai.machinelearning.2.4.89.nupkg", bytes: 51594185, sha256: "5c68ecfb947223267abf159a023f5192ad42725e4e9cc995e7c1470dd54dff63")
     static var downloadBytes: UInt64 { tokenizer.bytes + graph.bytes + weights.bytes + package.bytes }
+    static func downloadBytes(model: NativeSearchModelDescriptor, includeMedia: Bool = false) -> UInt64 {
+        (model.assets + (includeMedia && model.adapter == .gemmaBPE ? mediaFiles : [])).reduce(package.bytes) { $0 + $1.bytes }
+    }
     static var files: [NativeEmbeddingAsset] { [runtime, tokenizer, graph, weights] }
-    static func directory() throws -> String { try NativeFiles.path("EmbeddingGemma2") }
-    static func path(_ asset: NativeEmbeddingAsset) throws -> String { try directory() + "\\" + asset.name }
+    static let mediaFiles: [NativeEmbeddingAsset] = [
+        .init(name: "vision_encoder_quantized.onnx", host: "huggingface.co", remotePath: modelRoute + "onnx/vision_encoder_quantized.onnx", bytes: 162495, sha256: "bb0de2df53a2448a32dc7908a187c168c8afd514d4d6f674f7f46024875fa4e3"),
+        .init(name: "vision_encoder_quantized.onnx_data", host: "huggingface.co", remotePath: modelRoute + "onnx/vision_encoder_quantized.onnx_data", bytes: 195228672, sha256: "3dabd69c0a36e9a8771ad82030dde74daa5a0e02b7047a5d3f3382b1137bab89"),
+        .init(name: "audio_encoder_quantized.onnx", host: "huggingface.co", remotePath: modelRoute + "onnx/audio_encoder_quantized.onnx", bytes: 249330, sha256: "04a9a9094ba76fb169e4c69be45a4b621580188654d6be59eab860eadcd42d3c"),
+        .init(name: "audio_encoder_quantized.onnx_data", host: "huggingface.co", remotePath: modelRoute + "onnx/audio_encoder_quantized.onnx_data", bytes: 340058624, sha256: "aa6361d898e1f1d6303f8dd2b5fabf4fd3629e15fd709e9cb06ac5cb9416a030"),
+    ]
+    static func files(model: NativeSearchModelDescriptor) -> [NativeEmbeddingAsset] { [runtime] + model.assets }
+    static func directory(model: NativeSearchModelDescriptor = .recommended) throws -> String {
+        if model.fingerprint == NativeSearchModelDescriptor.recommended.fingerprint { return try NativeFiles.path("EmbeddingGemma2") }
+        return try NativeFiles.path("SearchModel-" + NativeSearchModelCatalog.digest(model.fingerprint))
+    }
+    static func path(_ asset: NativeEmbeddingAsset, model: NativeSearchModelDescriptor = .recommended) throws -> String { try directory(model: model) + "\\" + asset.name }
     static func cancelled(_ callback: @Sendable () -> Bool) throws {
         if callback() { throw WindowsError.api("Local search operation cancelled", DWORD(ERROR_CANCELLED)) }
     }
@@ -64,12 +77,13 @@ enum NativeEmbeddingAssets {
         return unsafeBitCast(address, to: Version.self)(&version) >= 0 && version.dwMajorVersion >= 10 && version.dwBuildNumber >= 18362
     }
     /// Downloaded is a presence/length state. Ready requires a validated worker and real inference.
-    static func status() throws -> State {
+    static func status(model: NativeSearchModelDescriptor = .recommended, includeMedia: Bool = false) throws -> State {
         guard supported() else { return .unsupported }
-        let directory = try directory()
+        if includeMedia, model.adapter != .gemmaBPE { return .unsupported }
+        let directory = try directory(model: model)
         guard try NativeFiles.exists(directory) else { return .missing }
         try inspect(directory, directory: true)
-        for asset in files {
+        for asset in files(model: model) + (includeMedia ? mediaFiles : []) {
             let path = directory + "\\" + asset.name
             guard try NativeFiles.exists(path) else { return .missing }
             let handle = try OwnedHandle(withWideString(try NativeFiles.windowsPath(path)) { CreateFileW($0, DWORD(FILE_READ_ATTRIBUTES), DWORD(FILE_SHARE_READ), nil, DWORD(OPEN_EXISTING), DWORD(FILE_FLAG_OPEN_REPARSE_POINT), nil) })
@@ -78,6 +92,9 @@ enum NativeEmbeddingAssets {
                 UInt64(info.nFileSizeHigh) << 32 | UInt64(info.nFileSizeLow) == asset.bytes else { return .missing }
         }
         return .downloaded
+    }
+    static func mediaStatus(model: NativeSearchModelDescriptor = .recommended) throws -> State {
+        try status(model: model, includeMedia: true)
     }
     static func inspect(_ path: String, directory: Bool) throws {
         let flags = DWORD(FILE_FLAG_OPEN_REPARSE_POINT) | (directory ? DWORD(FILE_FLAG_BACKUP_SEMANTICS) : 0)
@@ -124,10 +141,12 @@ enum NativeEmbeddingAssets {
         guard CoCreateGuid(&value) >= 0, StringFromGUID2(&value, &text, Int32(text.count)) == 39 else { throw WindowsError.unsupported("Create local search operation identity.") }
         return String(decoding: text.prefix(38), as: UTF16.self).filter { $0 != "{" && $0 != "}" && $0 != "-" }
     }
-    static func download(progress: @Sendable (NativeEmbeddingProgress) -> Void, cancelled: @Sendable () -> Bool) throws {
+    static func download(model: NativeSearchModelDescriptor = .recommended, includeMedia: Bool = false, progress: @Sendable (NativeEmbeddingProgress) -> Void, cancelled: @Sendable () -> Bool) throws {
         guard supported() else { throw WindowsError.unsupported("Local semantic search requires Windows10 version1903 or newer.") }
         try Self.cancelled(cancelled)
-        let root = try directory(), app = try NativeFiles.directory()
+        guard !includeMedia || model.adapter == .gemmaBPE else { throw WindowsError.unsupported("This model supports text only. Select EmbeddingGemma2 for image, audio and video search.") }
+        let assets = model.assets + (includeMedia ? mediaFiles : [])
+        let root = try directory(model: model), app = try NativeFiles.directory()
         try NativeFiles.createDirectory(app); try inspect(app, directory: true); try privateDirectory(root)
         let operation = try OwnedHandle(withWideString("Local\\SwiftyToys.EmbeddingDownload-" + (try identity())) { CreateMutexW(nil, false, $0) })
         let ownership = WaitForSingleObject(operation.raw, 0)
@@ -135,10 +154,10 @@ enum NativeEmbeddingAssets {
         defer { ReleaseMutex(operation.raw) }
         let stage = root + "\\stage-" + (try guid())
         try privateDirectory(stage)
-        defer { cleanupStage(stage) }
+        defer { cleanupStage(stage, assets: assets) }
         var completed: UInt64 = 0
-        let total = downloadBytes
-        for asset in [tokenizer, graph, weights] {
+        let total = assets.reduce(package.bytes) { $0 + $1.bytes }
+        for asset in assets {
             try Self.cancelled(cancelled)
             let destination = root + "\\" + asset.name
             if try NativeFiles.exists(destination) {
@@ -212,9 +231,9 @@ enum NativeEmbeddingAssets {
         }
         guard received == asset.bytes, FlushFileBuffers(file.raw) else { throw WindowsError.unsupported("The model download did not complete.") }
     }
-    private static func cleanupStage(_ stage: String) {
+    private static func cleanupStage(_ stage: String, assets: [NativeEmbeddingAsset]) {
         guard (try? inspect(stage, directory: true)) != nil else { return }
-        for name in [tokenizer.name, graph.name, weights.name, package.name] {
+        for name in assets.map(\.name) + [package.name] {
             try? NativeFiles.remove(stage + "\\" + name)
         }
         let components = ["runtimes", "runtimes\\win-x64", "runtimes\\win-x64\\native"]
@@ -226,16 +245,16 @@ enum NativeEmbeddingAssets {
             if (try? inspect(path, directory: true)) != nil { try? withWideString(NativeFiles.windowsPath(path)) { _ = RemoveDirectoryW($0) } }
         }
     }
-    static func remove() throws {
+    static func remove(model: NativeSearchModelDescriptor = .recommended) throws {
         NativeEmbedding.closeForRemoval()
-        let root = try directory()
+        let root = try directory(model: model)
         guard try NativeFiles.exists(root) else { return }
         try inspect(root, directory: true)
         let operation = try OwnedHandle(withWideString("Local\\SwiftyToys.EmbeddingDownload-" + (try identity())) { CreateMutexW(nil, false, $0) })
         let ownership = WaitForSingleObject(operation.raw, 0)
         guard ownership == DWORD(WAIT_OBJECT_0) || ownership == 0x80 else { throw WindowsError.unsupported("Cancel the active model download before removing it.") }
         defer { ReleaseMutex(operation.raw) }
-        for asset in files { if try NativeFiles.exists(root + "\\" + asset.name) { try inspect(root + "\\" + asset.name, directory: false); try NativeFiles.remove(root + "\\" + asset.name) } }
+        for asset in files(model: model) + (model.adapter == .gemmaBPE ? mediaFiles : []) { if try NativeFiles.exists(root + "\\" + asset.name) { try inspect(root + "\\" + asset.name, directory: false); try NativeFiles.remove(root + "\\" + asset.name) } }
         _ = try withWideString(NativeFiles.windowsPath(root)) { RemoveDirectoryW($0) }
     }
 }

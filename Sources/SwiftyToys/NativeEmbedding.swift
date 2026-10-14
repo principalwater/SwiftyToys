@@ -174,17 +174,19 @@ final class NativeEmbeddingChannel: @unchecked Sendable {
 private final class NativeEmbeddingWorker: @unchecked Sendable {
     let channel: NativeEmbeddingChannel
     let child: NativeEmbeddingProcess
-    init(assetDirectory: String?, cancelled: @escaping @Sendable () -> Bool) throws {
+    init(assetDirectory: String?, model: NativeSearchModelDescriptor = .recommended,
+        cancelled: @escaping @Sendable () -> Bool) throws {
         let name = NativeEmbeddingChannel.prefix + (try NativeEmbeddingAssets.guid())
         channel = try NativeEmbeddingChannel(serverName: name)
-        let arguments = assetDirectory.map { ["--embedding-worker-test", name, $0] } ?? ["--embedding-worker", name]
+        let arguments = assetDirectory.map { ["--embedding-worker-model-test", name, $0, model.repositoryID] }
+            ?? ["--embedding-worker-model", name, model.repositoryID]
         child = try NativeEmbeddingProcess(executable: executablePath(), arguments: arguments)
         do { try channel.connect(child: child, cancelled: cancelled) } catch { child.stop(); throw error }
     }
 }
 
 enum NativeEmbedding {
-    private struct State: Sendable { var worker: NativeEmbeddingWorker?; var busy = false }
+    private struct State: Sendable { var worker: NativeEmbeddingWorker?; var busy = false; var identity = "" }
     private static let state = Mutex(State())
     static func cancel() { close() }
     static func close() {
@@ -195,23 +197,25 @@ enum NativeEmbedding {
         let worker = state.withLock { state in let worker = state.worker; state.worker = nil; return worker }
         worker?.child.stop(wait: true)
     }
-    static func rank(query: String, documents: [NativeEmbeddingDocument], progress: @Sendable (String) -> Void = { _ in }, cancelled: @escaping @Sendable () -> Bool = { false }) throws -> [NativeEmbeddingMatch] {
-        try rank(query: query, documents: documents, assetDirectory: nil, progress: progress, cancelled: cancelled)
+    static func rank(query: String, documents: [NativeEmbeddingDocument], model: NativeSearchModelDescriptor = .recommended, progress: @Sendable (String) -> Void = { _ in }, cancelled: @escaping @Sendable () -> Bool = { false }) throws -> [NativeEmbeddingMatch] {
+        try rank(query: query, documents: documents, assetDirectory: nil, model: model, progress: progress, cancelled: cancelled)
     }
-    private static func rank(query: String, documents: [NativeEmbeddingDocument], assetDirectory: String?, progress: @Sendable (String) -> Void, cancelled: @escaping @Sendable () -> Bool) throws -> [NativeEmbeddingMatch] {
+    private static func rank(query: String, documents: [NativeEmbeddingDocument], assetDirectory: String?, model: NativeSearchModelDescriptor = .recommended, progress: @Sendable (String) -> Void, cancelled: @escaping @Sendable () -> Bool) throws -> [NativeEmbeddingMatch] {
         guard !query.isEmpty, query.utf8.count <= 4096, (1...8).contains(documents.count), documents.allSatisfy({ $0.title.utf8.count <= 4096 && $0.text.utf8.count <= 65536 }) else { throw WindowsError.unsupported("The local search request exceeds its text budget.") }
         try NativeEmbeddingAssets.cancelled(cancelled)
         if assetDirectory == nil {
-            guard try NativeEmbeddingAssets.status() == .downloaded else { throw WindowsError.unsupported("Download the optional local search model first. Text search remains available.") }
+            guard try NativeEmbeddingAssets.status(model: model) == .downloaded else { throw WindowsError.unsupported("Download the selected local search model first. Text search remains available.") }
         }
         guard state.withLock({ state in if state.busy { return false }; state.busy = true; return true }) else { throw WindowsError.unsupported("Local semantic search is busy. Text search remains available.") }
         defer { state.withLock { $0.busy = false } }
         let worker: NativeEmbeddingWorker
-        if let current = state.withLock({ $0.worker }), !current.child.ended { worker = current }
+        let identity = model.fingerprint + (assetDirectory ?? "")
+        if let current = state.withLock({ $0.identity == identity ? $0.worker : nil }), !current.child.ended { worker = current }
         else {
-            let created = try NativeEmbeddingWorker(assetDirectory: assetDirectory, cancelled: cancelled)
+            close()
+            let created = try NativeEmbeddingWorker(assetDirectory: assetDirectory, model: model, cancelled: cancelled)
             if cancelled() { created.child.stop(); throw WindowsError.api("Local semantic search cancelled", DWORD(ERROR_CANCELLED)) }
-            state.withLock { $0.worker = created }; worker = created
+            state.withLock { $0.worker = created; $0.identity = identity }; worker = created
         }
         do {
             var request = NativeEmbeddingWriter(); request.integer(1); try request.string(query, maximum: 4096); request.integer(UInt32(documents.count))
@@ -239,9 +243,57 @@ enum NativeEmbedding {
                 default: throw WindowsError.unsupported("The local search worker returned an invalid response.")
                 }
             }
-        } catch { worker.child.stop(); state.withLock { $0.worker = nil }; throw error }
+        } catch { worker.child.stop(wait: true); state.withLock { $0.worker = nil }; throw error }
     }
-    static func runWorker(pipeName: String, assetDirectory: String? = nil) -> Int32 {
+    static func queryVector(_ query: String, model: NativeSearchModelDescriptor,
+        assetDirectory: String? = nil,
+        cancelled: @escaping @Sendable () -> Bool) throws -> [Float] {
+        guard !query.isEmpty, query.utf8.count <= 4096 else {
+            throw WindowsError.unsupported("The query exceeds its text budget.")
+        }
+        if assetDirectory == nil, try NativeEmbeddingAssets.status(model: model) != .downloaded {
+            throw WindowsError.unsupported("Download the selected model before searching by meaning.")
+        }
+        try NativeEmbeddingAssets.cancelled(cancelled)
+        guard state.withLock({ state in if state.busy { return false }; state.busy = true; return true }) else {
+            throw WindowsError.unsupported("The local model is busy. Basic results remain available.")
+        }
+        defer { state.withLock { $0.busy = false } }
+        let worker: NativeEmbeddingWorker
+        let identity = model.fingerprint + (assetDirectory ?? "")
+        if let current = state.withLock({ $0.identity == identity ? $0.worker : nil }), !current.child.ended {
+            worker = current
+        } else {
+            close()
+            let created = try NativeEmbeddingWorker(assetDirectory: assetDirectory, model: model, cancelled: cancelled)
+            state.withLock { $0.worker = created; $0.identity = identity }
+            worker = created
+        }
+        do {
+            var request = NativeEmbeddingWriter(); request.integer(5); try request.string(query, maximum: 4096)
+            let deadline = GetTickCount64() + 30000
+            try worker.channel.send(request.bytes, deadline: deadline, cancelled: cancelled)
+            while true {
+                var reply = NativeEmbeddingReader(bytes: try worker.channel.receive(deadline: deadline, cancelled: cancelled))
+                switch try reply.integer() {
+                case 6:
+                    let count = Int(try reply.integer())
+                    guard count == model.dimensions, (1...1024).contains(count) else { throw WindowsError.unsupported("Unexpected embedding dimensions.") }
+                    var values: [Float] = []
+                    for _ in 0..<count { values.append(Float(bitPattern: try reply.integer())) }
+                    try reply.finished()
+                    let norm = values.reduce(0.0) { $0 + Double($1) * Double($1) }
+                    guard values.allSatisfy(\.isFinite), (0.9...1.1).contains(norm) else { throw WindowsError.unsupported("Invalid query embedding.") }
+                    return values
+                case 3: throw WindowsError.unsupported(try reply.string(maximum: 4096))
+                case 4: _ = try reply.string(maximum: 1024); try reply.finished()
+                default: throw WindowsError.unsupported("Invalid vector response.")
+                }
+            }
+        } catch { worker.child.stop(wait: true); state.withLock { $0.worker = nil }; throw error }
+    }
+    static func runWorker(pipeName: String, assetDirectory: String? = nil,
+        model: NativeSearchModelDescriptor = .recommended) -> Int32 {
         do {
             let channel = try NativeEmbeddingChannel(clientName: pipeName)
             var engine: NativeEmbeddingEngine?
@@ -251,17 +303,26 @@ enum NativeEmbedding {
                 let deadline = GetTickCount64() + 30000
                 do {
                     var request = NativeEmbeddingReader(bytes: body)
-                    guard try request.integer() == 1 else { throw WindowsError.unsupported("Invalid local search request.") }
-                    let query = try request.string(maximum: 4096), count = Int(try request.integer())
-                    guard (1...8).contains(count) else { throw WindowsError.unsupported("Too many local documents.") }
+                    let operation = try request.integer()
+                    guard operation == 1 || operation == 5 else { throw WindowsError.unsupported("Invalid local search request.") }
+                    let query = try request.string(maximum: 4096)
+                    let count = operation == 1 ? Int(try request.integer()) : 0
+                    guard operation == 5 || (1...8).contains(count) else { throw WindowsError.unsupported("Too many local documents.") }
                     var documents: [NativeEmbeddingDocument] = []
                     for index in 0..<count { documents.append(.init(id: String(index), title: try request.string(maximum: 4096), text: try request.string(maximum: 65536))) }
                     try request.finished()
                     func report(_ stage: String) throws { var progress = NativeEmbeddingWriter(); progress.integer(4); try progress.string(stage, maximum: 1024); try channel.send(progress.bytes, deadline: deadline) }
                     if engine == nil {
                         try report("Loading and validating the local search model…")
-                        let loaded = try NativeEmbeddingEngine(assetDirectory: assetDirectory); try loaded.validateInference(); engine = loaded
+                        let loaded = try NativeEmbeddingEngine(assetDirectory: assetDirectory, model: model); try loaded.validateInference(); engine = loaded
                         try report("Local semantic search is ready.")
+                    }
+                    if operation == 5 {
+                        let vector = try engine!.queryVector(query)
+                        var response = NativeEmbeddingWriter(); response.integer(6); response.integer(UInt32(vector.count))
+                        for value in vector { response.integer(value.bitPattern) }
+                        try channel.send(response.bytes, deadline: deadline)
+                        continue
                     }
                     let scores = try engine!.rank(query: query, documents: documents, progress: report)
                     var response = NativeEmbeddingWriter(); response.integer(2); response.integer(UInt32(scores.count))
@@ -288,33 +349,42 @@ enum NativeEmbedding {
         guard NativeEmbeddingChannel.validName(NativeEmbeddingChannel.prefix + "0123456789abcdef0123456789abcdef"), !NativeEmbeddingChannel.validName("\\\\.\\pipe\\other"), !NativeEmbeddingChannel.validName(NativeEmbeddingChannel.prefix + "..\\other") else { throw WindowsError.unsupported("Embedding pipe identity validation failed.") }
         Console.writeLine("PASS: native embedding protocol bounds, Unicode and private pipe name; no model downloaded or loaded")
     }
-    static func selfCheck(assetDirectory: String) throws {
+    static func selfCheck(assetDirectory: String, model: NativeSearchModelDescriptor = .recommended) throws {
         closeForRemoval()
         defer { closeForRemoval() }
         let documents = [NativeEmbeddingDocument(id: "dog", title: "", text: "A dog is playing in the park."), .init(id: "math", title: "", text: "Linear algebra studies matrices and vector spaces.")]
         let began = GetTickCount64()
-        let result = try rank(query: "find my dog", documents: documents, assetDirectory: assetDirectory, progress: { Console.writeLine($0) }, cancelled: { false })
+        let result = try rank(query: "find my dog", documents: documents, assetDirectory: assetDirectory, model: model, progress: { Console.writeLine($0) }, cancelled: { false })
         guard result.count == 2, result[0].id == "dog", result[0].score > result[1].score + 0.05 else { throw WindowsError.unsupported("Live native embedding IPC retrieval check failed.") }
         let cold = GetTickCount64() - began, warmStart = GetTickCount64()
-        let warm = try rank(query: "find my dog", documents: documents, assetDirectory: assetDirectory, progress: { _ in }, cancelled: { false })
+        let warm = try rank(query: "find my dog", documents: documents, assetDirectory: assetDirectory, model: model, progress: { _ in }, cancelled: { false })
         guard warm.map(\.id) == result.map(\.id), warm.map(\.score) == result.map(\.score) else { throw WindowsError.unsupported("Live native embedding cached batch check failed.") }
         Console.writeLine("PASS: same-executable CPU worker and real retrieval; dog \(result[0].score), math \(result[1].score); cold \(cold)ms, cached query/document batch \(GetTickCount64() - warmStart)ms")
         let paragraph = "A garden needs careful watering during warm weather. Check the soil before adding water, mulch the surface, and water deeply early in the morning so the roots stay healthy. "
         let longDocuments = (0..<10).map { NativeEmbeddingDocument(id: "garden\($0)", title: "Garden \($0)", text: String(repeating: paragraph, count: 12)) }
-        do {
-            let tokenizer = try GemmaBPETokenizer(path: assetDirectory + "\\" + NativeEmbeddingAssets.tokenizer.name)
+        if model.adapter == .gemmaBPE {
+            let tokenizer = try GemmaBPETokenizer(path: assetDirectory + "\\" + model.tokenizer.name)
             guard try longDocuments.allSatisfy({ try tokenizer.encode(text: GemmaBPETokenizer.document(title: $0.title, content: $0.text), maxTokens: 128).count == 128 }) else { throw WindowsError.unsupported("Live embedding benchmark did not reach its token cap.") }
+        } else {
+            let tokenizer = try BertWordPieceTokenizer(path: assetDirectory + "\\" + model.tokenizer.name)
+            guard try longDocuments.allSatisfy({ try tokenizer.encode(text: $0.text, maxTokens: model.tokenLimit).count == model.tokenLimit }) else { throw WindowsError.unsupported("Live WordPiece benchmark did not reach its token cap.") }
         }
         for range in [0..<2, 2..<10] {
             let batchStart = GetTickCount64()
-            let matches = try rank(query: "How should gardens be watered in summer?", documents: Array(longDocuments[range]), assetDirectory: assetDirectory, progress: { _ in }, cancelled: { false })
+            let matches = try rank(query: "How should gardens be watered in summer?", documents: Array(longDocuments[range]), assetDirectory: assetDirectory, model: model, progress: { _ in }, cancelled: { false })
             guard matches.count == range.count, matches.allSatisfy({ $0.score.isFinite }) else { throw WindowsError.unsupported("Live embedding capped document batch failed.") }
             Console.writeLine("PASS: \(range.count) real 128-token documents through bounded IPC in \(GetTickCount64() - batchStart)ms")
         }
+        let vector = try queryVector("find my dog", model: model, assetDirectory: assetDirectory, cancelled: { false })
+        let cachedVector = try queryVector("find my dog", model: model, assetDirectory: assetDirectory, cancelled: { false })
+        guard vector.count == model.dimensions, vector == cachedVector else {
+            throw WindowsError.unsupported("Live model query-vector IPC or cache failed.")
+        }
+        Console.writeLine("PASS: selected-model query-vector IPC, dimensions and cached values")
         closeForRemoval()
         let cancelStart = GetTickCount64()
         do {
-            _ = try rank(query: "find my dog", documents: documents, assetDirectory: assetDirectory, progress: { _ in }, cancelled: { GetTickCount64() - cancelStart >= 100 })
+            _ = try rank(query: "find my dog", documents: documents, assetDirectory: assetDirectory, model: model, progress: { _ in }, cancelled: { GetTickCount64() - cancelStart >= 100 })
             throw WindowsError.unsupported("Live native embedding startup cancellation was ignored.")
         } catch let error as WindowsError {
             guard case .api(_, let code) = error, code == DWORD(ERROR_CANCELLED) else { throw error }

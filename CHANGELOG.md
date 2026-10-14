@@ -1,5 +1,19 @@
 # Changelog
 
+## SwiftyToys 0.1.19 — 2026-10-14
+
+- Add a persistent native Windows SQLite Search library across local drives,
+  with folder exclusions, pause/resume, change notifications and derived-index reset.
+- Extract bounded text/code, installed IFilter documents, PDF pages, image OCR,
+  audio segments and video frames using Windows APIs in an isolated background job.
+- Prepare document/media vectors during idle time, leaving queries to encode
+  only their text and retrieve saved results. Report partial coverage and unavailable codecs.
+- Add typed content filters and matched page/line/time previews.
+- Keep EmbeddingGemma 2 recommended; add MiniLM and an editable Hugging Face
+  catalog with pinned revisions, hashes and explicit native-adapter compatibility checks.
+- Offer image/audio encoders as a separate optional download; preserve the compact
+  installer, signed CPU runtime, Swift 6.4.1 and existing input/display recovery.
+
 ## SwiftyToys 0.1.18 — 2026-10-13
 
 - Stop cancelled Search providers before filesystem/process setup and before

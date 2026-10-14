@@ -95,12 +95,17 @@ filename fallback. Calculations, units and supported world clocks work offline.
 Currency conversions such as `120 usd rub` use dated Bank of Russia reference
 rates; cached results show their source date. Web search opens only when selected.
 
-Optional **EmbeddingGemma 2** adds local matching by meaning in a chosen folder.
-Download about 370 MB of model/runtime components separately; the basic installer
-contains none. Semantic search considers up to 64 plain-text files in progressive
-batches with bounded excerpts. Initial preparation can be slow; ordinary results
-appear first. Text stays local, runtime telemetry is disabled, and the CPU worker
-unloads after inactivity. The model does not generate answers or exchange rates.
+The persistent **Local library** covers local drives with exclusions, pause and
+incremental background indexing. It reads text/code, installed document filters,
+PDF/OCR and images; optional encoders add audio/video content matching. Initial
+indexing takes time and coverage is bounded; ordinary results appear first.
+Use `code:`, `pdf:`, `image:`, `audio:` or `video:` to narrow library matches.
+
+Optional **EmbeddingGemma 2** remains recommended (about 370 MB including runtime;
+media encoders add about 535 MB). Text-only **MiniLM** and compatible Hugging Face
+models can be selected in settings. Models download separately. Content stays
+local; heavy work waits for idle time and yields to Search, input and fullscreen
+apps. The model compares meaning; it does not generate answers or exchange rates.
 [Scope, licenses and limits](docs/Search.md).
 
 ## Build and contribute
@@ -112,13 +117,13 @@ Portable BrightnessCore/KeyboardCore/SearchCore tests use Swift Testing; native 
 ./scripts/build.ps1
 ./scripts/test.ps1
 ./scripts/package.ps1
-./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.18-win-x64
+./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.19-win-x64
 ```
 
 [Contributor guide](CONTRIBUTING.md) · [Packaging](docs/Packaging.md) ·
 [Windows interop](docs/WindowsInterop.md) · [Performance](docs/Performance.md) ·
 [Security](SECURITY.md). CI verifies Windows, Linux and macOS core checks. External changes
-use reviewed PRs; the maintainer controls merges. Size budgets are 8 MB EXE / 3.5 MB ZIP;
+use reviewed PRs; the maintainer controls merges. Size budgets are 8.5 MB EXE / 3.5 MB ZIP;
 performance advantages require reproducible measurements.
 
 The compiler/SDK pin is shared by local scripts and all CI platforms. Follow the

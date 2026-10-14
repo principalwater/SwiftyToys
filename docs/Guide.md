@@ -13,7 +13,9 @@ or Apple.
 - **Search:** Cmd+Space opens the native panel with the Mac preset. Apps, files,
   indexed content, calculator, units, dated reference rates, supported world clocks,
   actions and previews work without a model. Semantic search is an explicit
-  download and local folder choice. [Controls, sources, licenses and scope](Search.md).
+  download, persistent local-drive indexing and optional audio/video encoders.
+  Choose scope, exclusions and compatible models in settings.
+  [Controls, sources, licenses and scope](Search.md).
 
 - **Brightness:** BrightnessCtl 0.5.3 Swift code is integrated directly: native WDDM
   scanout brightness, AMD fallback, monitor selection, slider, calibrated recovery,
