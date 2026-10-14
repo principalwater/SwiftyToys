@@ -17,6 +17,53 @@ for the resident and watchdog separately. CPU percent is relative to one core,
 not divided by this machine's 24 logical processors. Keep identical settings,
 foreground workload, startup state and sampling duration for comparisons.
 
+## 0.1.19 persistent Search library
+
+The library owns a separate low-priority process. Metadata admission is limited
+to 128 entries or 40 ms per step, normally every two seconds. Content extraction
+and vector generation require user idle time, sufficient memory, no active Search
+and no fullscreen application; input cancels the owned child. Queries retrieve
+saved fragments and encode only their query text. Native codecs can block inside
+Windows, so the parent also enforces an owned-job deadline and commit limit.
+
+The production-frozen candidate
+`41b459a8f9dfd157d16233805a1b5d1f78b222eb2b96c3038729ca1a01e63c33`
+passed real CPU-worker tests with verified downloaded assets. Gemma 2 cold setup
+took 7.08 s, two 128-token documents 5.24 s and eight 16.77 s; MiniLM took 1.38 s,
+0.203 s and 0.843 s respectively. Both cold cancellations completed in about
+140 ms, with owned-process cleanup and file-lease release verified. These are
+individual samples, not a controlled model-quality or optimization comparison.
+
+Its optional media fixture completed in 78.58 s under a 1,536 MiB commit-limited
+job. Three synthetic images took about 9.2–10.9 s each, video features 9.59 s and
+a complete 30-second synthetic audio window 27.75 s. Peak private commit was
+about 638 MiB and peak working set about 1,157 MiB. Color/tone retrieval passed;
+this does not establish broad media-search quality, hardware-independent timing
+or suitability for a low-memory machine. Encoders remain a separate opt-in download.
+
+A 61.2-second installed 0.1.18 baseline recorded about 4.61 MiB resident private
+bytes and 2.47 MiB watchdog private bytes, with stable handles and no measured
+CPU increment. Foreground work was not controlled. Process counters do not
+attribute GPU load or prove absence of system microfreezes; future comparisons
+must retain equivalent settings, lifecycle and workloads.
+
+Two separate 61.2-second installed 0.1.19 observations used the final executable
+hash in Validation.md. The first recorded resident CPU about 0.051% of one core,
+private bytes falling from 4.36 to 4.27 MiB, and 289–290 handles. Watchdog private
+bytes stayed at 2.85 MiB, 181 handles, with no measured CPU increment. The library
+child initially used at most about 0.92% of one core in five-second metadata bins;
+later expensive work reached about one core, averaging 35.15% over the interval.
+Private bytes grew from 3.25 to 63.34 MiB during that initialization/work interval.
+
+In the second observation, the same library process averaged about 0.255% of one
+core; private bytes stayed near 81.63 MiB and handles fell from 345 to 341. Resident
+private bytes stayed at 4.26 MiB, 288 handles; watchdog counters stayed unchanged.
+Neither showed a measured CPU increment. All sampled processes responded. These
+are startup/settling observations under uncontrolled user activity, not a steady
+state A/B benchmark, GPU attribution or proof that every Search interaction is
+free of microfreezes. Heavy model/content work is reported separately from the
+small resident and can use a CPU core while its idle gate permits it.
+
 A 60-second pre-change sample of the installed intermediate 0.1.3 build
 `6CDC7E3451BD09CCC1D9C0EB16ED7251C350AE54BB00341A76CDB40491F1EA26`
 recorded resident private bytes 5.04 MiB, working set 28.31 MiB, 8 threads,
@@ -86,7 +133,7 @@ their independent timing/energy benefit is not claimed from source inspection.
 ## Build budget and safety
 
 Release uses `-Osize`, static official Swift runtime, no debug information, dead
-stripping and identical COMDAT folding. Budget: executable <=8 MB, ZIP <=3.5 MB.
+stripping and identical COMDAT folding. Budget: executable <=8.5 MB, ZIP <=3.5 MB.
 Static DLL imports are restricted to System32 and verified with dumpbin loadconfig;
 there are no bundled Swift DLLs or web renderer. Do not replace `-Osize` with `-O`
 or change CPU target/ownership/concurrency based on guesswork.

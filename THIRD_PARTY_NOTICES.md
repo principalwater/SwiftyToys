@@ -171,3 +171,21 @@ Sources: [Google model](https://huggingface.co/google/embeddinggemma-2),
 [pinned ONNX conversion](https://huggingface.co/onnx-community/embeddinggemma-2-ONNX/tree/daa72c51243991dfcaf9f9137d2c573d8f7790c0),
 [official Windows ML package](https://www.nuget.org/packages/Microsoft.Windows.AI.MachineLearning/2.4.89),
 [ONNX Runtime headers and MIT license](https://github.com/microsoft/onnxruntime/tree/v1.27.1).
+
+The optional image/audio encoder graphs and weights use the same pinned
+ONNX Community EmbeddingGemma 2 conversion and Apache 2.0 license. They are
+downloaded separately and are not included in the application release archive.
+
+The text-only alternative is
+[sentence-transformers/all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2),
+pinned to `1110a243fdf4706b3f48f1d95db1a4f5529b4d41`. Its Apache 2.0 license is
+retained in `Licenses/MiniLM.txt`. Additional selected models must satisfy the
+native adapter and license checks; their source revision and hashes are saved locally.
+
+## DigUp — Search architecture reference
+
+[DigUp](https://github.com/ARahim3/DigUp), MIT, was studied at revision
+`f9b8106ffb8308b4f48b76149d270f7c2e6b4918` for persistent fragment indexing,
+content locators and optional multimodal retrieval. SwiftyToys uses its own
+Swift/Windows implementation and inbox Windows APIs. No DigUp code, assets,
+llama.cpp binary or Apple framework is distributed.

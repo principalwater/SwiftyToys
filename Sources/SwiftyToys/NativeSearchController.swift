@@ -14,6 +14,7 @@ final class NativeSearchController {
         self.preferences = preferences; self.action = action
     }
     func toggle() throws {
+        NativeSearchLibraryActivity.touch()
         if panel == nil {
             panel = try NativeSearchWindow(onQuery: { [weak self] query in
                 guard let self, let panel = self.panel else { return }
@@ -109,6 +110,7 @@ private final class NativeSearchService: @unchecked Sendable {
         _ = try NativeThread(name: "SwiftyToys Search") { self.run() }
     }
     func submit(query: String, generation: UInt64, preferences: SearchPreferences) {
+        NativeSearchLibraryActivity.touch()
         state.withLock { $0.generation = generation; $0.query = Query(text: query, generation: generation, preferences: preferences); $0.preview = nil; $0.items = [:]; $0.answer = nil }
         SetEvent(event.raw)
     }
@@ -128,7 +130,12 @@ private final class NativeSearchService: @unchecked Sendable {
                         let item = state.items[pending.id] else { state.previewBusy = false; state.preview = nil; return nil }
                     state.preview = nil; return (item,pending.generation)
                 }) {
-                    let text = NativeSearchFiles.preview(request.0)
+                    var text = NativeSearchFiles.preview(request.0)
+                    if request.0.id.hasPrefix("library-fragment:"),
+                        let store = try? NativeSearchLibraryStore(databasePath: NativeSearchLibraryStore.databasePath(), readOnly: true),
+                        let fragment = try? store.fragment(itemID: request.0.id) {
+                        text = fragment.location + "\r\n\r\n" + fragment.text + "\r\n\r\n" + request.0.path
+                    }
                     if !self.cancelled(request.1) { _ = self.delivery.postPreview(generation:request.1,resultID:request.0.id,title:request.0.title,text:text) }
                 }
             }
@@ -188,9 +195,11 @@ private final class NativeSearchService: @unchecked Sendable {
             while WaitForSingleObject(event.raw, 90) == DWORD(WAIT_OBJECT_0), !cancelled() {}
             let job = state.withLock { state in let value = state.query; state.query = nil; return value }
             guard let query = job, !cancelled(query.generation) else { continue }
+            let libraryQuery = NativeSearchLibraryStore.parsedQuery(query.text)
+            let typedLibraryQuery = libraryQuery.kind != nil
             var answer = SearchAnswers.quick(query.text) ?? NativeSearchClock.quick(query.text)
-            let actions = SearchRanking.results(Self.actions, query: query.text, limit: 6)
-            publish(query,items:actions + SearchRanking.results(recent,query:query.text),answer:answer,status:"Searching…")
+            let actions = typedLibraryQuery ? [] : SearchRanking.results(Self.actions, query: query.text, limit: 6)
+            publish(query,items:actions + (typedLibraryQuery ? [] : SearchRanking.results(recent,query:query.text)),answer:answer,status:"Searching…")
             if answer == nil, let conversion = Self.currencyQuery(query.text) {
                 var status = "Currency reference rates"
                 do {
@@ -202,16 +211,24 @@ private final class NativeSearchService: @unchecked Sendable {
                 continue
             }
             if answer != nil, Double(query.text) == nil { publish(query,items:actions,answer:answer,status:"Quick result"); continue }
-            if GetTickCount64() - filesAt > 15000 || filesAt == 0 {
+            if !typedLibraryQuery, GetTickCount64() - filesAt > 15000 || filesAt == 0 {
                 let roots = [FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Downloads].compactMap { try? NativeSearchFiles.knownFolder($0) }
                 let collected = NativeSearchFiles.collect(roots:roots,cancelled:{ self.cancelled(query.generation) })
                 guard !cancelled(query.generation) else { continue }
                 files = collected; filesAt = GetTickCount64()
             }
-            var results = actions + SearchRanking.results(files,query:query.text,limit:24)
+            var results = actions + (typedLibraryQuery ? [] : SearchRanking.results(files,query:query.text,limit:24))
             publish(query,items:results,answer:answer,status:"Local filenames")
-            var status = "Apps and files"
-            if answer == nil {
+            var libraryStatus = "Local library"
+            if let indexed = try? NativeSearchProcess.library(query.text, cancelled: { self.cancelled(query.generation) }) {
+                var seen = Set<String>()
+                let libraryItems = indexed.items.filter { query.preferences.permitsLibraryPath($0.path) }
+                results = (actions + libraryItems + results).filter { seen.insert(($0.path.isEmpty ? $0.id : $0.path).lowercased()).inserted }
+                libraryStatus = indexed.status
+                publish(query,items:results,answer:answer,status:indexed.status)
+            }
+            var status = typedLibraryQuery ? libraryStatus : "Apps and files"
+            if answer == nil, !typedLibraryQuery {
                 if let apps = try? NativeSearchProcess.applications(query.text,cancelled:{ self.cancelled(query.generation) }) {
                     recent = apps
                     results = actions + apps + results.filter { $0.kind != "Action" }
@@ -219,41 +236,35 @@ private final class NativeSearchService: @unchecked Sendable {
                 }
             }
             guard !cancelled(query.generation) else { continue }
-            do {
+            if !typedLibraryQuery { do {
                 let indexed = try NativeSearchProcess.query(query.text, cancelled: { self.cancelled(query.generation) })
                 var seen = Set<String>()
                 results = (actions + indexed.items + results).filter { seen.insert(($0.path.isEmpty ? $0.id : $0.path).lowercased()).inserted }
                 recent += indexed.items; recent = Array(recent.prefix(64)); status = indexed.status
-            } catch { status = "Windows Index unavailable · local filenames and apps" }
+            } catch { status = "Windows Index unavailable · local filenames and apps" } }
             guard !cancelled(query.generation) else { continue }
             publish(query,items:results,answer:answer,status:status)
             if answer == nil, query.preferences.semantic, !query.text.isEmpty, !cancelled(query.generation) {
                 do {
-                    let candidates = NativeSearchFiles.collect(roots:[query.preferences.folder],maximum:64,textOnly:true,cancelled:{ self.cancelled(query.generation) })
-                    guard !cancelled(query.generation) else { continue }
-                    if candidates.isEmpty {
-                        publish(query, items: results, answer: answer,
-                            status: "Semantic folder has no supported text files. Add documents or choose another folder.")
-                        continue
-                    }
-                    let sorted = candidates.sorted { SearchRanking.score($0.title,query:query.text) > SearchRanking.score($1.title,query:query.text) }
-                    let documents = sorted.prefix(64).compactMap { item -> NativeEmbeddingDocument? in
-                        guard let bytes = try? NativeSearchFiles.readSnippet(item.path,maximum:4096), let text = NativeSearchFiles.decodeSnippet(bytes), !text.isEmpty else { return nil }
-                        return NativeEmbeddingDocument(id:item.id,title:item.title,text:text)
-                    }
-                    guard !documents.isEmpty else { publish(query,items:results,answer:answer,status:status + " · no local plain-text files in the semantic folder"); continue }
-                    publish(query,items:results,answer:answer,status:status + " · searching by meaning…")
-                    var matches: [NativeEmbeddingMatch] = []
-                    let lexical = results
-                    for start in stride(from:0,to:documents.count,by:4) {
-                        guard !cancelled(query.generation) else { break }
-                        matches += try NativeEmbedding.rank(query:query.text,documents:Array(documents[start..<min(start+4,documents.count)]),cancelled:{ self.cancelled(query.generation) })
-                        let meaningful = matches.filter { $0.score.isFinite }.sorted { $0.score > $1.score }.prefix(12).compactMap { match in candidates.first { $0.id == match.id } }
-                        var seen = Set<String>()
-                        results = (actions + meaningful + lexical).filter { seen.insert(($0.path.isEmpty ? $0.id : $0.path).lowercased()).inserted }
-                        publish(query,items:results,answer:answer,status:status + " · local semantic results · " + String(min(start+4,documents.count)) + " / " + String(documents.count))
-                    }
-                } catch { publish(query,items:results,answer:answer,status:status + " · semantic search unavailable; check the optional model in settings") }
+                    let model = try NativeSearchModelCatalog.descriptor(repositoryID: query.preferences.modelRepository)
+                    let semanticText = libraryQuery.text
+                    guard !semanticText.isEmpty else { continue }
+                    publish(query,items:results,answer:answer,status:status + " · searching the local library by meaning…")
+                    let vector = try NativeEmbedding.queryVector(semanticText, model: model, cancelled: { self.cancelled(query.generation) })
+                    let semantic = try NativeSearchProcess.library(query.text,
+                        namespace: NativeSearchLibraryRuntime.namespace(preferences: query.preferences, model: model),
+                        vector: vector, cancelled: { self.cancelled(query.generation) })
+                    var seen = Set<String>()
+                    let libraryItems = semantic.items.filter { query.preferences.permitsLibraryPath($0.path) }
+                    results = (actions + libraryItems + results).filter { seen.insert(($0.path.isEmpty ? $0.id : $0.path).lowercased()).inserted }
+                    publish(query,items:results,answer:answer,status:semantic.status + (semantic.items.isEmpty
+                        ? " · no saved semantic matches; check Index status" : " · semantic matches"))
+                } catch {
+                    let detail: String
+                    if case WindowsError.unsupported(let message) = error { detail = String(message.prefix(240)) }
+                    else { detail = "Semantic search is unavailable; check the optional model and Index status in settings." }
+                    publish(query,items:results,answer:answer,status:status + " · " + detail)
+                }
             }
         }
     }

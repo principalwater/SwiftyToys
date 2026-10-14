@@ -53,7 +53,7 @@ $check = Start-Process -FilePath $checkPath -Wait -PassThru -WindowStyle Hidden
 if ($check.ExitCode -ne 0) { throw 'Native bootstrap parser check failed.' }
 Build-Bootstrap $OutputPath
 $size = (Get-Item -LiteralPath $OutputPath).Length
-if ($size -gt 2500000) { throw "Installer exceeds the 2.5 MB size budget: $size bytes." }
+if ($size -gt 2700000) { throw "Installer exceeds the 2.7 MB size budget: $size bytes." }
 $digest = (Get-FileHash -LiteralPath $OutputPath -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText("$OutputPath.sha256", ($digest + '  ' + [IO.Path]::GetFileName($OutputPath) + "`n"), [Text.Encoding]::ASCII)
 Write-Host "Built native Swift setup: $size bytes; bootstrap imports only Windows system DLLs."

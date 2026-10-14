@@ -66,53 +66,114 @@ Japan is an alias for Tokyo. Other names are ordinary search queries.
 
 ## Optional local semantic search
 
-Enable semantic search only after choosing a local folder and explicitly
-downloading the optional model on the Search tile after accepting the linked
-component licenses. Download, cancellation,
-removal and status checks run on a cold worker. Missing or incompatible components
-leave basic search available. Downloaded files are not reported as inference-ready
-until the worker has passed its tokenizer, embedding and retrieval checks.
-The selected folder contains your documents, not model weights: downloaded
-components are stored separately. An empty folder needs readable text files
-before it can produce semantic results; settings and Search explain this state.
-The optional component requires Windows 10 version 1903 or newer and a compatible
-x64 runtime/CPU; basic search remains independent of it.
+The **Local library** indexes all available drive-letter fixed/removable local
+disks by default. Choose additional folders, exclusions or folder-only scope on
+the Search tile. Pause keeps saved results available; Rebuild removes only the
+derived index. System folders, development caches, private agent/credential
+folders, hidden/system files, network paths, reparse points and offline/cloud
+placeholders are excluded. Unlettered mount points are not traversed.
 
-The pinned text-only EmbeddingGemma 2 ONNX model, tokenizer and Microsoft runtime
-occupy about 370 MB after installation. A fresh download transfers about 398 MB,
-including the runtime package; staging temporarily needs additional disk space.
-Downloads use pinned sizes/hashes, and the runtime also requires a trusted
-Microsoft signature before loading.
+The persistent Windows SQLite database stores file metadata, extracted fragments
+and model-specific vectors. Changed files are requeued; completed directory
+enumeration removes missing entries. Interrupted or inaccessible directories are
+not treated as empty. Native change notifications queue affected directories;
+overflow requests a rescan. No full disk traversal runs for each query.
 
-Semantic search considers up to 64 readable plain-text files discovered in the
-selected folder, within the bounded local traversal. Hidden/system entries,
-linked folders/files, network paths and offline files are excluded. UTF-8 and
-BOM-marked UTF-16 are decoded. Each file contributes at most a 4 KB excerpt;
-query/document inputs are right-truncated to 128 tokens including model prefixes
-and special tokens. Matching text beyond those bounds is not examined. This is
-not whole-document PDF/Office semantic indexing or an unlimited folder index.
+| Content | Native handling |
+| --- | --- |
+| Text and source code | UTF-8/BOM UTF-16 fragments; bounded reads and line locators. |
+| Office and filtered documents | Installed Windows IFilter handlers; coverage depends on available filters. |
+| PDF | Windows PDF pages rendered with software WARP, then Windows OCR; one-based page locators. |
+| Images | Windows Imaging Component, EXIF orientation and installed Windows OCR languages; optional image embeddings. |
+| Audio | Media Foundation decodes 30-second mono segments; optional audio embeddings match recording content without a transcript. |
+| Video | Media Foundation samples frames and audio with time locators; optional image/audio embeddings. |
 
-The worker ranks four-document batches and publishes results progressively.
-It caches document vectors and the most recent query vector while alive; a new
-query still needs query inference. CPU inference is sequential, with one intra-op
-and one inter-op thread and spinning disabled. The private child unloads after
-60 seconds without a request; each request has a 30-second deadline. A newer
-query or dismissal requests cancellation, and stale responses cannot update the
-panel. The UI thread does not wait for model inference.
+Use `code:`, `pdf:`, `image:` (or `photo:`), `audio:` and `video:` before a query
+to restrict library matches. Preview shows the matched text and page/line/time
+locator; opening uses the registered application. Filename matches remain
+available when content extraction or a codec is unavailable.
 
-Controlled local checks measured about 7.7 seconds for a short cold request,
-under 1 ms for an identical cached repeat, about 5.1 seconds for two 128-token
-documents, and about 16.3 seconds for eight. Active-worker cancellation checks
-completed in approximately 125–157 ms. These samples are not performance guarantees
-for other hardware or storage. A full 64-file pass was not timed. First preparation
-can be slow: roughly two minutes for 64 uncached files is an estimate from these
-samples, not a measured folder pass or deadline. Basic results remain available
-before semantic batches finish. Plain-text preview runs independently of model
-work, so a preview request need not wait for semantic batches.
+Indexing is paced: at most 128 metadata entries or about 40 ms per two-second
+slice. Heavy extraction/inference waits for 30 seconds without user input,
+10 seconds without Search activity, no foreground fullscreen window and no
+Windows Battery Saver. It runs in a background-priority owned child, one content
+slice or vector per step. User activity cancels heavy work while retaining
+completed data. A native provider that stalls inside a call is stopped by the
+supervisor's 60-second request deadline; cancellation does not kill other apps.
+The child has a 1,536 MiB private-commit ceiling. Cold model loading also checks
+available physical memory and commit: about 768 MiB for MiniLM, 1,280 MiB for
+Gemma text, or 2,304 MiB for Gemma with media. Ongoing work requires 512 MiB of
+headroom. Low-memory work waits and releases sessions; it does not mark files as
+permanently failed. These safeguards do not make large models suitable for every
+low-memory computer. Basic search remains independent of model preparation.
 
-Local query/document text is exchanged with the owned child process. Runtime
-telemetry is disabled before processing it. The model ranks text similarity; it
-does not generate answers, execute instructions in documents or fetch web results.
+Limits are explicit: 200,000 files, 400,000 fragments and a 1 GiB database.
+PDF batches contain four pages (up to 5,000 pages); audio/video continue in
+bounded slices. Video samples three frames five seconds apart, with overlapping
+30-second soundtrack windows; a missing codec is reported instead of inventing
+content. Text reads stop at 1 MiB or 64 fragments of about 2,048 characters.
+Text/Office/PDF/image files above 256 MiB are excluded from extraction; audio/video
+files stream without that file-size cap. Decoded images are at most 2,048 pixels
+on the longest edge, and video frames above four megapixels are excluded.
+Coverage can be partial. Queries stream
+top results with a 150 ms cooperative budget and report incomplete coverage;
+large libraries may return partial matches. OS I/O can exceed a cooperative
+budget, so disposable query children also have a hard deadline.
+
+Enable semantic search and explicitly download a model after accepting its
+component licenses. **EmbeddingGemma 2** remains recommended: text model,
+tokenizer and signed Microsoft runtime occupy about 370 MB (roughly 398 MB fresh
+transfer). Its optional image/audio encoders add about 535 MB. **MiniLM** is a
+text-only alternative with about 90 MB of model weights; it shares the runtime.
+Staging temporarily needs more disk space. Neither model is bundled in Setup.
+
+The editable model picker searches public Hugging Face metadata only when
+requested. Compatibility checks support the pinned Gemma conversion and standard
+uncased six-layer BERT/MiniLM ONNX models with mean pooling, 384 dimensions,
+30,522 vocabulary entries and Apache 2.0 licensing. Other architectures, gated
+repositories, remote code, custom operators and external graph files are rejected
+with an explanation. A selected revision and asset hashes are retained locally;
+switching models invalidates vectors without discarding extracted text.
+
+Document/media vectors are prepared in the background, then persisted. Typing a
+semantic query requires only query inference and an index lookup. Indexed text
+is split into lossless windows fitting the model's 128-token limit; the original
+fragment remains available for exact strings spanning window boundaries. Gemma
+vectors have 128 dimensions, MiniLM 384. Images/video use the upstream-supported
+70-soft-token preprocessing budget; detailed text is handled separately by OCR.
+CPU inference uses one intra-op/inter-op thread with spinning disabled. The query
+child unloads after 60 seconds without requests and has a 30-second request
+deadline. New input/dismissal cancels obsolete work; basic results arrive first.
+Initial indexing and cold model loading can take time on older hardware. Source
+freshness uses volume identity, size and modification time rather than hashing
+every file. Rebuild if content was replaced while preserving those attributes.
+
+Media preprocessing uses the upstream-supported 70-soft-token budget for both
+images and video: at most 630 raw 16-by-16 RGB patches with three-by-three
+pooling. A square image produces 576 real patches and 64 features. Padding,
+position IDs and the encoder hashes are part of the media index namespace;
+changing that pipeline invalidates its vectors. Audio uses 16 kHz mono PCM,
+periodic Hann windows, a magnitude FFT and the upstream 128-band HTK mel
+processor. No transcript or generated caption is substituted for raw media.
+
+An owned synthetic fixture with the signed CPU runtime passed image/text color,
+video-feature and 30-second tone/text retrieval checks inside a 1,536 MiB native
+job. In that one run, image vectors took about 9–11 seconds, the full audio
+window about 27 seconds, and peak private commit was about 638 MiB. Peak working
+set reached about 1,157 MiB. These figures include model caches, differ from
+UI idle memory, and are not a broad corpus or hardware performance guarantee.
+Each production step handles one vector; the 60-second deadline can still skip
+a difficult file. Native synthetic extraction checks also cover PCM audio,
+timestamped video with row orientation, PDF software rendering and installed OCR.
+Six non-square gradient/checkerboard comparisons against the upstream Pillow
+processor matched patch layout, padding, masks and positions, with at most one
+byte of pixel difference. This does not establish exact parity for arbitrary images.
+
+Content, vectors and search queries stay local. Hugging Face receives model IDs
+and download requests, never document paths or search text. Hashes and the
+Microsoft runtime signature are checked before loading; runtime telemetry is
+disabled. The model compares meaning and media content; it does not generate
+answers, execute document instructions or supply currency rates.
 
 ## Interface and licenses
 

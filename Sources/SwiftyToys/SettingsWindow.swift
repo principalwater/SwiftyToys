@@ -97,6 +97,7 @@ final class SettingsWindow {
     private let command: (Int, [String]) throws -> String
     private var searchPreferences = SearchPreferences()
     private var searchModelStatus = SearchModelStatus(text:"Optional model is not downloaded. Basic search works without it.",busy:false,downloaded:false)
+    private var searchLibraryText = "The local library is waiting to start."
     private var highContrast = false
     private var background: HBRUSH?
     private var white: HBRUSH?
@@ -317,6 +318,26 @@ final class SettingsWindow {
                 guard !IsWindowEnabled(install) else { throw WindowsError.unsupported("Blocked virtualization enabled Homebrew.") }
                 renderPage()
             }
+            if page == 9, let combo = controls[823], let download = controls[812],
+                let license = controls[821], let media = controls[839] {
+                let selected = NativeSearchModelDescriptor.miniLM.repositoryID
+                setText(combo, selected)
+                updateSearchModel(.init(text: "Fixture ready", busy: false, downloaded: true,
+                    repositoryID: selected, modelIDs: NativeSearchModelCatalog.builtIns.map(\.repositoryID)))
+                guard text(823) == selected, SendMessageW(combo, UINT(CB_GETCOUNT), 0, 0) == 2,
+                    !IsWindowEnabled(download), !IsWindowEnabled(media) else {
+                    throw WindowsError.unsupported("Editable model catalog lost selection, media compatibility or license gating.")
+                }
+                setText(combo, NativeSearchModelDescriptor.recommended.repositoryID)
+                updateSearchModel(.init(text: "Fixture ready", busy: false, downloaded: true,
+                    repositoryID: NativeSearchModelDescriptor.recommended.repositoryID))
+                SendMessageW(license, UINT(BM_SETCHECK), WPARAM(BST_CHECKED), 0)
+                SendMessageW(media, UINT(BM_SETCHECK), WPARAM(BST_CHECKED), 0)
+                updateSearchModel(searchModelStatus)
+                guard IsWindowEnabled(download) else { throw WindowsError.unsupported("Missing media encoders could not be requested.") }
+                SendMessageW(window, UINT(WM_COMMAND), WPARAM(823 | Int(CBN_EDITCHANGE) << 16), LPARAM(Int(bitPattern: combo)))
+                guard !checked(821), !IsWindowEnabled(download) else { throw WindowsError.unsupported("Changing models retained license acceptance.") }
+            }
         }
         }
         page = 1; renderPage(); update(brightness: 68)
@@ -366,8 +387,8 @@ final class SettingsWindow {
     }
 
     private func captureDraft() {
-        draftText[page] = [218, 230, 231, 232, 233, 303, 305, 307, 317, 348, 351, 806].reduce(into: [:]) { values, id in if controls[id] != nil { values[id] = text(id) } }
-        draftChecks[page] = [219, 315, 346, 405, 422, 423, 801, 803].reduce(into: [:]) { values, id in if controls[id] != nil { values[id] = checked(id) } }
+        draftText[page] = [218, 230, 231, 232, 233, 303, 305, 307, 317, 348, 351, 806, 823, 831].reduce(into: [:]) { values, id in if controls[id] != nil { values[id] = text(id) } }
+        draftChecks[page] = [219, 315, 346, 405, 422, 423, 801, 803, 822, 839].reduce(into: [:]) { values, id in if controls[id] != nil { values[id] = checked(id) } }
         draftSelections[page] = [216, 341, 343, 345, 355, 404, 459].reduce(into: [:]) { values, id in if let control = controls[id] { values[id] = Int(SendMessageW(control, UINT(CB_GETCURSEL), 0, 0)) } }
         pageOffsets[page] = scrollOffset
         if page == 2 { draftRuleSelection = selectedRule }
@@ -497,11 +518,30 @@ final class SettingsWindow {
     }
     func updateSearchModel(_ value: SearchModelStatus) {
         searchModelStatus = value
+        searchModelStatus.modelIDs = []
+        if !value.modelIDs.isEmpty, let field = controls[823] {
+            let current = text(823)
+            SendMessageW(field, UINT(CB_RESETCONTENT), 0, 0)
+            for name in value.modelIDs {
+                _ = withWideString(name) { SendMessageW(field, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0))) }
+            }
+            setText(field, current)
+        }
         if let label = controls[808] { setText(label,localization.text(value.text)) }
-        if let button = controls[812] { EnableWindow(button,!value.busy && !value.downloaded && checked(821)) }
+        if let media = controls[839] {
+            let compatible = text(823) == NativeSearchModelDescriptor.recommended.repositoryID
+            if !compatible { SendMessageW(media, UINT(BM_SETCHECK), WPARAM(BST_UNCHECKED), 0) }
+            EnableWindow(media, !value.busy && compatible)
+        }
+        let selectedReady = value.repositoryID == text(823) && value.downloaded
+        if let button = controls[812] { EnableWindow(button,!value.busy && (!selectedReady || (checked(839) && !value.mediaDownloaded)) && checked(821)) }
         if let button = controls[813] { EnableWindow(button,value.busy) }
         if let button = controls[814] { EnableWindow(button,!value.busy) }
         if let button = controls[815] { EnableWindow(button,!value.busy) }
+    }
+    func updateSearchLibrary(_ text: String) {
+        searchLibraryText = text
+        if let label = controls[841] { setText(label, localization.text(text)) }
     }
     private func tileState(_ page: Int) -> String {
         switch page {
@@ -758,23 +798,37 @@ final class SettingsWindow {
             label("Cmd + Space opens Search with the Mac keyboard preset. You can customize the Open search action on the Keyboard tile.",802,300,274,650,60)
             button("Open Search",811,300,345,200)
             check("Enable local semantic search",803,300,410,650,on:searchPreferences.semantic)
-            label("Optional EmbeddingGemma 2 adds matching by meaning. Text stays on this PC. It does not generate answers or currency rates.",804,300,454,650,66)
-            label("Folder containing your documents",805,300,535,520,24)
-            _ = control("EDIT",searchPreferences.folder,806,300,570,520,34,style:DWORD(WS_TABSTOP | ES_AUTOHSCROLL))
-            button("Browse…",816,838,570,112)
-            label("Choose a local folder containing text documents. Model weights are stored separately. Search considers up to 64 files progressively; hidden and linked files are excluded.",807,300,621,650,66)
-            label(searchModelStatus.text,808,300,706,650,84)
-            label("Optional components use the Microsoft Windows ML Runtime terms and Apache 2.0. Read these licenses before downloading.",818,300,806,650,66)
-            button("Runtime license",819,300,886,240)
-            button("Model license",820,560,886,220)
-            check("I accept the Microsoft runtime terms and Apache 2.0 model license",821,300,944,650,on:false)
-            button("Download optional model",812,300,1008,280)
-            button("Cancel download",813,600,1008,170)
-            button("Remove model",814,790,1008,160)
-            label("About 370 MB on disk; download is optional. The model uses one CPU thread only when asked and unloads after inactivity.",809,300,1064,650,66)
-            button("Save search settings",810,300,1140,280)
-            button("Refresh model status",815,600,1140,260)
-            button("Status details",817,300,1200,180)
+            label("A persistent local library combines exact text and meaning. Your files stay on this PC. Use code:, pdf:, image:, audio: or video: to narrow results.",804,300,454,650,66)
+            check("Automatically include all available local drives",822,300,535,650,on:searchPreferences.allLocalDrives)
+            label("Additional folders · one per line",805,300,587,520,24)
+            _ = control("EDIT",searchPreferences.folder,806,300,621,520,72,style:DWORD(WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL))
+            button("Browse…",816,838,621,112)
+            label("Excluded folders · one per line",830,300,717,650,24)
+            _ = control("EDIT",searchPreferences.exclusions,831,300,751,650,72,style:DWORD(WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL))
+            label("System, cache, linked, cloud-only and credential files are excluded. Heavy content analysis waits for idle time; indexing can pause and resume.",807,300,849,650,66)
+            label(searchLibraryText,841,300,929,650,72)
+            button(searchPreferences.indexPaused ? "Resume indexing" : "Pause indexing",840,300,1018,220)
+            button("Index status",842,540,1018,180)
+            button("Rebuild library",843,740,1018,210)
+            label("Embedding model · Hugging Face repository ID",824,300,1087,650,24)
+            combo(NativeSearchModelCatalog.builtIns.map(\.repositoryID),823,300,1121,650,editable:true)
+            if let field = controls[823] { setText(field,searchPreferences.modelRepository) }
+            button("Find models",826,300,1178,180)
+            button("Check compatibility",827,500,1178,230)
+            button("Model card",828,750,1178,200)
+            label("Recommended: EmbeddingGemma 2. Other models need a supported native ONNX/tokenizer adapter; incompatible models receive an explanation.",829,300,1244,650,66)
+            check("Include image, audio and video encoders · about 535 MB extra",839,300,1325,650,on:searchPreferences.media)
+            label(searchModelStatus.text,808,300,1381,650,84)
+            button("Runtime license",819,300,1484,240)
+            button("Model license",820,560,1484,220)
+            check("I accept the Microsoft runtime terms and the selected model license",821,300,1542,650,on:false)
+            button("Download selected model",812,300,1606,280)
+            button("Cancel download",813,600,1606,170)
+            button("Remove model",814,790,1606,160)
+            label("Models run in bounded native workers. The basic app stays small; weights are downloaded separately and remain optional.",809,300,1662,650,66)
+            button("Save search settings",810,300,1738,280)
+            button("Refresh model status",815,600,1738,260)
+            button("Status details",817,300,1798,180)
             updateSearchModel(searchModelStatus)
             if !preview { _ = try? command(815,[]) }
         default:
@@ -959,7 +1013,11 @@ final class SettingsWindow {
                 return 0
             }
             if id == 502, notification == Int(CBN_SELCHANGE) { updateHomebrewAvailability(); return 0 }
-            if id == 821, notification == Int(BN_CLICKED) { updateSearchModel(searchModelStatus); return 0 }
+            if (id == 821 || id == 839), notification == Int(BN_CLICKED) { updateSearchModel(searchModelStatus); return 0 }
+            if id == 823, notification == Int(CBN_EDITCHANGE) || notification == Int(CBN_SELCHANGE) {
+                if let check = controls[821] { SendMessageW(check, UINT(BM_SETCHECK), WPARAM(BST_UNCHECKED), 0) }
+                updateSearchModel(searchModelStatus); return 0
+            }
             if id == 244, notification == Int(BN_CLICKED) {
                 brightnessControlBusy(false)
                 if !preview {
@@ -1009,14 +1067,34 @@ final class SettingsWindow {
             do {
                 if id == 810 {
                     searchPreferences.enabled = checked(801); searchPreferences.semantic = checked(803); searchPreferences.folder = text(806)
-                    status(try command(810,[searchPreferences.enabled ? "1" : "0",searchPreferences.semantic ? "1" : "0",searchPreferences.folder]))
+                    searchPreferences.allLocalDrives = checked(822); searchPreferences.exclusions = text(831)
+                    searchPreferences.modelRepository = text(823); searchPreferences.media = checked(839)
+                    status(try command(810,[searchPreferences.enabled ? "1" : "0",searchPreferences.semantic ? "1" : "0",searchPreferences.folder,
+                        searchPreferences.allLocalDrives ? "1" : "0", searchPreferences.exclusions,
+                        searchPreferences.modelRepository, searchPreferences.media ? "1" : "0"]))
                     return 0
                 }
                 if (811...815).contains(id) {
                     if id == 812, !checked(821) { throw WindowsError.unsupported("Read and accept the component licenses before downloading.") }
-                    status(try command(id,[])); return 0
+                    status(try command(id,[text(823),checked(839) ? "1" : "0"])); return 0
                 }
-                if id == 816 { if let path = try NativeSearchFolderPicker.choose(owner:window), let field = controls[806] { setText(field,path) }; return 0 }
+                if id == 816 { if let path = try NativeSearchFolderPicker.choose(owner:window), let field = controls[806] { let existing = text(806); setText(field,existing.isEmpty ? path : existing + "\r\n" + path) }; return 0 }
+                if id == 826 || id == 827 { status(try command(id,[text(823)])); return 0 }
+                if id == 828 || id == 820 {
+                    let id = text(823)
+                    guard NativeSearchModelCatalog.validRepositoryID(id) else { throw WindowsError.unsupported("Enter a model ID in owner/model form.") }
+                    try shellOpen("https://huggingface.co/" + id); return 0
+                }
+                if id == 840 || id == 842 || id == 843 {
+                    status(try command(id,[]))
+                    if id == 840 {
+                        searchPreferences.indexPaused.toggle()
+                        if let control = controls[840] {
+                            setText(control, searchPreferences.indexPaused ? "Resume indexing" : "Pause indexing")
+                        }
+                    }
+                    return 0
+                }
                 if id == 817 { _ = withWideString(searchModelStatus.text) { value in withWideString("Optional search model") { MessageBoxW(window,value,$0,UINT(MB_OK | MB_ICONINFORMATION)) } }; return 0 }
                 if id == 819 || id == 820 {
                     let root = executablePath().split(separator:"\\").dropLast().joined(separator:"\\")

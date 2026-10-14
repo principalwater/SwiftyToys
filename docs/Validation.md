@@ -1,4 +1,51 @@
-# Validation snapshot: 0.1.18 Search cancellation and semantic readiness
+# Validation snapshot: 0.1.19 persistent Search library
+
+2026-10-14. The complete Swift 6.4.1 package has a static-runtime executable of
+8,290,304 bytes, SHA-256
+`681bed8f6e262d52ffee75a51e2d01dca984b56d894f764e521ef44888fc8323`.
+All 41 portable tests and all 33 frozen-package native checks pass. Native checks
+cover the model catalog, persistent SQLite store/scanner/watchers, extraction,
+worker protocol, deadlines, scope changes, existing input/display policies and UI.
+
+The actual owned-process supervisor fixture verifies committed progress, retained
+change notifications across child replacement, malformed-message rejection, hard
+IPC deadline cleanup, paused exclusion pruning and derived-only reset. Source
+files survive reset. Query-side scope checks reject stale exact and semantic
+library matches before publication, without filtering independent Shell/Index providers.
+
+Search material ownership passed 20 reopen cycles: exact owned HWND/descendant
+and GDI cleanup, zero retained sources and a fixed process USER envelope. Temporary
+owned children and a counted memory DC prove the checks detect retained resources
+and then verify their cleanup. The observed USER range is 16–17; this aggregate
+counter does not prove absence of COM, GPU or private-memory leaks. Native query,
+painting, Unicode/IME, accessibility, high contrast and unchanged-layout checks pass.
+
+Real Gemma 2 and MiniLM CPU inference, query-vector IPC, ranking, cancellation,
+model switching and held-file lease release pass with verified downloaded assets.
+The media pipeline passes synthetic image/text color and audio/text tone retrieval
+under a native 1,536 MiB job limit; image/video features and a full 30-second audio
+window are exercised. Native extraction checks include PDF software rendering,
+OCR/image orientation, PCM/video time locators, UTF-16 and FFT reference values.
+Six private image preprocessing comparisons have exact layout/padding/masks with
+at most one byte of pixel difference. These checks establish no general corpus
+quality, exact upstream parity or weakest-hardware timing guarantee.
+
+The live samples use the same frozen production pipeline before the final
+fixture-only GDI control correction; their executable hash, timings and memory
+limits are in [Performance.md](Performance.md). Models and media encoders are
+optional downloads, excluded from the installer. Media Foundation entry points
+load lazily from System32, retaining readable missing-component errors. No display,
+driver, power or physical input configuration is changed by these tests.
+
+The complete native Setup installs with exit code 0. Its installed executable
+matches the frozen-package hash above; all five preference-file states are
+preserved. Installed info reports 0.1.19 / Swift 6.4.1, DDC/CI off and physical
+backlight 100%. The setup payload contains 39 files, no model weights or runtime
+shell scripts; decoded-payload/privacy and bootstrap parser checks pass. Short
+installed resident, watchdog and library observations are recorded separately in
+Performance.md; physical Search feedback remains an additional check.
+
+## Previously verified 0.1.18 Search cancellation and semantic readiness
 
 2026-10-13. The official Swift 6.4.1 release candidate is 7,628,800 bytes with
 static Swift runtime linkage. All 41 portable tests and 28 native checks pass.

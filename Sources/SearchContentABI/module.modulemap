@@ -1,0 +1,4 @@
+module SearchContentABI [system] {
+  header "SearchContentABI.h"
+  export *
+}

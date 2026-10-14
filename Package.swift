@@ -19,10 +19,11 @@ var dependencies: [Package.Dependency] = []
     targets += [
         .systemLibrary(name: "WindowsDisplayABI", path: "Sources/WindowsDisplayABI"),
         .systemLibrary(name: "SearchIndexABI", path: "Sources/SearchIndexABI"),
+        .systemLibrary(name: "SearchContentABI", path: "Sources/SearchContentABI"),
         .systemLibrary(name: "SearchXamlABI", path: "Sources/SearchXamlABI"),
         .systemLibrary(name: "EmbeddingABI", path: "Sources/EmbeddingABI"),
         .executableTarget(
-            name: "SwiftyToys", dependencies: ["BrightnessCore", "KeyboardCore", "SearchCore", "WindowsDisplayABI", "SearchIndexABI", "SearchXamlABI", "EmbeddingABI", .product(name: "PageMemory", package: "SwiftOSPrimitives")],
+            name: "SwiftyToys", dependencies: ["BrightnessCore", "KeyboardCore", "SearchCore", "WindowsDisplayABI", "SearchIndexABI", "SearchContentABI", "SearchXamlABI", "EmbeddingABI", .product(name: "PageMemory", package: "SwiftOSPrimitives")],
             linkerSettings: [
                 .linkedLibrary("user32"), .linkedLibrary("gdi32"),
                 .linkedLibrary("shell32"), .linkedLibrary("dxva2"), .linkedLibrary("hid"),
@@ -34,6 +35,11 @@ var dependencies: [Package.Dependency] = []
                 .linkedLibrary("wevtapi"), .linkedLibrary("powrprof"),
                 .linkedLibrary("winhttp"),
                 .linkedLibrary("oleacc"), .linkedLibrary("shlwapi"),
+                .linkedLibrary("query"), .linkedLibrary("mfuuid"),
+                .linkedLibrary("windowscodecs"),
+                .linkedLibrary("d3d11"), .linkedLibrary("windows.data.pdf"),
+                .linkedLibrary("normaliz"),
+                .linkedLibrary("shcore"),
                 .linkedLibrary("bcrypt"), .linkedLibrary("wintrust"), .linkedLibrary("crypt32"),
             ]),
     ]

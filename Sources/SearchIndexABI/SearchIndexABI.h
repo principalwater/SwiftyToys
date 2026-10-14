@@ -7,6 +7,27 @@
 #include <shlwapi.h>
 #include <stddef.h>
 
+// SQLite C ABI declarations, dynamically resolved from the Windows System32 DLL.
+typedef struct sqlite3 sqlite3;
+typedef struct sqlite3_stmt sqlite3_stmt;
+typedef void (*STSqliteDestructor)(void *);
+typedef int (*STSqliteOpen)(const char *, sqlite3 **, int, const char *);
+typedef int (*STSqliteClose)(sqlite3 *);
+typedef int (*STSqlitePrepare)(sqlite3 *, const char *, int, sqlite3_stmt **, const char **);
+typedef int (*STSqliteStep)(sqlite3_stmt *);
+typedef int (*STSqliteFinalize)(sqlite3_stmt *);
+typedef int (*STSqliteBindText)(sqlite3_stmt *, int, const char *, int, STSqliteDestructor);
+typedef int (*STSqliteBindInt64)(sqlite3_stmt *, int, long long);
+typedef int (*STSqliteBindBlob)(sqlite3_stmt *, int, const void *, int, STSqliteDestructor);
+typedef const unsigned char *(*STSqliteColumnText)(sqlite3_stmt *, int);
+typedef long long (*STSqliteColumnInt64)(sqlite3_stmt *, int);
+typedef const void *(*STSqliteColumnBlob)(sqlite3_stmt *, int);
+typedef int (*STSqliteColumnBytes)(sqlite3_stmt *, int);
+typedef int (*STSqliteBusyTimeout)(sqlite3 *, int);
+typedef int (*STSqliteChanges)(sqlite3 *);
+typedef int (*STSqliteProgressCallback)(void *);
+typedef void (*STSqliteProgressHandler)(sqlite3 *, int, STSqliteProgressCallback, void *);
+
 // Read-only subset of the documented SearchAPI.h COM ABI. Unused SDK slots are
 // declarations only; exposing them as pointers prevents accidental index writes.
 typedef struct STSearchManager STSearchManager;
