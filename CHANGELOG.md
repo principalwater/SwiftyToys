@@ -1,5 +1,15 @@
 # Changelog
 
+## SwiftyToys 0.1.23 — 2026-10-14
+
+- Create Search controls and XAML on a dedicated native UI thread, keeping
+  cold initialization off the main control queue. The thread starts lazily and
+  waits for native events when idle.
+- Keep the framework on the same owner thread across Search settings/model
+  resets; acknowledge controller cleanup before proceeding with maintenance.
+- Coalesce rapid toggles and errors, reject obsolete command generations and
+  retain bounded, owner-thread shutdown without changing display/input settings.
+
 ## SwiftyToys 0.1.22 — 2026-10-14
 
 - Suspend background content/model indexing for the entire time Search is open,

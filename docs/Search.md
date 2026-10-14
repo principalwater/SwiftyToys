@@ -253,6 +253,13 @@ saving or hardware limitations. SwiftyToys preserves those system choices and
 uses native high-contrast colors. A material initialization failure leaves Search
 usable with an opaque surface.
 
+Search controls, COM and XAML share one dedicated native UI thread, started on
+the first request. Cold material creation does not run on the main control queue.
+The thread waits on Windows messages and an event; it has no idle polling timer.
+Settings/model resets acknowledge controller destruction on that owner thread
+and retain the framework there. Built-in commands return to the main thread
+through a bounded, generation-checked message path.
+
 The background and native controls use Windows sibling clipping, so Acrylic
 cannot draw into higher controls' visible regions. The OS framework remains
 loaded after Search is hidden; the source closes before

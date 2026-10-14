@@ -15,6 +15,12 @@ final class NativeSearchController {
     }
     func toggle() throws {
         NativeSearchLibraryActivity.touch()
+        try prepare()
+        guard let panel, let window = panel.window else { return }
+        if IsWindowVisible(window) { panel.hide() } else { try panel.show() }
+    }
+    /// Creates the panel on its owning UI thread without showing it or starting a query.
+    @discardableResult func prepare() throws -> HWND? {
         if panel == nil {
             panel = try NativeSearchWindow(onQuery: { [weak self] query in
                 guard let self, let panel = self.panel else { return }
@@ -36,8 +42,8 @@ final class NativeSearchController {
                 guard let self, let panel = self.panel else { return }; self.service?.invalidate(generation:panel.generation)
             }, onReveal: { [weak self] id in self?.reveal(id) })
         }
-        guard let panel, let window = panel.window else { return }
-        if IsWindowVisible(window) { panel.hide() } else { try panel.show() }
+        panel?.prepareMaterial()
+        return panel?.window
     }
     func dialogMessage(_ message: inout MSG) -> Bool { panel?.dialogMessage(&message) ?? false }
     private func activate(_ id: String) {
