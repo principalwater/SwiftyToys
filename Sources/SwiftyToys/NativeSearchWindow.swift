@@ -957,7 +957,7 @@ final class NativeSearchWindow {
         try panel.localization.select(LanguagePack(locale:"zz-ZZ",name:"Fixture",strings:[
             "Action":"Translated action","File":"Translated file","Application":"Translated app","Calculator":"Translated calculator","Website":"Translated web","Search the web":"Translated web title",
             "Sleep":"Translated sleep","Put this computer to sleep":"Translated subtitle","Apps and files":"Translated status",
-            "reference rates":"Translated suffix","Bank of Russia reference rates":"Translated bank","13.10.2026":"Wrong date","8 / 64":"Wrong count"
+            "reference rates":"Translated suffix","Frankfurter daily reference rates":"Translated bank","2026-10-13":"Wrong date","8 / 64":"Wrong count"
         ]),persist:false)
         let ownedAction=NativeSearchResult(id:"action:sleep",title:"Sleep",subtitle:"Put this computer to sleep",kind:"Action")
         let userFile=NativeSearchResult(id:"file",title:"Sleep",subtitle:"User text",kind:"File")
@@ -968,7 +968,7 @@ final class NativeSearchWindow {
         try expect(try accessibleName(list,child:2)=="Sleep. Translated file. User text" && accessibleName(list,child:3)=="Sleep. Translated app. User app text","file and app display names stay unchanged")
         try expect(try accessibleName(list,child:4)=="Translated web title. Translated web. Sleep","owned web label translates while query text stays raw")
         panel.reveal(); try expect(reveals==["file"],"Reveal rejects a result without a local item")
-        try expect(panel.text(15)=="Translated status · Translated suffix · 8 / 64" && panel.ownedParts("Bank of Russia reference rates · 13.10.2026 · 120 USD")=="Translated bank · 13.10.2026 · 120 USD","status and currency labels preserve counts dates and amounts")
+        try expect(panel.text(15)=="Translated status · Translated suffix · 8 / 64" && panel.ownedParts("Frankfurter daily reference rates · 2026-10-13 · 120 USD")=="Translated bank · 2026-10-13 · 120 USD","status and currency labels preserve counts dates and amounts")
         _=try panel.apply(NativeSearchSnapshot(generation:panel.generation,results:[calculation],status:"Calculated",quickAnswer:"4"))
         SendMessageW(edit,UINT(EM_SETSEL),0,0)
         try expect(panel.selected?.kind=="Calculator" && panel.copyAnswerFromEdit() && copies.last=="answer","translated calculation keeps raw callback kind and Copy behavior")

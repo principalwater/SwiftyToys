@@ -17,14 +17,36 @@ enum NativeSearchProcess {
     static func applications(_ query:String,cancelled:()->Bool) throws -> [SearchItem] {
         try SearchWire.decode(perform(query,operation:"--search-apps-worker",timeout:2000,cancelled:cancelled)).items
     }
-    static func rates(cancelled: () -> Bool) throws -> (ReferenceRates, cached: Bool) {
-        let fields = try StateJSON.decode(perform("",operation:"--search-rates-worker",timeout:6000,cancelled:cancelled))
-        guard let date = fields["date"]?.string, let cached = fields["cached"]?.bool else { throw WindowsError.unsupported("Invalid reference-rate result.") }
-        var rates: [String:Double] = [:]
-        for (key,value) in fields where key != "date" && key != "cached" {
-            guard let text = value.string, let rate = Double(text) else { throw WindowsError.unsupported("Invalid currency reference rate.") }; rates[key] = rate
+    static func rates(from: String, to: String, cancelled: () -> Bool) throws -> (ReferenceRates, cached: Bool) {
+        guard let from = ReferenceRates.currency(from), let to = ReferenceRates.currency(to) else {
+            throw WindowsError.unsupported("Choose two valid currency codes.")
         }
-        return (try ReferenceRates(date:date,rates:rates),cached)
+        let payload = StateJSON.encode(["from": .string(from), "to": .string(to)])
+        let response: [UInt8]
+        do {
+            response = try perform("", operation: "--search-rates-worker",
+                timeout: 6000, cancelled: cancelled, payload: payload)
+        } catch WindowsError.api(_, let code) where code == DWORD(ERROR_TIMEOUT) {
+            guard !cancelled() else { throw WindowsError.unsupported("Search cancelled.") }
+            if let previous = NativeSearchRates.cached(from: from, to: to) { return (previous, true) }
+            throw WindowsError.unsupported("Daily reference rates timed out. Retry when online.")
+        }
+        let fields = try StateJSON.decode(response)
+        if fields.count == 1, let error = fields["error"]?.string, error.utf8.count <= 256 {
+            throw WindowsError.unsupported(error)
+        }
+        guard fields.count == 6, let date = fields["date"]?.string,
+            fields["base"]?.string == from, fields["quote"]?.string == to,
+            fields["source"]?.string == ReferenceRates.sourceName,
+            let text = fields["rate"]?.string, let rate = Double(text),
+            let cached = fields["cached"]?.bool else {
+            throw WindowsError.unsupported("Invalid reference-rate pair result.")
+        }
+        let result = try ReferenceRates(date: date, base: from, rates: [to: rate])
+        guard let age = result.ageInDays(onDate: NativeSearchRates.today()), (-1...7).contains(age) else {
+            throw WindowsError.unsupported("The daily reference rate is stale or the system date is incorrect.")
+        }
+        return (result, cached)
     }
     static func library(_ query: String, namespace: String = "", vector: [Float] = [],
         cancelled: () -> Bool) throws -> (items: [SearchItem], status: String) {
@@ -69,6 +91,9 @@ enum NativeSearchProcess {
             if WaitForSingleObject(process.raw, 25) == DWORD(WAIT_OBJECT_0) { break }
             if cancelled() || GetTickCount64() >= deadline {
                 TerminateJobObject(job.raw, DWORD(ERROR_CANCELLED)); _ = WaitForSingleObject(process.raw, 1000)
+                if operation == "--search-rates-worker", !cancelled() {
+                    throw WindowsError.api("Daily reference rates timed out", DWORD(ERROR_TIMEOUT))
+                }
                 throw WindowsError.unsupported(cancelled() ? "Search cancelled." : "Windows Search is taking too long. Local filename results remain available.")
             }
         }
@@ -123,10 +148,24 @@ enum NativeSearchProcess {
             folder[folder.index(after: last)...].utf8.count == 36,
             folder[folder.index(after: last)...].allSatisfy({ $0.isHexDigit || $0 == "-" }), NativeSearchFiles.validFolder(folder) else { throw WindowsError.unsupported("Invalid search job folder.") }
         if rates {
-            let current = try NativeSearchRates.current()
-            var fields: [String:StateField] = ["date":.string(current.0.date),"cached":.bool(current.cached)]
-            for (currency,value) in current.0.rates { fields[currency] = .string(String(value)) }
-            try NativeFiles.write(StateJSON.encode(fields),to:folder + "\\result.bin")
+            let pair = try StateJSON.decode(NativeFiles.read(folder + "\\query.txt", maximum: 128))
+            guard pair.count == 2, let from = pair["from"]?.string, let to = pair["to"]?.string,
+                ReferenceRates.currency(from) == from, ReferenceRates.currency(to) == to else {
+                throw WindowsError.unsupported("Invalid reference-rate pair request.")
+            }
+            let fields: [String: StateField]
+            do {
+                let current = try NativeSearchRates.current(from: from, to: to)
+                guard let rate = current.0.rates[to] else { throw SearchMathError.invalid }
+                fields = ["date": .string(current.0.date), "base": .string(from), "quote": .string(to),
+                    "rate": .string(String(rate)), "source": .string(ReferenceRates.sourceName),
+                    "cached": .bool(current.cached)]
+            } catch WindowsError.unsupported(let message) {
+                fields = ["error": .string(String(message.prefix(256)))]
+            } catch {
+                fields = ["error": .string("Daily reference rates are unavailable. Connect to the internet and retry.")]
+            }
+            try NativeFiles.write(StateJSON.encode(fields), to: folder + "\\result.bin")
             return 0
         }
         if library {

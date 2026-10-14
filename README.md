@@ -92,8 +92,10 @@ surface respects system transparency/high-contrast fallbacks.
 Use arrows, Enter, Cmd+C, Space for preview, Cmd+Enter to reveal a file, and Esc to
 close. Apps and Windows-indexed content use native Shell/Search APIs, with local
 filename fallback. Calculations, units and supported world clocks work offline.
-Currency conversions such as `120 usd rub` use dated Bank of Russia reference
-rates; cached results show their source date. Web search opens only when selected.
+Currency and unit defaults follow Windows regional settings; explicit targets win.
+`120 USD` converts to the region's currency using dated Frankfurter reference rates,
+with bounded offline caching. Numbers and clocks follow the user's formats.
+Web search opens only when selected.
 
 The persistent **Local library** covers local drives with exclusions, pause and
 incremental background indexing. It reads text/code, installed document filters,
@@ -117,7 +119,7 @@ Portable BrightnessCore/KeyboardCore/SearchCore tests use Swift Testing; native 
 ./scripts/build.ps1
 ./scripts/test.ps1
 ./scripts/package.ps1
-./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.19-win-x64
+./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.20-win-x64
 ```
 
 [Contributor guide](CONTRIBUTING.md) · [Packaging](docs/Packaging.md) ·

@@ -1,5 +1,16 @@
 # Changelog
 
+## SwiftyToys 0.1.20 — 2026-10-14
+
+- Derive Search currency defaults from the Windows country/region, independently
+  of UI language; preserve regional number, grouping, date/time and measurement preferences.
+- Respect explicit conversion targets, local currency symbols, Unicode decimal
+  digits and distinct US/imperial gallons; return same-currency amounts without networking.
+- Replace the country-specific currency table with dated Frankfurter pair quotes,
+  bounded caching and readable unsupported, invalid-response and offline errors.
+- Keep native regional discovery on the Search worker; preserve Swift 6.4.1,
+  static runtime, display/input recovery and optional model behavior.
+
 ## SwiftyToys 0.1.19 — 2026-10-14
 
 - Add a persistent native Windows SQLite Search library across local drives,
