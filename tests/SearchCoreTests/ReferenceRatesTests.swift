@@ -20,17 +20,24 @@ struct ReferenceRatesTests {
   @Test func differentBaseAndNewCurrencyCodesDoNotNeedAnAllowlist() throws {
     let rates = try ReferenceRates(date: "2026-10-14", base: "CHF", rates: ["KES": 140])
     #expect(try rates.convert(ConversionQuery("2 CHF KES"))?.value == "280 KES")
-    for code in ["USD", "GBP", "JPY", "RUB", "INR", "KES", "XAF", "BHD", "ZMW"] {
+    for code in ["USD", "GBP", "JPY", "RUB", "INR", "KES", "XAF", "BHD", "ZMW", "CUP"] {
       #expect(ReferenceRates.currency(code.lowercased()) == code)
     }
     #expect(ReferenceRates.currency("dollars") == "USD")
     #expect(ReferenceRates.currency("€") == "EUR")
-    for unit in ["min", "gal", "cup", "sec", "day", "lbs", "kib", "mib", "gib", "bar", "psi"] {
+    for unit in ["min", "gal", "sec", "day", "lbs", "kib", "mib", "gib", "bar", "psi"] {
       #expect(ReferenceRates.currency(unit) == nil)
     }
     for malformed in ["US", "USDD", "US1", "../", "u sd", "USD\n"] {
       #expect(ReferenceRates.currency(malformed) == nil)
     }
+  }
+
+  @Test func currencyCodesThatOverlapUnitWordsRemainValidQuotes() throws {
+    #expect(ReferenceRates.currency("cup") == "CUP")
+    let rates = try ReferenceRates(date: "2026-10-14", base: "CUP", rates: ["USD": 0.05])
+    #expect(rates.convert(.init(amount: 120, from: "CUP", to: "USD"))?.value == "6 USD")
+    #expect(rates.convert(.init(amount: 6, from: "USD", to: "CUP"))?.value == "120 CUP")
   }
 
   @Test func exactGregorianDatesAndAgeAcrossLeapBoundaries() throws {

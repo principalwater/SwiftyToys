@@ -57,6 +57,8 @@ Search reads Windows NLS regional settings independently of the application's UI
 language. It preserves user number separators, grouping and measurement preferences,
 including Unicode decimal digits. No built-in country-to-currency table or RU default
 is used. A location without a known currency requires an explicit target.
+Explicit uppercase ISO codes and currency symbols take priority over unit aliases:
+`CUP` means Cuban pesos, while `cup` remains a volume unit.
 
 Currency conversion uses [Frankfurter daily reference rates](https://frankfurter.dev/),
 with the source date shown in the user's format. Only the requested ISO currency pair

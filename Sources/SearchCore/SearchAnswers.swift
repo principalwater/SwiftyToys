@@ -148,7 +148,7 @@ public struct UnitConversion: Sendable, Equatable {
         }
     }
     public init(_ text: String, region: SearchRegion = .invariant) throws {
-        let parts = try ConversionQuery(text, region: region)
+        let parts = try ConversionQuery(text, region: region, unitOnly: true)
         guard let from = Self.unit(parts.from) else { throw SearchMathError.invalid }
         let defaultTarget: String
         switch (from.group, region.usesUSMeasurement) {
@@ -180,11 +180,15 @@ public struct ConversionQuery: Sendable, Equatable {
     public let to: String
     public init(amount:Double,from:String,to:String) { self.amount = amount; self.from = from; self.to = to }
     public init(_ text: String, region: SearchRegion = .invariant) throws {
+        try self.init(text, region: region, unitOnly: false)
+    }
+    fileprivate init(_ text: String, region: SearchRegion, unitOnly: Bool) throws {
         guard text.utf8.count <= 1024 else { throw SearchMathError.invalid }
-        var text = String(text.lowercased().drop(while: \.isWhitespace).reversed().drop(while: \.isWhitespace).reversed())
+        var text = String(text.drop(while: \.isWhitespace).reversed().drop(while: \.isWhitespace).reversed())
         let symbols = ([region.currencySymbol.lowercased(), "$", "€", "£", "¥", "￥", "₽"])
             .filter { !$0.isEmpty }.sorted { $0.count > $1.count }
-        let prefix = symbols.first { text.hasPrefix($0) }
+        let folded = text.lowercased()
+        let prefix = symbols.first { folded.hasPrefix($0) }
         let symbol = prefix.flatMap { region.currencySymbolCode($0) }
         if let prefix {
             guard symbol != nil else { throw SearchMathError.invalid }
@@ -195,6 +199,16 @@ public struct ConversionQuery: Sendable, Equatable {
         let number = try region.numberPrefix(characters)
         guard let amount = Double(number.text), amount.isFinite else { throw SearchMathError.invalid }
         var words = String(characters[number.end...]).split(whereSeparator: \.isWhitespace).map(String.init)
+        if unitOnly {
+            // An explicit currency spelling wins over a colliding unit alias, such as CUP versus cup.
+            guard symbol.flatMap(ReferenceRates.currency) == nil, words.allSatisfy({ word in
+                region.currencySymbolCode(word).flatMap(ReferenceRates.currency) == nil
+                    && !(word.utf8.count == 3
+                    && word.utf8.allSatisfy { (65...90).contains($0) }
+                    && ReferenceRates.currency(word) != nil)
+            }) else { throw SearchMathError.invalid }
+        }
+        words = words.map { $0.lowercased() }
         var index = 0
         while index + 1 < words.count {
             if ["us", "uk", "imp", "imperial"].contains(words[index]),

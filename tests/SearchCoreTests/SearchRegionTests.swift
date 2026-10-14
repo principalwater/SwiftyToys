@@ -144,4 +144,23 @@ struct SearchRegionTests {
     #expect(try ConversionQuery("1234.5 kg", region: ungrouped).amount == 1234.5)
     #expect(throws: SearchMathError.self) { try ConversionQuery("1,234.5 kg", region: ungrouped) }
   }
+
+  @Test func explicitCurrencySpellingWinsOverLowercaseUnitAlias() throws {
+    let local = SearchRegion(currencyCode: "CUP", currencySymbol: "$", usesUSMeasurement: false)
+    #expect(try UnitConversion("1 cup L", region: local).value == 0.2365882365)
+    #expect(SearchAnswers.quick("1 cup L", region: local)?.value == "0.236588237 L")
+    #expect(try UnitConversion("1 MIN SEC", region: local).value == 60)
+    #expect(try UnitConversion("1 GAL L", region: local).value == 3.785411784)
+    for query in ["120 CUP", "120CUP", "120 CUP in L", "1 L to CUP", "$120", "120 $"] {
+      #expect(throws: SearchMathError.self) { try UnitConversion(query, region: local) }
+      #expect(SearchAnswers.quick(query, region: local) == nil)
+    }
+    #expect(try ConversionQuery("120CUP", region: local).from == "cup")
+    #expect(try ConversionQuery("$120", region: local).from == "cup")
+    #expect(try ConversionQuery("120 $", region: local).from == "cup")
+    let symbol = SearchRegion(currencyCode: "CUP", currencySymbol: "CU$")
+    #expect(SearchAnswers.quick("CU$120", region: symbol) == nil)
+    #expect(try ConversionQuery("CU$120", region: symbol).from == "cup")
+    #expect(try UnitConversion("1 Cup L", region: local).value == 0.2365882365)
+  }
 }

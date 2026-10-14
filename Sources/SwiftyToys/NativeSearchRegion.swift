@@ -89,7 +89,7 @@ enum NativeSearchRegion {
   static func currencyQuery(_ text: String, context: Context) -> ConversionQuery? {
     guard let parsed = try? ConversionQuery(text, region: context.region),
       let from = ReferenceRates.currency(parsed.from) else { return nil }
-    let explicitISO = text.split(whereSeparator: \.isWhitespace).contains { String($0) == from }
+    let explicitISO = text.split(whereSeparator: { !$0.isLetter }).contains { String($0) == from }
     guard context.knownCurrencies.contains(from) || from == context.region.currencyCode || explicitISO else { return nil }
     if !parsed.to.isEmpty, ReferenceRates.currency(parsed.to) == nil { return nil }
     let target = parsed.to.isEmpty ? context.region.currencyCode : ReferenceRates.currency(parsed.to)
@@ -187,6 +187,18 @@ enum NativeSearchRegion {
     }
     let british = current(localeName: "en-GB", userOverrides: false)
     let russian = current(localeName: "ru-RU", userOverrides: false)
+    let symbolFixture = Context(localeName: "en-GB",
+      region: SearchRegion(currencyCode: "CUP", currencySymbol: "$"),
+      knownCurrencies: knownCurrencies, userOverrides: false)
+    guard currencyQuery("120 CUP GBP", context: british)?.from == "CUP",
+      currencyQuery("120CUP", context: british)?.from == "CUP",
+      currencyQuery("$120", context: symbolFixture)?.from == "CUP",
+      currencyQuery("120 USD", context: symbolFixture)?.to == "CUP",
+      SearchAnswers.quick("120 CUP", region: british.region) == nil,
+      SearchAnswers.quick("$120", region: symbolFixture.region) == nil,
+      SearchAnswers.quick("1 cup in ml", region: british.region) != nil else {
+      throw WindowsError.unsupported("ISO currency or local symbol collided with a volume unit.")
+    }
     var sample = SYSTEMTIME(); sample.wHour = 13; sample.wMinute = 5
     let americanTime = time(&sample, localeName: "en-US", userOverrides: false)
     let britishTime = time(&sample, localeName: "en-GB", userOverrides: false)
