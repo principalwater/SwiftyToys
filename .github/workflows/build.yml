@@ -137,7 +137,7 @@ jobs:
             if ($process.ExitCode -ne 0) { throw "Native Search check failed: $check" }
           }
       - name: Build and validate native Swift setup package
-        shell: powershell
+        shell: pwsh
         run: |
           ./scripts/package.ps1
           $package = @(Get-ChildItem ./artifacts -Directory -Filter 'SwiftyToys-*-win-x64')

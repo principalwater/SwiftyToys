@@ -118,6 +118,7 @@ apps. The model compares meaning; it does not generate answers or exchange rates
 ## Build and contribute
 
 Use the official Swift toolchain pinned in [.swift-version](.swift-version), MSVC and Windows SDK.
+Package releases with PowerShell 7 for maximum ZIP compression.
 Portable BrightnessCore/KeyboardCore/SearchCore tests use Swift Testing; native interop is header-only.
 
 ```powershell
