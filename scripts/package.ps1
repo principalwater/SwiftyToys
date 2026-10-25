@@ -1,4 +1,4 @@
-param([string]$Version = '0.1.23', [string]$SwiftVersion)
+param([string]$Version = '0.1.24', [string]$SwiftVersion)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 if ($Version -notmatch '^\d+\.\d+(?:\.\d+)?(?:-[a-z0-9.-]+)?$') { throw 'Invalid package version.' }
@@ -18,6 +18,17 @@ foreach ($document in @('Validation.md', 'Performance.md')) {
     if ($history -ge 0) {
         $contents = $contents.Substring(0, $history) + "Full history: [repository record](https://github.com/principalwater/SwiftyToys/blob/main/docs/$document).`n"
         [IO.File]::WriteAllText($documentPath, $contents, [Text.UTF8Encoding]::new($false))
+    }
+}
+# Keep the complete release history online, just as with validation history.
+$changelogPath = Join-Path $packageDirectory 'CHANGELOG.md'
+$contents = [IO.File]::ReadAllText($changelogPath)
+$firstRelease = $contents.IndexOf('## SwiftyToys ', [StringComparison]::Ordinal)
+if ($firstRelease -ge 0) {
+    $history = $contents.IndexOf('## SwiftyToys ', $firstRelease + 1, [StringComparison]::Ordinal)
+    if ($history -ge 0) {
+        $contents = $contents.Substring(0, $history) + "Full history: [release notes](https://github.com/principalwater/SwiftyToys/blob/main/CHANGELOG.md).`n"
+        [IO.File]::WriteAllText($changelogPath, $contents, [Text.UTF8Encoding]::new($false))
     }
 }
 $archivePath = "$packageDirectory.zip"

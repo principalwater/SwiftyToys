@@ -1,3 +1,31 @@
+# Validation snapshot: 0.1.24 replacement-display recovery
+
+2026-10-25. All 67 portable tests and nine relevant native checks pass, including
+storage/recovery, brightness policy, display admission, ABI, worker waits, installer,
+Shell integration, settings controls and driver matching. Synthetic recovery files
+cover a disconnected target, connected/global recovery exclusion, conflicting
+baselines, atomic deferral and duplicate checkpoints after interruption.
+
+The static Swift 6.4.1 executable is 8,490,496 bytes, SHA-256
+`4bed6e7b741e7a736f6043cba2fa8ca1fabfea3340085e139c30b77b202b95bd`.
+The complete native Setup installs with exit code 0. The old monitor's calibration
+is preserved byte-for-byte while the selected replacement successfully binds.
+
+On Apple Thunderbolt Display (A1407), direct Thunderbolt and Windows 10 Boot Camp,
+the existing Windows Monitor Configuration API reports 0...65535. Requested 100%,
+90% and 80% read back as 65535, 58982 and 52428. Independent native HID reads of
+brightness feature report 0x10 match the latter two values. Turning hardware mode
+off restores 65535; turning it on returns to 52428. Existing Microsoft HID drivers
+remain installed; the unmatched old Apple display filter is not forced onto it.
+
+Computer use reads the installed native controls, but screen capture/coordinate
+geometry fail. Hardware changes are tested through the resident's CLI. The user
+confirms that the slider and F1/F2 work and the cursor dims with the screen.
+Reconnecting the old monitor and other Apple display models have not been physically checked.
+There is no new polling timer, display renderer, cursor manipulation or input change.
+
+## Previous release evidence
+
 # Validation snapshot: 0.1.23 Search UI isolation
 
 2026-10-14. All 67 portable tests and 36 frozen-executable native checks pass.
@@ -15,8 +43,6 @@ states, DDC off and physical brightness 100%. Current measurements and
 computer-use limits are in [Performance.md](Performance.md).
 There is no new timer, dependency or display/input configuration. Cold Search
 initialization still costs time; these checks cannot exclude every microfreeze.
-
-## Previous release evidence
 
 # Validation snapshot: 0.1.22 Search foreground indexing guard
 

@@ -31,6 +31,7 @@ func testStorage() throws {
         throw WindowsError.api("Create test directory", GetLastError())
     }
     defer { if let native = try? NativeFiles.windowsPath(directory) { _ = withWideString(native) { RemoveDirectoryW($0) } } }
+    try testDeferredRecoveryStorage(directory: directory)
     let path = directory + "\\state-🍎.json"
     guard try NativeFiles.exists(path) == false else { throw WindowsError.unsupported("Test file already exists.") }
     defer { try? NativeFiles.remove(path) }

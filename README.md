@@ -62,6 +62,8 @@ requests 100% as an emergency reset.
 
 Supports one independent **physical SDR output**. HDR, clones and virtual outputs
 are excluded; fullscreen/calibration software can compete for the output.
+Apple Thunderbolt Display hardware brightness is checked on a direct Thunderbolt
+connection using the native Windows API, without an extra display driver.
 [Supported hardware and remaining checks](docs/Requirements.md) · [Validation](docs/Validation.md).
 
 ## Mac shortcuts
@@ -125,7 +127,7 @@ Portable BrightnessCore/KeyboardCore/SearchCore tests use Swift Testing; native 
 ./scripts/build.ps1
 ./scripts/test.ps1
 ./scripts/package.ps1
-./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.23-win-x64
+./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.24-win-x64
 ```
 
 [Contributor guide](CONTRIBUTING.md) · [Packaging](docs/Packaging.md) ·

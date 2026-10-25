@@ -64,6 +64,17 @@ func testRecoveryStateMapping() throws {
         }
     }
     let hardware = ColorLease(owner: 1, started: 1, displayID: "physical", backend: "hardware", amdID: nil, brightness: 73, contrast: nil, gamma: nil)
+    for lease in [native, hardware] {
+        guard lease.canDefer(connectedIDs: ["replacement"]),
+            !lease.canDefer(connectedIDs: [lease.displayID]) else {
+            throw WindowsError.unsupported("Connected display recovery was deferred or replacement was blocked.")
+        }
+    }
+    let global = ColorLease(owner: 1, started: 1, displayID: "missing", backend: "compositor",
+        amdID: nil, brightness: nil, contrast: nil, gamma: nil)
+    guard !global.canDefer(connectedIDs: []) else {
+        throw WindowsError.unsupported("Global cursor recovery must finish before display replacement.")
+    }
     guard try ColorLease.decode(hardware.encoded()) == hardware else { throw WindowsError.unsupported("Hardware brightness recovery mapping failed.") }
     var invalidHardware = try StateJSON.decode(hardware.encoded())
     invalidHardware["brightness"] = .signed(-1)
@@ -100,5 +111,38 @@ func testRecoveryStateMapping() throws {
         level: try BrightnessLevel(75), device: "\\\\.\\DISPLAY1", backend: "native", connected: true)
     guard try DisplayState.decode(state.encoded()) == state else {
         throw WindowsError.unsupported("Display status mapping changed its schema.")
+    }
+}
+
+/// Synthetic files only; does not open a monitor or read the user's calibration.
+func testDeferredRecoveryStorage(directory: String) throws {
+    let lease = ColorLease(owner: 1, started: 1, displayID: "old/display:🍎", backend: "hardware",
+        amdID: nil, brightness: 73, contrast: nil, gamma: nil)
+    let source = directory + "\\active.json"
+    let destination = try ColorLease.deferredPath(displayID: lease.displayID, directory: directory)
+    defer { try? NativeFiles.remove(source); try? NativeFiles.remove(destination) }
+    guard destination != (try ColorLease.deferredPath(displayID: "new/display", directory: directory)) else {
+        throw WindowsError.unsupported("Different display recovery paths collided.")
+    }
+    let different = ColorLease(owner: 2, started: 2, displayID: lease.displayID, backend: "hardware",
+        amdID: nil, brightness: 40, contrast: nil, gamma: nil)
+    try NativeFiles.write(lease.encoded(), to: source)
+    try NativeFiles.write(different.encoded(), to: destination)
+    var rejected = false
+    do { try deferRecoveryFile(lease, from: source, to: destination) } catch { rejected = true }
+    guard rejected, try ColorLease.decode(NativeFiles.read(source)) == lease,
+        try ColorLease.decode(NativeFiles.read(destination)) == different else {
+        throw WindowsError.unsupported("Deferral overwrote another calibration.")
+    }
+    try NativeFiles.remove(destination)
+    try deferRecoveryFile(lease, from: source, to: destination)
+    guard try !NativeFiles.exists(source), try ColorLease.decode(NativeFiles.read(destination)) == lease else {
+        throw WindowsError.unsupported("Disconnected calibration was not preserved.")
+    }
+    // Retry after interruption with two identical checkpoints.
+    try NativeFiles.write(lease.encoded(), to: source)
+    try deferRecoveryFile(lease, from: source, to: destination)
+    guard try !NativeFiles.exists(source), try ColorLease.decode(NativeFiles.read(destination)) == lease else {
+        throw WindowsError.unsupported("Interrupted calibration deferral was not recoverable.")
     }
 }

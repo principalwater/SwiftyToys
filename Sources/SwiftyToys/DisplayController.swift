@@ -59,6 +59,7 @@ actor DisplayController {
     private var lastApplied: BrightnessLevel?
     private var recoveryConflict = false
     private var pendingRecovery: ColorLease?
+    private var recoveryOutputs: [String] = []
 
     init(settings: Settings) throws {
         executor = try DisplayExecutor()
@@ -145,6 +146,11 @@ actor DisplayController {
         }
         let outputs = try discoverDisplays()
         let eligible = outputs.filter { $0.isPhysical && !$0.isCloned && !$0.isHDR }
+        let recoverableIDs = eligible.map(\.id).sorted()
+        if recoveryOutputs != recoverableIDs {
+            try recoverDeferredOutputs(eligible)
+            recoveryOutputs = recoverableIDs
+        }
         var saved = settings.targetID
         if saved == nil, let legacy = settings.legacyTarget {
             guard let driver = try? AMDControl() else {
@@ -183,8 +189,11 @@ actor DisplayController {
                 return
             }
         }
-        // A reconnected target must first recover its original calibration.
-        guard try restoreAndRelease() else { return }  // Never overwrite a pending lease for another target.
+        // Preserve a disconnected target's calibration before binding its replacement.
+        if try !restoreAndRelease() {
+            guard try deferDisconnectedRecovery(outputs: outputs, expected: pendingRecovery) else { return }
+            pendingRecovery = nil
+        }
         if settings.backend == "hardware" {
             hardware = try HardwareBrightnessSession(output: selected)
         } else if settings.backend != "amd" {

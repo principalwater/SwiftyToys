@@ -17,6 +17,29 @@ for the resident and watchdog separately. CPU percent is relative to one core,
 not divided by this machine's 24 logical processors. Keep identical settings,
 foreground workload, startup state and sampling duration for comparisons.
 
+## 0.1.24 replacement-display recovery
+
+The fix adds no timer or periodic HID/DDC polling. Deferred calibration lookups
+run only when the eligible display topology changes; normal native brightness
+admission, coalescing, recovery and unchanged-level caching are retained.
+
+On the reference machine with Thunderbolt Display hardware brightness at 80%, a
+short background sample recorded resident CPU at 0.103% of one core, about 5.41 MiB
+private memory and 330–334 handles; the watchdog recorded no CPU increment and
+181 handles. This is an approximately 20-second observation, not a sustained leak
+test, GPU attribution or proof that every weaker machine will behave identically.
+
+An earlier sample overlapping open settings and computer-use diagnostics recorded
+8.02% resident CPU and 26.42% in the separate optional indexing worker. Neither
+showed monotonic memory/handle growth during that short interval. These different
+workloads are not a controlled before/after comparison. Screen capture failed, so
+visual smoothness was not established by automation.
+
+The static app is 8,490,496 bytes. The package includes current release notes and
+evidence, with links to full repository history; existing size budgets remain.
+
+## Previous release evidence
+
 ## 0.1.23 Search UI isolation
 
 Five process-cold API traces on this machine localized startup cost: XAML manager
@@ -62,8 +85,6 @@ all five preference-file states, DDC off and physical brightness 100%.
 
 Isolation does not eliminate the one-time Search initialization cost or establish
 absence of every system microfreeze, GPU latency or weakest-hardware performance.
-
-## Previous release evidence
 
 ## 0.1.22 visible Search guard
 

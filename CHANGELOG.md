@@ -1,5 +1,18 @@
 # Changelog
 
+## SwiftyToys 0.1.24 — 2026-10-25
+
+- Allow a selected replacement monitor to bind while the disconnected monitor's
+  original calibration remains safely saved in a separate recovery record.
+- Restore that calibration when its original physical display returns. Keep
+  connected-display failures, ownership conflicts and legacy cursor recovery blocking.
+- Add native storage checks for atomic deferral, conflicting baselines and retries
+  after interruption. No new driver, dependency or polling timer is added.
+- Validate Apple Thunderbolt Display hardware brightness through the existing
+  Windows Monitor Configuration API, with independent USB HID readback. No extra
+  Apple driver is required on the tested connection.
+- Include current release notes in downloads; retain full history in the repository.
+
 ## SwiftyToys 0.1.23 — 2026-10-14
 
 - Create Search controls and XAML on a dedicated native UI thread, keeping

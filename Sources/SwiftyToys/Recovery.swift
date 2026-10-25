@@ -108,6 +108,111 @@ struct ColorLease: Sendable, Equatable {
         try NativeFiles.remove(NativeFiles.path("scanout-lease.json"))
         return true
     }
+
+    static func deferredPath(displayID: String, directory: String) throws -> String {
+        var remaining = Array(displayID.utf8)[...]
+        let hash = try NativeDriverTrust.sha256 { buffer in
+            let count = min(buffer.count, remaining.count)
+            buffer.copyBytes(from: remaining.prefix(count))
+            remaining = remaining.dropFirst(count)
+            return count
+        }
+        let name = hash.map { ($0 < 16 ? "0" : "") + String($0, radix: 16) }.joined()
+        return directory + "\\display-recovery-" + name + ".json"
+    }
+
+    func canDefer(connectedIDs: [String]) -> Bool {
+        ["native", "amd", "hardware"].contains(backend) && !connectedIDs.contains(displayID)
+    }
+}
+
+/// Both files remain recoverable after interruption; never replace a different baseline.
+func deferRecoveryFile(_ lease: ColorLease, from source: String, to destination: String) throws {
+    guard try ColorLease.decode(NativeFiles.read(source)) == lease else {
+        throw WindowsError.unsupported("Recovery ownership changed; its saved state was preserved.")
+    }
+    if try NativeFiles.exists(destination) {
+        guard try ColorLease.decode(NativeFiles.read(destination)) == lease else {
+            throw WindowsError.unsupported("A different display calibration is already awaiting recovery.")
+        }
+        try NativeFiles.remove(source)
+    } else {
+        guard try withWideString(NativeFiles.windowsPath(source), { source in
+            try withWideString(NativeFiles.windowsPath(destination)) {
+                MoveFileExW(source, $0, DWORD(MOVEFILE_WRITE_THROUGH))
+            }
+        }) else { throw WindowsError.api("Preserve disconnected display calibration", GetLastError()) }
+    }
+}
+
+private func mayClaimRecovery(_ lease: ColorLease) throws -> Bool {
+    if lease.owner == GetCurrentProcessId() {
+        return try lease.started == processStartTicks(GetCurrentProcess())
+    }
+    guard let raw = OpenProcess(DWORD(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION), false, lease.owner) else {
+        let error = GetLastError()
+        if error == DWORD(ERROR_INVALID_PARAMETER) { return true }
+        throw WindowsError.api("Check display recovery owner", error)
+    }
+    let process = try OwnedHandle(raw)
+    return try processStartTicks(process.raw) != lease.started
+        || WaitForSingleObject(process.raw, 0) == DWORD(WAIT_OBJECT_0)
+}
+
+/// A replaced monitor must not block a new one, or lose its original calibration.
+func deferDisconnectedRecovery(outputs: [DisplayOutput], expected: ColorLease?) throws -> Bool {
+    guard let saved = try ColorLease.read(), expected == nil || saved == expected,
+        saved.canDefer(connectedIDs: outputs.map(\.id)), try mayClaimRecovery(saved)
+    else { return false }
+    try deferRecoveryFile(saved, from: NativeFiles.path("scanout-lease.json"),
+        to: ColorLease.deferredPath(displayID: saved.displayID, directory: NativeFiles.directory()))
+    Diagnostics.write("recovery: disconnected display calibration preserved for reconnection")
+    return true
+}
+
+/// Only connected outputs are looked up: no directory scan, timer or idle device polling.
+func recoverDeferredOutputs(_ outputs: [DisplayOutput]) throws {
+    let active = try ColorLease.read()
+    for output in outputs {
+        let path = try ColorLease.deferredPath(displayID: output.id, directory: NativeFiles.directory())
+        guard try NativeFiles.exists(path) else { continue }
+        let lease = try ColorLease.decode(NativeFiles.read(path))
+        guard lease.displayID == output.id, ["native", "amd", "hardware"].contains(lease.backend),
+            active?.displayID != lease.displayID, try mayClaimRecovery(lease),
+            try restoreLease(lease, outputs: outputs) else { continue }
+        guard try ColorLease.decode(NativeFiles.read(path)) == lease else {
+            throw WindowsError.unsupported("Deferred display recovery ownership changed.")
+        }
+        try NativeFiles.remove(path)
+        Diagnostics.write("recovery: reconnected display calibration restored")
+    }
+}
+
+private func restoreLease(_ lease: ColorLease, outputs: [DisplayOutput]) throws -> Bool {
+    guard let output = outputs.first(where: {
+        $0.id == lease.displayID && $0.isPhysical && !$0.isHDR && !$0.isCloned
+    }) else { return false }
+    if lease.backend == "amd" {
+        let control = try AMDControl()
+        guard let id = lease.amdID,
+            let amd = try control.enumerate().first(where: {
+                $0.legacyID == id && equalWindowsNames($0.device, output.device)
+            }), let brightness = lease.brightness, let contrast = lease.contrast
+        else { throw WindowsError.unsupported("Invalid AMD recovery state.") }
+        try control.set(amd, brightness: brightness, contrast: contrast)
+    } else if lease.backend == "hardware" {
+        guard let saved = lease.brightness.flatMap(DWORD.init(exactly:)) else {
+            throw WindowsError.unsupported("Invalid hardware recovery state.")
+        }
+        let session = try HardwareBrightnessSession(output: output)
+        try session.restoreSaved(saved)
+    } else {
+        guard let gamma = lease.gamma else { throw WindowsError.unsupported("Missing native recovery ramp.") }
+        let ramp = try GammaRamp(samples: gamma)
+        let session = try NativeGammaSession(output: output, emulateOwnership: true)
+        try session.restoreSaved(ramp)
+    }
+    return true
 }
 /// Called under the instance mutex before a new backend captures its baseline.
 @discardableResult
@@ -122,30 +227,7 @@ func recoverOutput(owner: UInt32? = nil, started: UInt64? = nil, expected: Color
             // Older releases hid the global cursor; new image-only leases never own it.
             try restoreSoftwareCursorVisibility()
         } else if lease.backend != "composition" {
-        let outputs = try discoverDisplays()
-        guard
-            let output = outputs.first(where: { $0.id == lease.displayID && $0.isPhysical && !$0.isHDR && !$0.isCloned }
-            )
-        else { return false }
-        if lease.backend == "amd" {
-            let control = try AMDControl()
-            guard let id = lease.amdID,
-                let amd = try control.enumerate().first(where: {
-                    $0.legacyID == id && equalWindowsNames($0.device, output.device)
-                }),
-                let brightness = lease.brightness, let contrast = lease.contrast
-            else { throw WindowsError.unsupported("Invalid AMD recovery state.") }
-            try control.set(amd, brightness: brightness, contrast: contrast)
-        } else if lease.backend == "hardware" {
-            guard let saved = lease.brightness.flatMap(DWORD.init(exactly:)) else { throw WindowsError.unsupported("Invalid hardware recovery state.") }
-            let session = try HardwareBrightnessSession(output: output)
-            try session.restoreSaved(saved)
-        } else {
-            guard let gamma = lease.gamma else { throw WindowsError.unsupported("Missing native recovery ramp.") }
-            let ramp = try GammaRamp(samples: gamma)
-            let session = try NativeGammaSession(output: output, emulateOwnership: true)
-            try session.restoreSaved(ramp)
-        }
+        guard try restoreLease(lease, outputs: discoverDisplays()) else { return false }
         }
         guard try ColorLease.remove(lease) else { return false }
         Diagnostics.write("recovery: original output color state restored")

@@ -35,6 +35,13 @@ or Apple.
   freeze reports; saved `compositor` preferences migrate to Automatic while retaining
   the DDC switch and brightness level. Windows retains native cursor rendering.
   Legacy composition/cursor-owning leases remain recoverable.
+  Selecting a replacement display preserves a disconnected monitor's calibration
+  separately, so it cannot block the new output. Reconnecting the original monitor
+  restores its own calibration; connected-display failures still retain recovery.
+  Apple Thunderbolt Display (A1407) over direct Thunderbolt was checked with hardware
+  brightness enabled: the native Windows monitor API controls its 16-bit backlight,
+  with matching USB HID readback. The tested connection needs no additional Apple
+  display driver. This does not establish support for other Apple display models.
   Ctrl+Alt+Shift+F10 requests 100% for emergency restoration. F1/F2 hold repetition
   follows Windows keyboard delay/speed; release, focus, device, session and power
   changes cancel repetition. No mouse-wheel interception is added.
