@@ -23,14 +23,16 @@ ICC reads, validation and import waits run on bounded background workers. Profil
 writes share the display executor and admission queue. Software brightness releases
 its calibration lease before a profile change; the hardware path keeps its existing
 backlight state. Registry notification uses a kernel wait only while the Brightness
-page is visible; there is no new periodic profile or ambient-sensor poll.
+page is visible; there is no periodic profile or ambient-sensor poll. Automatic
+backlight readback uses the existing three-second display tick only while the
+Overview, Brightness page or tray menu is visible; no extra timer or thread is added.
 
 Resolution notifications keep a valid same-target hardware-brightness cache.
 Resume, explicit refresh, changed binding and error recovery retain forced checks.
 Sleep capability queries run only on the existing background power worker.
 Language packs are capped at 64 KiB; settings/recovery retain their 32 KiB default.
 
-The static app is 8,594,432 bytes, 103,936 bytes above 0.1.24. The enforced ceilings
+The static app is 8,599,552 bytes, 109,056 bytes above 0.1.24. The enforced ceilings
 are 8.60 MB EXE, 3.55 MB ZIP and 2.7 MB Setup. This is a feature/correctness allowance,
 not a measured speedup or proof of behavior on every weaker machine. No new GPU
 rendering or cursor ownership is introduced.

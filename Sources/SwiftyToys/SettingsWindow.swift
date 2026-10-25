@@ -98,6 +98,7 @@ final class SettingsWindow {
     private var draftRuleSelection: Int?
     private var brightnessConfiguration: Settings?
     private var monitorAutomaticBrightness: Bool?
+    private var measuredBrightness = false
     private var modeBusy = false
     private var lastFocusedControl: Int?
     private let preview: Bool
@@ -226,10 +227,15 @@ final class SettingsWindow {
     }
     func update(brightness: Int) {
         guard pendingBrightness == nil, brightness != level else { return }
+        if let slider = controls[211], GetCapture() == slider { return }
         level = brightness
         if let label = controls[210] { setText(label, "\(brightness)%") }
         if let slider = controls[211] { SendMessageW(slider, UINT(TBM_SETPOS), 1, LPARAM(brightness)) }
         if page == 0, let tile = controls[121] { setText(tile, tileText(1)); InvalidateRect(tile, nil, false) }
+    }
+    var observesBrightness: Bool {
+        guard !preview, page == 0 || page == 1, let window else { return false }
+        return IsWindowVisible(window) && !IsIconic(window)
     }
     func updateScrolling(vertical: Bool, horizontal: Bool, result: String) {
         keyboard.reverseVertical = vertical; keyboard.reverseHorizontal = horizontal
@@ -246,11 +252,15 @@ final class SettingsWindow {
         updateBrightnessMode()
         if let tile = controls[121] { setText(tile, tileText(1)); InvalidateRect(tile, nil, false) }
     }
-    func updateAutomaticBrightness(_ enabled: Bool?) {
+    func updateAutomaticBrightness(_ enabled: Bool?, measured: Bool = false) {
         let mismatch = controls[252] != nil && checked(252) != (enabled == true)
-        guard monitorAutomaticBrightness != enabled || mismatch else { return }
+        guard monitorAutomaticBrightness != enabled || measuredBrightness != measured || mismatch else { return }
         monitorAutomaticBrightness = enabled
-        if let label = controls[209] { setText(label, localization.text("Display brightness")) }
+        measuredBrightness = measured
+        if let label = controls[209] {
+            setText(label, localization.text(enabled == true
+                ? (measured ? "Display brightness (automatic)" : "Brightness preference (automatic)") : "Display brightness"))
+        }
         if let control = controls[252] {
             SendMessageW(control, UINT(BM_SETCHECK), enabled == true ? WPARAM(BST_CHECKED) : WPARAM(BST_UNCHECKED), 0)
         }
@@ -687,14 +697,16 @@ final class SettingsWindow {
             }
         case 1:
             let settings = brightnessConfiguration
-            label("Display brightness", 209, 300, 168, 650, 25)
+            label(monitorAutomaticBrightness == true
+                ? (measuredBrightness ? "Display brightness (automatic)" : "Brightness preference (automatic)")
+                : "Display brightness", 209, 300, 168, 650, 25)
             label("\(level)%", 210, 300, 202, 300, 42, large: true)
             if let slider = control("msctls_trackbar32", "Brightness", 211, 300, 254, 650, 40, style: DWORD(WS_TABSTOP | TBS_AUTOTICKS)) {
                 SendMessageW(slider, UINT(TBM_SETRANGEMIN), 0, 0); SendMessageW(slider, UINT(TBM_SETRANGEMAX), 0, 100)
                 SendMessageW(slider, UINT(TBM_SETPOS), 1, LPARAM(level))
             }
             check("Hardware brightness (DDC/CI)", 244, 300, 318, 650, on: settings?.ddcEnabled ?? false)
-            check("Ambient-light sensor (monitor setting)", 252, 300, 356, 650, on: monitorAutomaticBrightness == true)
+            check("Automatic brightness", 252, 300, 356, 650, on: monitorAutomaticBrightness == true)
             label("", 248, 300, 394, 650, 42)
             label("Software compatibility", 247, 300, 444, 650, 25)
             combo(["Automatic", "Windows color controls", "AMD display controls"], 246, 300, 479, 450)

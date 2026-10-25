@@ -4,6 +4,16 @@ import BrightnessCore
 
 /// Pure mapping checks: never reads a local lease or calls a display API.
 func testRecoveryStateMapping() throws {
+    guard monitorBrightnessLevel(0, minimum: 0, maximum: 65535)?.percent == 0,
+        monitorBrightnessLevel(65535, minimum: 0, maximum: 65535)?.percent == 100,
+        monitorBrightnessLevel(49161, minimum: 0, maximum: 65535)?.percent == 75,
+        monitorBrightnessLevel(175, minimum: 100, maximum: 200)?.percent == 75,
+        monitorBrightnessLevel(UInt32.max / 2, minimum: 0, maximum: UInt32.max)?.percent == 50,
+        monitorBrightnessLevel(99, minimum: 100, maximum: 200) == nil,
+        monitorBrightnessLevel(201, minimum: 100, maximum: 200) == nil,
+        monitorBrightnessLevel(0, minimum: 0, maximum: 0) == nil else {
+        throw WindowsError.unsupported("Physical brightness readback scaling or validation failed.")
+    }
     guard monitorAutomaticBrightness(1, maximum: 2) == false,
         monitorAutomaticBrightness(2, maximum: 2) == true,
         monitorAutomaticBrightness(0, maximum: 2) == nil,
@@ -134,9 +144,18 @@ func testRecoveryStateMapping() throws {
     for enabled in [false, true] {
         var automatic = state
         automatic.automaticBrightness = enabled
-        guard try DisplayState.decode(automatic.encoded()) == automatic else {
+        automatic.hardwareLevel = try BrightnessLevel(100)
+        guard try DisplayState.decode(automatic.encoded()) == automatic,
+            automatic.level.percent == 75, automatic.displayedLevel.percent == 100 else {
             throw WindowsError.unsupported("Automatic brightness status mapping failed.")
         }
+    }
+    for invalid in [StateField.string("75"), .unsigned(101)] {
+        var fields = try StateJSON.decode(state.encoded())
+        fields["hardwareLevel"] = invalid
+        var rejected = false
+        do { _ = try DisplayState.decode(StateJSON.encode(fields)) } catch { rejected = true }
+        guard rejected else { throw WindowsError.unsupported("Invalid physical brightness status accepted.") }
     }
 }
 

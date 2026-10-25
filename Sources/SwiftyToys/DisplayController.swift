@@ -9,11 +9,14 @@ struct DisplayState: Sendable, Equatable {
     let backend: String
     let connected: Bool
     var automaticBrightness: Bool? = nil
+    var hardwareLevel: BrightnessLevel? = nil
+    var displayedLevel: BrightnessLevel { hardwareLevel ?? level }
     func encoded() -> [UInt8] {
         StateJSON.encode([
             "level": .unsigned(UInt64(level.percent)), "device": .string(device),
             "backend": .string(backend), "connected": .bool(connected),
             "automaticBrightness": automaticBrightness.map(StateField.bool) ?? .null,
+            "hardwareLevel": hardwareLevel.map { .unsigned(UInt64($0.percent)) } ?? .null,
         ])
     }
     static func decode(_ bytes: [UInt8]) throws -> Self {
@@ -25,8 +28,13 @@ struct DisplayState: Sendable, Equatable {
         guard automatic == nil || automatic == .null || automatic?.bool != nil else {
             throw WindowsError.unsupported("Invalid automatic brightness status.")
         }
+        let hardware = fields["hardwareLevel"]
+        guard hardware == nil || hardware == .null || hardware?.integer != nil else {
+            throw WindowsError.unsupported("Invalid physical brightness status.")
+        }
         return Self(level: try BrightnessLevel(percentage), device: device, backend: backend,
-            connected: connected, automaticBrightness: automatic?.bool)
+            connected: connected, automaticBrightness: automatic?.bool,
+            hardwareLevel: try hardware?.integer.map { try BrightnessLevel($0) })
     }
 }
 private final class NativeBackend {
@@ -64,6 +72,7 @@ actor DisplayController {
     private var exiting = false
     private var lastState: DisplayState?
     private var lastApplied: BrightnessLevel?
+    private var hardwareLevel: BrightnessLevel?
     private var recoveryConflict = false
     private var pendingRecovery: ColorLease?
     private var recoveryOutputs: [String] = []
@@ -92,6 +101,7 @@ actor DisplayController {
     @discardableResult
     private func restoreAndRelease() throws -> Bool {
         lastApplied = nil
+        hardwareLevel = nil
         var expected: ColorLease?
         var checkpointReady = false
         var cachedRestored = false
@@ -286,6 +296,12 @@ actor DisplayController {
     }
 
     func command(_ command: Int, value: Int = 0) throws -> DisplayState {
+        let relativeBase = command == 2 ? try hardware?.currentLevel() : nil
+        // An automatic adjustment makes a cached manual write an invalid reason to skip a user action.
+        if command == 1 || command == 2, hardware != nil {
+            lastApplied = nil
+            hardware?.invalidateBrightness()
+        }
         switch command {
         case 0: try apply(level)
         case 3:
@@ -327,13 +343,22 @@ actor DisplayController {
                 throw error
             }
         case 1: try apply(BrightnessLevel(max(0, min(100, value))))
-        case 2: try apply(level.adjusted(by: value))
+        case 2:
+            try apply((relativeBase ?? level).adjusted(by: value))
         default: break
         }
+        if let hardware {
+            if command != 4 || value == 1 {
+                hardwareLevel = nil
+                do { hardwareLevel = try hardware.currentLevel() }
+                catch { Diagnostics.write("physical brightness readback: \(error)") }
+            }
+        } else { hardwareLevel = nil }
         let state = DisplayState(
             level: level, device: output?.device ?? "",
             backend: output == nil ? "unavailable" : backendName,
-            connected: output != nil, automaticBrightness: hardware?.automaticBrightness)
+            connected: output != nil, automaticBrightness: hardware?.automaticBrightness,
+            hardwareLevel: hardwareLevel)
         if state != lastState {
             try NativeFiles.write(state.encoded(), to: NativeFiles.path("display-status.json"))
             lastState = state

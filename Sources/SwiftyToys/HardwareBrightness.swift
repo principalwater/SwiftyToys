@@ -14,6 +14,12 @@ func monitorAutomaticBrightness(_ value: DWORD, maximum: DWORD) -> Bool? {
     return value == 2
 }
 
+func monitorBrightnessLevel(_ value: DWORD, minimum: DWORD, maximum: DWORD) -> BrightnessLevel? {
+    guard maximum > minimum, (minimum...maximum).contains(value) else { return nil }
+    let span = UInt64(maximum - minimum)
+    return try? BrightnessLevel(Int((UInt64(value - minimum) * 100 + span / 2) / span))
+}
+
 private func readMonitorAutomaticBrightness(_ handle: HANDLE?) -> Bool? {
     var value: DWORD = 0, maximum: DWORD = 0
     guard GetVCPFeatureAndVCPFeatureReply(handle, 0x66, nil, &value, &maximum) else { return nil }
@@ -102,6 +108,19 @@ final class HardwareBrightnessSession {
         if value != applied { try write(value) }
     }
     func invalidate() { applied = nil; automaticBrightness = nil }
+    func invalidateBrightness() { applied = nil }
+    /// Reads the actual backlight without changing the user's manual preference or sensor mode.
+    func currentLevel() throws -> BrightnessLevel {
+        try withDDCLock {
+            var low: DWORD = 0, current: DWORD = 0, high: DWORD = 0
+            guard GetMonitorBrightness(handle, &low, &current, &high),
+                low == minimum, high == maximum,
+                let level = monitorBrightnessLevel(current, minimum: low, maximum: high) else {
+                throw WindowsError.unsupported("The monitor's current brightness could not be read. Its saved preference is unchanged.")
+            }
+            return level
+        }
+    }
     func restore() throws { try restoreSaved(original, automatic: originalAutomaticBrightness) }
     func restoreSaved(_ value: DWORD, automatic: Bool? = nil) throws {
         let previousMode = automatic ?? originalAutomaticBrightness

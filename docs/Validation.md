@@ -7,8 +7,8 @@ display queue, settings UI, ABI, worker waits, installer, Shell integration,
 cursor policy, native mouse and driver matching. All 67 portable tests pass with
 Swift 6.4.1. Both bundled language packs pass their native UI/storage checks.
 
-The packaged static executable is 8,594,432 bytes, SHA-256
-`e7bd6130581bb781b836ebbdb1167e8f0e321093a456f555256087d54ab807d2`.
+The static executable is 8,599,552 bytes, SHA-256
+`2a37a74b8bde2b79d58713d5aecd9c4ff20baf5092588f80288b9a039ac38148`.
 The enforced ceilings are 8.60 MB EXE, 3.55 MB ZIP and 2.7 MB Setup. No Swift DLL,
 third-party runtime, screen renderer, cursor replacement or sensor polling is added.
 
@@ -29,12 +29,18 @@ may be necessary. Keyboard-driven GUI profile switching and unchanged brightness
 were also verified. Computer-use screenshot capture and coordinate geometry
 remain unavailable.
 
-Physical Thunderbolt Display brightness was previously confirmed with the slider
-and F1/F2, including cursor dimming. VCP 0x66 reads back as 1/2 for sensor off/on;
-this verifies the enable bit only. The operator confirms no actual room-light
-response, including after off/on and a manual 95% setting. Automatic brightness
-remains unresolved; the menu describes the monitor setting. No unknown vendor
-reports, driver substitutions or extra software sensor loop are used.
+Physical Thunderbolt Display brightness was confirmed with the slider and F1/F2,
+including cursor dimming. VCP 0x66 reads back as 1/2 for sensor off/on, which alone
+verifies only the enable bit. A subsequent 65-second read-only USB HID test recorded
+backlight falling from about 75% to 74% after the sensor was covered, rising to 100%
+under a flashlight and then falling gradually. The operator confirms no manual
+brightness changes during that test. The small dimming response and the app's
+previously fixed manual percentage obscured the working native automatic mode.
+Separate Windows Monitor Configuration and HID reads agree on current brightness.
+The UI now reports hardware readback separately from the manual preference;
+synthetic status, range/overflow and native UI checks pass. No vendor report writes,
+driver substitutions or replacement sensor algorithm are used. Vendor data with
+unknown units is not treated as illuminance.
 
 Current native power capabilities omit S1/S2/S3/Modern Standby; ACPI tables lack
 _S3_. Earlier successful S3 entry/resume events exist, and the same OpenCore route

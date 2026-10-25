@@ -14,14 +14,18 @@
   state. Keep Hibernate distinct; never alter the power plan or firmware.
 - Admit language packs up to 64 KiB so growing translations remain available;
   retain the separate 32 KiB settings/recovery limit and all string validation.
-- Add **Ambient-light sensor (monitor setting)** to Brightness settings and the tray for
+- Add **Automatic brightness** to Brightness settings and the tray for
   Apple Thunderbolt Display in hardware mode. Use the monitor's native ambient-light
   control through Windows VCP 0x66, using the existing native display mode.
 - Preserve the existing sensor mode until explicitly changed. Save the preference
   for the selected display and include its original mode in watchdog recovery.
-- Report the sensor enable bit separately from actual ambient response, which is
-  not working on the tested Windows connection. No extra driver, guessed vendor
-  command, sensor-reading loop, screen renderer or cursor changes.
+- Confirm the A1407's automatic backlight response with a separate physical light
+  test. Show its actual brightness in settings, the tray and indicator without
+  replacing the saved manual preference. Read back on the existing three-second
+  tick while brightness UI is visible; closed windows add no readback polling.
+  Relative keys start from current hardware brightness, and repeated explicit
+  manual values still reach a monitor that has adjusted itself. No extra driver,
+  guessed vendor command, sensor algorithm, screen renderer or cursor changes.
 
 ## SwiftyToys 0.1.24 — 2026-10-25
 

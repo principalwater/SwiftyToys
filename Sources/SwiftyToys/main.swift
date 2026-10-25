@@ -460,6 +460,7 @@ func runCLI(_ args: [String]) throws -> Int32 {
         Console.writeLine("OSD     : \(settings.indicator.rawValue)")
         Console.writeLine("DDC/CI  : \(settings.ddcEnabled ? "on" : "off (software dimming)")")
         Console.writeLine("Automatic: " + (state.automaticBrightness.map { $0 ? "on" : "off" } ?? "unavailable"))
+        if state.automaticBrightness == true { Console.writeLine("Preference: \(state.level.percent)%") }
         if let id = settings.targetID {
             Console.writeLine("Hardware: \(try hardwareBrightnessInfo(displayID: id))")
         } else {

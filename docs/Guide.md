@@ -42,12 +42,17 @@ or Apple.
   brightness enabled: the native Windows monitor API controls its 16-bit backlight,
   with matching USB HID readback. The tested connection needs no additional Apple
   display driver. This does not establish support for other Apple display models.
-  **Ambient-light sensor (monitor setting)** in Brightness and the tray controls the
+  **Automatic brightness** in Brightness and the tray controls the
   Thunderbolt Display's ambient-light enable setting while hardware brightness is on.
-  Windows VCP 0x66 verifies only the enabled/disabled state. Actual automatic
-  adjustment is not working on the tested Windows connection; this switch does not
-  establish a functioning sensor loop. SwiftyToys adds no guessed sensor commands or
-  polling loop. The current sensor mode is preserved until explicitly changed;
+  Windows VCP 0x66 verifies only the enabled/disabled state. A separate physical
+  cover/flashlight test confirmed automatic backlight changes on the tested A1407.
+  The firmware's dimming response can be small and gradual. SwiftyToys does not
+  replace its sensor algorithm. The percentage and slider show actual backlight
+  readback, refreshed on the existing three-second tick while Overview, Brightness
+  or the tray menu is visible, and after explicit commands. Closed windows add no
+  brightness readback polling. Sensor-driven values never replace the saved manual
+  preference; `info` reports that preference separately. In automatic mode, relative
+  keys start from a fresh hardware reading. The current sensor mode is preserved until explicitly changed;
   a saved choice applies only to that display. Quit/recovery restores its original
   backlight and sensor mode. Unsupported outputs and software mode disable the switch.
   **Color profile** reads the effective SDR profile directly from Windows. Import an
