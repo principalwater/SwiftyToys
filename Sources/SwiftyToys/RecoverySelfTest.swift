@@ -4,6 +4,23 @@ import BrightnessCore
 
 /// Pure mapping checks: never reads a local lease or calls a display API.
 func testRecoveryStateMapping() throws {
+    guard monitorBrightnessLevel(0, minimum: 0, maximum: 65535)?.percent == 0,
+        monitorBrightnessLevel(65535, minimum: 0, maximum: 65535)?.percent == 100,
+        monitorBrightnessLevel(49161, minimum: 0, maximum: 65535)?.percent == 75,
+        monitorBrightnessLevel(175, minimum: 100, maximum: 200)?.percent == 75,
+        monitorBrightnessLevel(UInt32.max / 2, minimum: 0, maximum: UInt32.max)?.percent == 50,
+        monitorBrightnessLevel(99, minimum: 100, maximum: 200) == nil,
+        monitorBrightnessLevel(201, minimum: 100, maximum: 200) == nil,
+        monitorBrightnessLevel(0, minimum: 0, maximum: 0) == nil else {
+        throw WindowsError.unsupported("Physical brightness readback scaling or validation failed.")
+    }
+    guard monitorAutomaticBrightness(1, maximum: 2) == false,
+        monitorAutomaticBrightness(2, maximum: 2) == true,
+        monitorAutomaticBrightness(0, maximum: 2) == nil,
+        monitorAutomaticBrightness(0x82, maximum: 0xff) == nil,
+        monitorAutomaticBrightness(2, maximum: 3) == nil else {
+        throw WindowsError.unsupported("Nonstandard sensor values must not become a monitor mode.")
+    }
     let applied = try BrightnessLevel(60)
     guard !needsBrightnessApply(applied, lastApplied: applied),
         needsBrightnessApply(try BrightnessLevel(65), lastApplied: applied),
@@ -64,7 +81,30 @@ func testRecoveryStateMapping() throws {
         }
     }
     let hardware = ColorLease(owner: 1, started: 1, displayID: "physical", backend: "hardware", amdID: nil, brightness: 73, contrast: nil, gamma: nil)
+    for lease in [native, hardware] {
+        guard lease.canDefer(connectedIDs: ["replacement"]),
+            !lease.canDefer(connectedIDs: [lease.displayID]) else {
+            throw WindowsError.unsupported("Connected display recovery was deferred or replacement was blocked.")
+        }
+    }
+    let global = ColorLease(owner: 1, started: 1, displayID: "missing", backend: "compositor",
+        amdID: nil, brightness: nil, contrast: nil, gamma: nil)
+    guard !global.canDefer(connectedIDs: []) else {
+        throw WindowsError.unsupported("Global cursor recovery must finish before display replacement.")
+    }
     guard try ColorLease.decode(hardware.encoded()) == hardware else { throw WindowsError.unsupported("Hardware brightness recovery mapping failed.") }
+    for enabled in [false, true] {
+        var automatic = hardware
+        automatic.automaticBrightness = enabled
+        guard try ColorLease.decode(automatic.encoded()) == automatic else {
+            throw WindowsError.unsupported("Original monitor sensor mode was lost from recovery.")
+        }
+    }
+    var invalidAutomatic = try StateJSON.decode(hardware.encoded())
+    invalidAutomatic["automaticBrightness"] = .signed(2)
+    var invalidAutomaticRejected = false
+    do { _ = try ColorLease.decode(StateJSON.encode(invalidAutomatic)) } catch { invalidAutomaticRejected = true }
+    guard invalidAutomaticRejected else { throw WindowsError.unsupported("Invalid sensor recovery value accepted.") }
     var invalidHardware = try StateJSON.decode(hardware.encoded())
     invalidHardware["brightness"] = .signed(-1)
     var hardwareRejected = false
@@ -100,5 +140,54 @@ func testRecoveryStateMapping() throws {
         level: try BrightnessLevel(75), device: "\\\\.\\DISPLAY1", backend: "native", connected: true)
     guard try DisplayState.decode(state.encoded()) == state else {
         throw WindowsError.unsupported("Display status mapping changed its schema.")
+    }
+    for enabled in [false, true] {
+        var automatic = state
+        automatic.automaticBrightness = enabled
+        automatic.hardwareLevel = try BrightnessLevel(100)
+        guard try DisplayState.decode(automatic.encoded()) == automatic,
+            automatic.level.percent == 75, automatic.displayedLevel.percent == 100 else {
+            throw WindowsError.unsupported("Automatic brightness status mapping failed.")
+        }
+    }
+    for invalid in [StateField.string("75"), .unsigned(101)] {
+        var fields = try StateJSON.decode(state.encoded())
+        fields["hardwareLevel"] = invalid
+        var rejected = false
+        do { _ = try DisplayState.decode(StateJSON.encode(fields)) } catch { rejected = true }
+        guard rejected else { throw WindowsError.unsupported("Invalid physical brightness status accepted.") }
+    }
+}
+
+/// Synthetic files only; does not open a monitor or read the user's calibration.
+func testDeferredRecoveryStorage(directory: String) throws {
+    let lease = ColorLease(owner: 1, started: 1, displayID: "old/display:🍎", backend: "hardware",
+        amdID: nil, brightness: 73, contrast: nil, gamma: nil)
+    let source = directory + "\\active.json"
+    let destination = try ColorLease.deferredPath(displayID: lease.displayID, directory: directory)
+    defer { try? NativeFiles.remove(source); try? NativeFiles.remove(destination) }
+    guard destination != (try ColorLease.deferredPath(displayID: "new/display", directory: directory)) else {
+        throw WindowsError.unsupported("Different display recovery paths collided.")
+    }
+    let different = ColorLease(owner: 2, started: 2, displayID: lease.displayID, backend: "hardware",
+        amdID: nil, brightness: 40, contrast: nil, gamma: nil)
+    try NativeFiles.write(lease.encoded(), to: source)
+    try NativeFiles.write(different.encoded(), to: destination)
+    var rejected = false
+    do { try deferRecoveryFile(lease, from: source, to: destination) } catch { rejected = true }
+    guard rejected, try ColorLease.decode(NativeFiles.read(source)) == lease,
+        try ColorLease.decode(NativeFiles.read(destination)) == different else {
+        throw WindowsError.unsupported("Deferral overwrote another calibration.")
+    }
+    try NativeFiles.remove(destination)
+    try deferRecoveryFile(lease, from: source, to: destination)
+    guard try !NativeFiles.exists(source), try ColorLease.decode(NativeFiles.read(destination)) == lease else {
+        throw WindowsError.unsupported("Disconnected calibration was not preserved.")
+    }
+    // Retry after interruption with two identical checkpoints.
+    try NativeFiles.write(lease.encoded(), to: source)
+    try deferRecoveryFile(lease, from: source, to: destination)
+    guard try !NativeFiles.exists(source), try ColorLease.decode(NativeFiles.read(destination)) == lease else {
+        throw WindowsError.unsupported("Interrupted calibration deferral was not recoverable.")
     }
 }

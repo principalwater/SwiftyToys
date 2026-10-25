@@ -35,6 +35,40 @@ or Apple.
   freeze reports; saved `compositor` preferences migrate to Automatic while retaining
   the DDC switch and brightness level. Windows retains native cursor rendering.
   Legacy composition/cursor-owning leases remain recoverable.
+  Selecting a replacement display preserves a disconnected monitor's calibration
+  separately, so it cannot block the new output. Reconnecting the original monitor
+  restores its own calibration; connected-display failures still retain recovery.
+  Apple Thunderbolt Display (A1407) over direct Thunderbolt was checked with hardware
+  brightness enabled: the native Windows monitor API controls its 16-bit backlight,
+  with matching USB HID readback. The tested connection needs no additional Apple
+  display driver. This does not establish support for other Apple display models.
+  **Automatic brightness** in Brightness and the tray controls the
+  Thunderbolt Display's ambient-light enable setting while hardware brightness is on.
+  Windows VCP 0x66 verifies only the enabled/disabled state. A separate physical
+  cover/flashlight test confirmed automatic backlight changes on the tested A1407.
+  The firmware's dimming response can be small and gradual. SwiftyToys does not
+  replace its sensor algorithm. The percentage and slider show actual backlight
+  readback, refreshed on the existing three-second tick while Overview, Brightness
+  or the tray menu is visible, and after explicit commands. Closed windows add no
+  brightness readback polling. Sensor-driven values never replace the saved manual
+  preference; `info` reports that preference separately. In automatic mode, relative
+  keys start from a fresh hardware reading. The current sensor mode is preserved until explicitly changed;
+  a saved choice applies only to that display. Quit/recovery restores its original
+  backlight and sensor mode. Unsupported outputs and software mode disable the switch.
+  **Color profile** reads the effective SDR profile directly from Windows. Import an
+  original ICC/ICM monitor RGB profile, select it and choose **Apply profile**. Import
+  requires administrator approval; the original bytes are validated and copied under
+  a content-addressed name without replacing another profile. The association applies
+  to this display and current user. It overrides system defaults until **Use Windows
+  system default** is applied. Windows initializes the user association list from the
+  system list when that override is first enabled. Refresh, returning to the window
+  and native registry notifications read Windows again; no second profile preference
+  is stored by SwiftyToys. The registry wait exists only while the Brightness page is
+  visible and has no polling timer. Profile changes release an old software
+  brightness/calibration lease before capturing a new baseline; hardware brightness
+  stays unchanged. No calibration LUT is loaded by this feature.
+  ICC profiles affect color-managed apps; they do not make every Windows game use
+  color management. Unit-specific profiles and diagnostics are never bundled.
   Ctrl+Alt+Shift+F10 requests 100% for emergency restoration. F1/F2 hold repetition
   follows Windows keyboard delay/speed; release, focus, device, session and power
   changes cancel repetition. No mouse-wheel interception is added.
@@ -45,6 +79,10 @@ or Apple.
   Command+Ctrl+Q locks the session; Command+Ctrl+S requests Sleep through Windows.
   Both actions are editable in the keyboard page. Sleep uses the account's existing
   shutdown permission, preserves wake events and does not change the power plan.
+  If Windows exposes neither S1/S2/S3 nor Modern Standby, Sleep shows recovery
+  instructions instead of requesting an unsupported transition. `powercfg /a`
+  explains system availability; firmware, drivers and boot configuration determine
+  the states Windows can use. Hibernate is not silently used as a substitute.
   Command+Option+Left/Right maps to Ctrl+PageUp/PageDown for browser tabs. A shared
   Ctrl menu-mask pulse keeps mapped Command chords from opening Start; bare Command
   retains the Windows Start action.

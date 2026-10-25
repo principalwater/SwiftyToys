@@ -60,8 +60,12 @@ struct DisplayRequest: Sendable {
     let value: Int
     let show: Bool
     let mode: String?
-    init(_ command: Int, value: Int = 0, show: Bool = false, mode: String? = nil) {
+    let profile: String?
+    let profileDisplayID: String?
+    init(_ command: Int, value: Int = 0, show: Bool = false, mode: String? = nil, profile: String? = nil, profileDisplayID: String? = nil) {
         self.command = command; self.value = value; self.show = show; self.mode = mode
+        self.profile = profile
+        self.profileDisplayID = profileDisplayID
     }
 }
 /// UI-owned, bounded queue. Polls never accumulate behind driver work.
@@ -69,6 +73,8 @@ struct DisplayRequestQueue {
     private(set) var active: DisplayRequest?
     private var brightness: DisplayRequest?
     private var mode: String?
+    private var profile: DisplayRequest?
+    private var automaticBrightness: Int?
     private var refresh: Int?
     var level: Int
     init(level: Int) { self.level = level }
@@ -77,14 +83,20 @@ struct DisplayRequestQueue {
         if request.command == 1 { level = request.value }
         guard active != nil else { active = request; return true }
         if let requested = request.mode { mode = requested }
-        else if request.command == 3 || request.command == 5 { if refresh != 3 { refresh = request.command } }
+        else if request.profile != nil { profile = request }
+        else if request.command == 7 { automaticBrightness = request.value }
+        else if [3, 5, 8].contains(request.command) {
+            if refresh != 3 && (refresh != 5 || request.command != 8) { refresh = request.command }
+        }
         else if request.command != 4 { brightness = request }
         return false
     }
     mutating func finish(level applied: Int) -> DisplayRequest? {
         active = nil
         if let requested = mode { mode = nil; return DisplayRequest(3, mode: requested) }
+        if let requested = profile { profile = nil; return requested }
         if let requested = refresh { refresh = nil; return DisplayRequest(requested) }
+        if let requested = automaticBrightness { automaticBrightness = nil; return DisplayRequest(7, value: requested) }
         if let requested = brightness { brightness = nil; return requested }
         level = applied
         return nil
@@ -117,6 +129,37 @@ struct DisplayRequestQueue {
             let latest = queue.finish(level: 50), latest.value == 70, queue.enqueue(latest),
             queue.finish(level: 70) == nil, queue.active == nil, queue.level == 70
         else { throw WindowsError.unsupported("Display request ordering/coalescing check failed.") }
+        var automaticQueue = DisplayRequestQueue(level: 80)
+        guard automaticQueue.enqueue(DisplayRequest(4)),
+            !automaticQueue.enqueue(DisplayRequest(7, value: 1)),
+            !automaticQueue.enqueue(DisplayRequest(1, value: 75)),
+            !automaticQueue.enqueue(DisplayRequest(7, value: 0)),
+            let automatic = automaticQueue.finish(level: 80), automatic.command == 7, automatic.value == 0,
+            automaticQueue.enqueue(automatic),
+            let brightness = automaticQueue.finish(level: 80), brightness.command == 1, brightness.value == 75,
+            automaticQueue.enqueue(brightness), automaticQueue.finish(level: 75) == nil else {
+            throw WindowsError.unsupported("Automatic brightness coalescing lost the manual brightness request.")
+        }
+        var topologyQueue = DisplayRequestQueue(level: 80)
+        guard topologyQueue.enqueue(DisplayRequest(4)),
+            !topologyQueue.enqueue(DisplayRequest(8)),
+            !topologyQueue.enqueue(DisplayRequest(5)),
+            !topologyQueue.enqueue(DisplayRequest(8)),
+            let resume = topologyQueue.finish(level: 80), resume.command == 5,
+            topologyQueue.enqueue(resume), topologyQueue.finish(level: 80) == nil else {
+            throw WindowsError.unsupported("A resolution notification suppressed forced resume recovery.")
+        }
+        var profileQueue = DisplayRequestQueue(level: 80)
+        guard profileQueue.enqueue(DisplayRequest(4)),
+            !profileQueue.enqueue(DisplayRequest(9, profile: "first.icc")),
+            !profileQueue.enqueue(DisplayRequest(1, value: 70)),
+            !profileQueue.enqueue(DisplayRequest(9, profile: "")),
+            let profile = profileQueue.finish(level: 80), profile.profile == "",
+            profileQueue.enqueue(profile),
+            let manual = profileQueue.finish(level: 80), manual.value == 70,
+            profileQueue.enqueue(manual), profileQueue.finish(level: 70) == nil else {
+            throw WindowsError.unsupported("Profile coalescing lost a pending brightness change.")
+        }
         Console.writeLine("PASS: one request, latest brightness retained, mode/refresh ordered, idle polls dropped")
     }
 }
@@ -124,11 +167,15 @@ final class DisplayMailbox: Sendable {
     let result = Mutex<Result<DisplayState, WindowsError>?>(nil)
 }
 
-func performDisplayCommand(_ controller: DisplayController, command: Int, value: Int, mode: String?) async throws -> DisplayState {
+func performDisplayCommand(_ controller: DisplayController, command: Int, value: Int, mode: String?, profile: String? = nil, profileDisplayID: String? = nil) async throws -> DisplayState {
     guard controller.commandAdmission.acquire() else {
         throw WindowsError.unsupported("SwiftyToys is applying another brightness change. Retry in a moment.")
     }
     defer { controller.commandAdmission.release() }
+    if let profile {
+        guard let profileDisplayID else { throw WindowsError.unsupported("Select one connected physical SDR display.") }
+        return try await controller.setColorProfile(fileName: profile.isEmpty ? nil : profile, displayID: profileDisplayID)
+    }
     return try await executeDisplayCommand(controller, command: command, value: value, mode: mode)
 }
 

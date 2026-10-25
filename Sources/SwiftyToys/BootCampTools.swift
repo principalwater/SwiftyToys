@@ -46,7 +46,7 @@ final class SettingsDeviceReports: Sendable {
                 state.withLock { $0.busy.remove(page); $0.reports[page] = (language.locale, report) }
                 _ = destination.post(deviceReportMessage, value: page)
             }
-        } catch { state.withLock { $0.busy.remove(page) }; Diagnostics.write("device report: \(error)") }
+        } catch { _ = state.withLock { $0.busy.remove(page) }; Diagnostics.write("device report: \(error)") }
     }
 }
 

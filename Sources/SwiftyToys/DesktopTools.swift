@@ -9,9 +9,23 @@ enum DesktopPower {
         guard LockWorkStation() else { throw .api("Lock screen", GetLastError()) }
     }
     static func sleep() throws(WindowsError) {
+        try requireSleepCapability(powerCapabilities())
         try withShutdownPrivilege { () throws(WindowsError) in
             // Request Sleep, preserve wake events and leave the user's power plan intact.
             guard SetSuspendState(0, 0, 0) != 0 else { throw .api("Put computer to sleep", GetLastError()) }
+        }
+    }
+    private static func powerCapabilities() throws(WindowsError) -> SYSTEM_POWER_CAPABILITIES {
+        var capabilities = SYSTEM_POWER_CAPABILITIES()
+        guard GetPwrCapabilities(&capabilities) != 0 else {
+            throw .api("Read sleep capabilities", GetLastError())
+        }
+        return capabilities
+    }
+    private static func requireSleepCapability(_ capabilities: SYSTEM_POWER_CAPABILITIES) throws(WindowsError) {
+        guard capabilities.SystemS1 != 0 || capabilities.SystemS2 != 0
+            || capabilities.SystemS3 != 0 || capabilities.AoAc != 0 else {
+            throw .unsupported("Sleep is unavailable in this Windows session.\n\nWindows reports no supported standby state. Check powercfg /a and the supported firmware, drivers and boot configuration. If this began after connecting a peripheral, compare a startup without it.\n\nSwiftyToys cannot add a missing standby state and will not substitute Hibernate for Sleep.")
         }
     }
     private static func withShutdownPrivilege(_ action: () throws(WindowsError) -> Void) throws(WindowsError) {
@@ -44,10 +58,28 @@ enum DesktopPower {
     }
     /// Exercises native permission acquisition/restoration without locking or suspending.
     static func selfCheck() throws(WindowsError) {
+        var capabilities = SYSTEM_POWER_CAPABILITIES()
+        capabilities.SystemS4 = 1
+        capabilities.HiberFilePresent = 1
+        do throws(WindowsError) {
+            try requireSleepCapability(capabilities)
+            throw WindowsError.api("Rejected Hibernate-only sleep fixture", DWORD(ERROR_INVALID_DATA))
+        } catch WindowsError.unsupported(let reason) {
+            guard reason.hasPrefix("Sleep is unavailable"), reason.hasSuffix("Hibernate for Sleep.") else {
+                throw .unsupported("Sleep recovery instructions were lost.")
+            }
+        }
+        for field in [\SYSTEM_POWER_CAPABILITIES.SystemS1, \.SystemS2, \.SystemS3, \.AoAc] {
+            var supported = SYSTEM_POWER_CAPABILITIES()
+            supported[keyPath: field] = 1
+            try requireSleepCapability(supported)
+        }
+        let current = try powerCapabilities()
+        Console.writeLine("Standby capabilities: S1=\(current.SystemS1), S2=\(current.SystemS2), S3=\(current.SystemS3), S0 idle=\(current.AoAc)")
         let before = try shutdownPermissionEnabled()
         try withShutdownPrivilege {}
         guard try shutdownPermissionEnabled() == before else { throw .unsupported("Sleep permission restoration failed.") }
-        Console.writeLine("PASS: sleep permission acquired/restored; no lock or power transition requested")
+        Console.writeLine("PASS: standby admission and sleep permission restoration; no lock or power transition requested")
     }
     private static func shutdownPermissionEnabled() throws(WindowsError) -> Bool {
         var raw: HANDLE?
@@ -137,7 +169,7 @@ func switchLanguage(in foreground: HWND?) throws {
 func configuredLayouts(resolveNames: Bool = false) -> [HKL] {
     var handles = Array<HKL?>(repeating: nil, count: 64)
     let count = GetKeyboardLayoutList(Int32(handles.count), &handles)
-    var loaded = Array(handles.prefix(Int(max(0, count))).compactMap { $0 })
+    let loaded = Array(handles.prefix(Int(max(0, count))).compactMap { $0 })
     guard resolveNames, let previous = GetKeyboardLayout(0) else { return loaded }
     // Only the windowless resolver opts in: identify loaded HKLs on its own thread, then restore it.
     defer { _ = ActivateKeyboardLayout(previous, 0) }

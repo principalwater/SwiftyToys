@@ -1,5 +1,45 @@
 # Changelog
 
+## SwiftyToys 0.1.26 — 2026-10-25
+
+- Add native Windows SDR color-profile selection, ICC import and return to system
+  defaults in Brightness. Validate ICC bytes, preserve installed profiles and release
+  the previous dimming lease before changing the current user's display association.
+  Imported unit-specific profiles remain local and are excluded from releases.
+- Preserve the hardware-brightness cache across resolution changes on the same
+  physical target, avoiding redundant DDC writes during fullscreen transitions.
+  Resume, explicit refresh, changed bindings and error recovery keep their checks.
+- Check native standby capabilities before requesting Sleep. Preserve actionable
+  errors across the worker/UI boundary, including when firmware exposes no sleep
+  state. Keep Hibernate distinct; never alter the power plan or firmware.
+- Admit language packs up to 64 KiB so growing translations remain available;
+  retain the separate 32 KiB settings/recovery limit and all string validation.
+- Add **Automatic brightness** to Brightness settings and the tray for
+  Apple Thunderbolt Display in hardware mode. Use the monitor's native ambient-light
+  control through Windows VCP 0x66, using the existing native display mode.
+- Preserve the existing sensor mode until explicitly changed. Save the preference
+  for the selected display and include its original mode in watchdog recovery.
+- Confirm the A1407's automatic backlight response with a separate physical light
+  test. Show its actual brightness in settings, the tray and indicator without
+  replacing the saved manual preference. Read back on the existing three-second
+  tick while brightness UI is visible; closed windows add no readback polling.
+  Relative keys start from current hardware brightness, and repeated explicit
+  manual values still reach a monitor that has adjusted itself. No extra driver,
+  guessed vendor command, sensor algorithm, screen renderer or cursor changes.
+
+## SwiftyToys 0.1.24 — 2026-10-25
+
+- Allow a selected replacement monitor to bind while the disconnected monitor's
+  original calibration remains safely saved in a separate recovery record.
+- Restore that calibration when its original physical display returns. Keep
+  connected-display failures, ownership conflicts and legacy cursor recovery blocking.
+- Add native storage checks for atomic deferral, conflicting baselines and retries
+  after interruption. No new driver, dependency or polling timer is added.
+- Validate Apple Thunderbolt Display hardware brightness through the existing
+  Windows Monitor Configuration API, with independent USB HID readback. No extra
+  Apple driver is required on the tested connection.
+- Include current release notes in downloads; retain full history in the repository.
+
 ## SwiftyToys 0.1.23 — 2026-10-14
 
 - Create Search controls and XAML on a dedicated native UI thread, keeping

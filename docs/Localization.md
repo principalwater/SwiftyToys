@@ -11,7 +11,8 @@ canonical data; translations cannot change what a shortcut executes.
 4. Save UTF-8 without a BOM. Put the file in `Languages` beside the executable or
    `%LOCALAPPDATA%\SwiftyToys\Languages`, then reopen About to discover it.
 
-Each pack is a flat JSON object with string values, under 32 KiB. Duplicate keys,
+Each pack is a flat JSON object with string values, under 64 KiB. Settings and
+recovery JSON retain their separate 32 KiB default limit. Duplicate keys,
 invalid locale/path characters, NULs, missing/extra numbered placeholders and invalid
 UTF-8 are rejected. Invalid external files are ignored and English remains available.
 At most 64 files are inspected in each directory. User-directory packs take precedence

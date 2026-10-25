@@ -15,6 +15,9 @@ obj/
 *.zip
 *.log
 *.dmp
+*.icc
+*.icm
+*.edid
 *.user
 *.suo
 config.ini

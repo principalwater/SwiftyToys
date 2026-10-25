@@ -30,6 +30,12 @@ retains its record. UI timeouts do not cancel an already-running kernel/driver c
 and therefore retain admission until actual completion. Legacy synchronous CLI
 requests still have a bounded compatibility wait; ordinary GUI requests are async.
 
+Disconnected physical display leases are moved atomically to a per-display recovery
+record before a replacement captures its baseline. Records use hashed local display
+identities; a different saved calibration is never overwritten. Reconnection recovery
+runs only when the eligible topology changes, with direct bounded file lookups.
+Connected targets and legacy global cursor recovery cannot be deferred.
+
 Native kernel scheduling, third-party hooks and driver stalls remain platform
 limits. A previously unknown application's first chord may reach Windows before
 background resolution; cached contexts retain application exclusions/overrides.

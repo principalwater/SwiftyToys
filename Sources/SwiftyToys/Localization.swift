@@ -12,7 +12,7 @@ struct LanguagePack: Sendable {
         self.locale = locale; self.name = name; self.strings = strings
     }
     init(bytes: [UInt8]) throws {
-        let fields = try StateJSON.decode(bytes)
+        let fields = try StateJSON.decode(bytes, maximumBytes: 65535)
         guard let locale = fields["_locale"]?.string, Self.validLocale(locale),
             let name = fields["_name"]?.string, !name.isEmpty, name.utf8.count <= 80, !name.contains("\0"),
             fields.values.allSatisfy({ $0.string != nil }) else {
@@ -78,7 +78,7 @@ final class Localization {
                     $0.withMemoryRebound(to: WCHAR.self, capacity: 260) { String(decoding: UnsafeBufferPointer(start: $0, count: 260).prefix(while: { $0 != 0 }), as: UTF16.self) }
                 }
                 if data.dwFileAttributes & DWORD(FILE_ATTRIBUTE_DIRECTORY) == 0,
-                    let bytes = try? NativeFiles.read(directory + "\\" + filename),
+                    let bytes = try? NativeFiles.read(directory + "\\" + filename, maximum: 65535),
                     let language = try? LanguagePack(bytes: bytes), filename.lowercased() == (language.locale + ".json").lowercased(), language.locale != "en-US" {
                     packs.removeAll { $0.locale == language.locale }; packs.append(language)
                 }
@@ -102,6 +102,16 @@ final class Localization {
         guard (try? LanguagePack(bytes: StateJSON.encode(invalid))) == nil else {
             throw WindowsError.unsupported("Language pack accepted a NUL in its display name.")
         }
+        var large = fields
+        for index in 0..<6 {
+            large["entry\(index)" + String(repeating: "k", count: 3990)] = .string(String(repeating: "v", count: 4000))
+        }
+        let bytes = StateJSON.encode(large)
+        guard bytes.count > 32767, (try? StateJSON.decode(bytes)) == nil,
+            try LanguagePack(bytes: bytes).strings.count == large.count - 2,
+            (try? LanguagePack(bytes: bytes + [UInt8](repeating: 32, count: 65536))) == nil else {
+            throw WindowsError.unsupported("Language pack and recovery size limits were confused.")
+        }
         let localization = Localization()
         try localization.select(pack, persist: false)
         guard localization.text("Brightness") == "Luminosité", localization.text("Missing") == "Missing",
@@ -111,7 +121,7 @@ final class Localization {
         let directory = executablePath().split(separator: "\\").dropLast().joined(separator: "\\") + "\\Languages"
         for locale in ["en-US", "ru-RU"] {
             let path = directory + "\\" + locale + ".json"
-            if try NativeFiles.exists(path) { _ = try LanguagePack(bytes: NativeFiles.read(path)) }
+            if try NativeFiles.exists(path) { _ = try LanguagePack(bytes: NativeFiles.read(path, maximum: 65535)) }
         }
     }
 }

@@ -83,6 +83,11 @@ jobs:
         run: |
           $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-display-queue' -Wait -PassThru -NoNewWindow
           if ($process.ExitCode -ne 0) { throw 'Display request queue check failed' }
+      - name: Check ICC validation and read-only Windows color inventory
+        shell: pwsh
+        run: |
+          $process = Start-Process ./artifacts/SwiftyToys.exe -ArgumentList '--test-color-profiles' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw 'Color profile validation check failed' }
       - name: Check Mac preset migration and saved edits
         shell: pwsh
         run: |

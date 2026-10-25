@@ -9,7 +9,10 @@ import WindowsDisplayABI
 
 private let trayMessage: UINT = 0x8004
 private let displayReplyMessage: UINT = 0x8035
-private final class SleepGate: Sendable { let busy = Mutex(false) }
+private final class SleepGate: Sendable {
+    let busy = Mutex(false)
+    let error = Mutex<WindowsError?>(nil)
+}
 private func windowProcedure(_ window: HWND?, _ message: UINT, _ value: WPARAM, _ data: LPARAM) -> LRESULT {
     guard let window else { return DefWindowProcW(window, message, value, data) }
     if message == UINT(WM_NCCREATE), let creation = UnsafePointer<CREATESTRUCTW>(bitPattern: Int(data)),
@@ -46,6 +49,7 @@ final class TrayApplication {
     private var trayIcon: ApplicationIcon?
     private var trayAdded = false
     private var trayText = ""
+    private var trackingMenu: HMENU?
     private var exiting = false
     private var synchronousDisplayRequest = false
     private var pendingSteps = 0
@@ -211,9 +215,8 @@ final class TrayApplication {
             }
             return 0
         case sleepResultMessage:
-            guard !exiting, value != 0 else { return 0 }
-            let error = WindowsError.api("Put computer to sleep", DWORD(truncatingIfNeeded: value))
-            Diagnostics.write("sleep: \(error)")
+            let error = sleepGate.error.withLock { error in defer { error = nil }; return error }
+            guard !exiting, let error else { return 0 }
             do { try showDashboard(); dashboard?.showActionError(error) }
             catch { Diagnostics.write("show power error: \(error)") }
             return 0
@@ -250,12 +253,11 @@ final class TrayApplication {
                     do {
                         _ = try NativeThread(name: "SwiftyToys sleep") {
                             defer { gate.busy.withLock { $0 = false } }
-                            do { try DesktopPower.sleep() }
+                            do throws(WindowsError) { try DesktopPower.sleep() }
                             catch {
                                 Diagnostics.write("sleep: \(error)")
-                                let code: DWORD
-                                if case WindowsError.api(_, let value) = error { code = value } else { code = DWORD(ERROR_GEN_FAILURE) }
-                                _ = destination.post(sleepResultMessage, value: Int(code == 0 ? DWORD(ERROR_GEN_FAILURE) : code))
+                                gate.error.withLock { $0 = error }
+                                _ = destination.post(sleepResultMessage)
                             }
                         }
                     } catch { gate.busy.withLock { $0 = false }; throw error }
@@ -275,20 +277,30 @@ final class TrayApplication {
                 state = try reply.get()
                 lastApply = GetTickCount64()
                 updateTray()
-                dashboard?.update(brightness: displayQueue.hasBrightness ? displayQueue.level : state.level.percent)
+                dashboard?.update(brightness: displayQueue.hasBrightness ? displayQueue.level : state.displayedLevel.percent)
+                dashboard?.updateAutomaticBrightness(state.automaticBrightness, measured: state.hardwareLevel != nil)
+                updateMenuBrightness()
                 if request.command == 1 { dashboard?.displayCompleted("Brightness updated.") }
                 if request.show { showOSD() }
             } catch {
                 Diagnostics.write("display: \(error)")
-                if request.mode != nil { displayError = error }
+                if request.mode != nil || request.command == 7 || request.profile != nil { displayError = error }
             }
-            if request.mode != nil {
+            if request.mode != nil || request.command == 7 || request.profile != nil {
                 if let latest = try? Settings() { settings = latest }
                 dashboard?.refreshBrightnessControl()
                 dashboard?.brightnessControlBusy(false)
-                if case .success = reply { dashboard?.displayCompleted(settings.ddcEnabled ? "DDC/CI enabled. Brightness controls the monitor backlight, including the cursor." : "DDC/CI disabled. Brightness uses software dimming; the monitor backlight stays unchanged.") }
+                dashboard?.updateAutomaticBrightness(state.automaticBrightness, measured: state.hardwareLevel != nil)
+                if case .success = reply {
+                    dashboard?.displayCompleted(request.profile != nil ? "Windows color profile updated. Color-managed apps may need to reopen."
+                        : request.command == 7
+                        ? (state.automaticBrightness == true ? "Automatic brightness enabled. The display adapts its backlight to room lighting." : "Automatic brightness disabled.")
+                        : settings.ddcEnabled ? "DDC/CI enabled. Brightness controls the monitor backlight, including the cursor." : "DDC/CI disabled. Brightness uses software dimming; the monitor backlight stays unchanged.")
+                }
             }
+            if request.profile != nil { dashboard?.refreshColorProfiles() }
             if let next = displayQueue.finish(level: state.level.percent) { requestDisplay(next) }
+            if displayError != nil, request.command == 7 { try? showDashboard() }
             if let displayError, let dashboard, let window = dashboard.window, IsWindowVisible(window) { dashboard.showActionError(displayError) }
             return 0
         case brightnessMessage:
@@ -303,8 +315,9 @@ final class TrayApplication {
                     state = try displayCommand(controller, command: 3, mode: modes[Int(data)])
                     guard !exiting else { return 0 }
                     settings = try Settings(); displayQueue.level = state.level.percent
-                    dashboard?.refreshBrightnessControl(); dashboard?.update(brightness: state.level.percent); updateTray()
-                    return LRESULT(state.level.percent + 1)
+                    dashboard?.refreshBrightnessControl(); dashboard?.update(brightness: state.displayedLevel.percent); updateTray()
+                    dashboard?.updateAutomaticBrightness(state.automaticBrightness, measured: state.hardwareLevel != nil)
+                    return LRESULT(state.displayedLevel.percent + 1)
                 }
                 catch { Diagnostics.write("brightness mode: \(error)"); return 0 }
             }
@@ -313,7 +326,7 @@ final class TrayApplication {
                     settings.indicator = try Settings().indicator
                     systemIndicator?.setCustom(settings.indicator == .custom)
                     if let osd { ShowWindow(osd, Int32(SW_HIDE)) }
-                    return LRESULT(state.level.percent + 1)
+                    return LRESULT(state.displayedLevel.percent + 1)
                 } catch {
                     Diagnostics.write("indicator: \(error)")
                     return 0
@@ -327,7 +340,7 @@ final class TrayApplication {
             synchronousDisplayRequest = true
             defer { synchronousDisplayRequest = false }
             return apply(command: Int(value), value: Int(data), show: value == 1 || value == 2)
-                ? LRESULT(state.level.percent + 1) : 0
+                ? LRESULT(state.displayedLevel.percent + 1) : 0
         case keyStepMessage:
             if !exiting { queue(Int(Int64(bitPattern: value))) }
             return 0
@@ -386,13 +399,14 @@ final class TrayApplication {
                 flushSteps()
             } else {
                 tools.tick()
-                requestDisplay(DisplayRequest(4))
+                let observe = dashboard?.observesBrightness == true || trackingMenu != nil
+                requestDisplay(DisplayRequest(4, value: observe ? 1 : 0))
             }
             return 0
         case UINT(WM_DISPLAYCHANGE):
             cancelBrightnessRepeat()
             if !exiting {
-                requestDisplay(DisplayRequest(5))
+                requestDisplay(DisplayRequest(8))
             }
             return 0
         case UINT(WM_POWERBROADCAST):
@@ -454,7 +468,9 @@ final class TrayApplication {
                 systemIndicator?.setCustom(settings.indicator == .custom)
             }
             updateTray()
-            dashboard?.update(brightness: state.level.percent)
+            dashboard?.update(brightness: state.displayedLevel.percent)
+            dashboard?.updateAutomaticBrightness(state.automaticBrightness, measured: state.hardwareLevel != nil)
+            if command == 7 { settings = try Settings(); dashboard?.refreshBrightnessControl() }
             if show { showOSD() }
             return true
         } catch {
@@ -467,12 +483,12 @@ final class TrayApplication {
     private func requestDisplay(_ request: DisplayRequest) {
         guard !exiting, let window else { return }
         let start = displayQueue.enqueue(request)
-        if request.mode != nil { dashboard?.brightnessControlBusy(true) }
+        if request.mode != nil || request.command == 7 || request.profile != nil { dashboard?.brightnessControlBusy(true) }
         guard start else { return }
         let mailbox = displayMailbox, controller = controller, destination = MessageDestination(window)
         Task {
             let reply: Result<DisplayState, WindowsError>
-            do { reply = .success(try await performDisplayCommand(controller, command: request.command, value: request.value, mode: request.mode)) }
+            do { reply = .success(try await performDisplayCommand(controller, command: request.command, value: request.value, mode: request.mode, profile: request.profile, profileDisplayID: request.profileDisplayID)) }
             catch { reply = .failure((error as? WindowsError) ?? .unsupported(String(describing: error))) }
             mailbox.result.withLock { $0 = reply }
             _ = destination.post(displayReplyMessage)
@@ -527,13 +543,15 @@ final class TrayApplication {
     private func showDashboard() throws {
         if dashboard == nil {
             dashboard = try SettingsWindow(
-                brightness: state.level.percent, keyboard: KeyboardConfiguration(),
+                brightness: state.displayedLevel.percent, keyboard: KeyboardConfiguration(),
                 command: { [weak self] id, values in
                     guard let self else { throw WindowsError.unsupported("Application is closing.") }
                     return try self.dashboardCommand(id, values)
                 })
         }
+        dashboard?.updateAutomaticBrightness(state.automaticBrightness, measured: state.hardwareLevel != nil)
         dashboard?.show()
+        requestDisplay(DisplayRequest(4, value: 1))
     }
 
     private func showSearch() throws {
@@ -675,6 +693,18 @@ final class TrayApplication {
             guard values.count == 1, ["auto", "native", "amd", "hardware"].contains(values[0]) else { throw WindowsError.unsupported("Invalid brightness mode.") }
             requestDisplay(DisplayRequest(3, mode: values[0]))
             return "Applying brightness method…"
+        case 252:
+            guard values.count == 1, ["0", "1"].contains(values[0]) else {
+                throw WindowsError.unsupported("Invalid automatic brightness mode.")
+            }
+            requestDisplay(DisplayRequest(7, value: values[0] == "1" ? 1 : 0))
+            return "Applying automatic brightness…"
+        case 263:
+            guard values.count == 2, !values[0].isEmpty else {
+                throw WindowsError.unsupported("Select one connected physical SDR display.")
+            }
+            requestDisplay(DisplayRequest(9, profile: values[1], profileDisplayID: values[0]))
+            return "Applying Windows color profile…"
         case 313: try reloadRemapper()
         case 410:
             let minutes =
@@ -711,13 +741,21 @@ final class TrayApplication {
     }
     private func flushSteps() {
         if let window { KillTimer(window, 2) }
+        if state.backend == "native DDC/CI", displayQueue.active != nil {
+            if let window { SetTimer(window, 2, 130, nil) }
+            return
+        }
         let steps = pendingSteps
         pendingSteps = 0
-        if steps != 0 { requestDisplay(DisplayRequest(1, value: max(0, min(100, displayQueue.level + steps * settings.step)), show: true)) }
+        if steps != 0 {
+            requestDisplay(state.backend == "native DDC/CI"
+                ? DisplayRequest(2, value: steps * settings.step, show: true)
+                : DisplayRequest(1, value: max(0, min(100, displayQueue.level + steps * settings.step)), show: true))
+        }
     }
 
     private func updateTray() {
-        let text = "SwiftyToys — \(state.level.percent)%\(state.connected ? "" : " (disconnected)")"
+        let text = "SwiftyToys — \(state.displayedLevel.percent)%\(state.connected ? "" : " (disconnected)")"
         guard !trayAdded || text != trayText else { return }
         setWideString(text, in: &tray.szTip)
         if trayAdded {
@@ -728,14 +766,21 @@ final class TrayApplication {
         }
     }
 
+    private func updateMenuBrightness() {
+        guard let menu = trackingMenu else { return }
+        let label = Localization().text("Brightness: {0}%", [String(state.displayedLevel.percent)])
+        _ = withWideString(label) { ModifyMenuW(menu, 0, UINT(MF_BYCOMMAND | MF_STRING | MF_DISABLED), 0, $0) }
+    }
+
     private func showMenu() {
         guard let window, let menu = CreatePopupMenu() else { return }
-        defer { DestroyMenu(menu) }
+        trackingMenu = menu
+        defer { trackingMenu = nil; DestroyMenu(menu) }
         let localization = Localization()
         for (id, label) in [
             (2500, "Open SwiftyToys"), (2501, "Pause / resume keyboard remapping"),
             (2502, "Open Search"),
-            (0, localization.text("Brightness: {0}%", [String(state.level.percent)])), (1, localization.text("Increase by {0}%", [String(settings.step)])),
+            (0, localization.text("Brightness: {0}%", [String(state.displayedLevel.percent)])), (1, localization.text("Increase by {0}%", [String(settings.step)])),
             (2, localization.text("Decrease by {0}%", [String(settings.step)])),
             (100, "100%"), (75, "75%"), (50, "50%"), (25, "25%"), (10, "10%"), (3, "Reconnect display"),
         ] {
@@ -752,7 +797,14 @@ final class TrayApplication {
             }
         }
         CheckMenuRadioItem(menu, 2001, 2002, settings.indicator == .custom ? 2001 : 2002, UINT(MF_BYCOMMAND))
+        let automaticAvailable = settings.ddcEnabled && state.automaticBrightness != nil
+            && displayQueue.active == nil && !controller.commandAdmission.isBusy
+        _ = withWideString(localization.text("Automatic brightness")) {
+            AppendMenuW(menu, UINT(MF_STRING | (state.automaticBrightness == true ? MF_CHECKED : 0)
+                | (automaticAvailable ? 0 : MF_DISABLED)), 2003, $0)
+        }
         _ = withWideString(localization.text("Quit")) { AppendMenuW(menu, UINT(MF_STRING), 4, $0) }
+        requestDisplay(DisplayRequest(4, value: 1))
         var point = POINT()
         GetCursorPos(&point)
         SetForegroundWindow(window)
@@ -782,6 +834,8 @@ final class TrayApplication {
                 systemIndicator?.setCustom(settings.indicator == .custom)
                 if let osd { ShowWindow(osd, Int32(SW_HIDE)) }
             } catch { Diagnostics.write("indicator: \(error)") }
+        } else if selected == 2003 {
+            requestDisplay(DisplayRequest(7, value: state.automaticBrightness == true ? 0 : 1))
         } else if [10, 25, 50, 75, 100].contains(selected) {
             requestDisplay(DisplayRequest(1, value: Int(selected), show: true))
         }
@@ -842,14 +896,14 @@ final class TrayApplication {
         var text = RECT(
             left: Int32(20 * scale), top: Int32(14 * scale), right: area.right - Int32(20 * scale),
             bottom: Int32(52 * scale))
-        _ = withWideString("☀  \(state.level.percent)%") {
+        _ = withWideString("☀  \(state.displayedLevel.percent)%") {
             DrawTextW(dc, $0, -1, &text, UINT(DT_LEFT | DT_VCENTER | DT_SINGLELINE))
         }
         var bar = RECT(
             left: Int32(20 * scale), top: Int32(64 * scale), right: area.right - Int32(20 * scale),
             bottom: Int32(72 * scale))
         fill(bar, 0x0040_3A3A)
-        bar.right = bar.left + (bar.right - bar.left) * Int32(state.level.percent) / 100
+        bar.right = bar.left + (bar.right - bar.left) * Int32(state.displayedLevel.percent) / 100
         fill(bar, 0x005A_B2F5)
     }
 
