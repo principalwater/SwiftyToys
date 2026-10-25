@@ -1,3 +1,57 @@
+# Validation snapshot: 0.1.26 native Windows color profiles
+
+2026-10-25. Fifteen relevant native checks pass: ICC bounds and descriptions,
+Windows profile inventory and notification-worker shutdown, standby admission,
+readable errors, keyboard configuration, storage/recovery, brightness policy,
+display queue, settings UI, ABI, worker waits, installer, Shell integration,
+cursor policy, native mouse and driver matching. All 67 portable tests pass with
+Swift 6.4.1. Both bundled language packs pass their native UI/storage checks.
+
+The packaged static executable is 8,594,432 bytes, SHA-256
+`e7bd6130581bb781b836ebbdb1167e8f0e321093a456f555256087d54ab807d2`.
+The enforced ceilings are 8.60 MB EXE, 3.55 MB ZIP and 2.7 MB Setup. No Swift DLL,
+third-party runtime, screen renderer, cursor replacement or sensor polling is added.
+
+A privately exported factory ICC was verified against the attached panel's EDID.
+Windows validates it and installs byte-identical data under a content-addressed
+name. Two complete profile/default transitions were checked; the final cycle
+sRGB -> factory ICC -> sRGB -> factory ICC passed independent fresh-process GDI
+readback after every step. An uninstalled profile is rejected before mutation.
+The factory profile's calibration formula is neutral; Windows calibration
+management stays disabled and no LUT is loaded. Unit-specific ICC/EDID data is
+excluded from source and release archives.
+
+On this Windows 10 connection, a process that already queried GetICMProfile can
+retain its previous DC profile even after creating a new DC. A separate native
+process sees the new active profile. Runtime status therefore uses the documented
+[WCS scope/default queries and registry notifications](https://learn.microsoft.com/en-us/windows/win32/wcs/wcs-registry-keys). Reopening color-managed apps
+may be necessary. Keyboard-driven GUI profile switching and unchanged brightness
+were also verified. Computer-use screenshot capture and coordinate geometry
+remain unavailable.
+
+Physical Thunderbolt Display brightness was previously confirmed with the slider
+and F1/F2, including cursor dimming. VCP 0x66 reads back as 1/2 for sensor off/on;
+this verifies the enable bit only. The operator confirms no actual room-light
+response, including after off/on and a manual 95% setting. Automatic brightness
+remains unresolved; the menu describes the monitor setting. No unknown vendor
+reports, driver substitutions or extra software sensor loop are used.
+
+Current native power capabilities omit S1/S2/S3/Modern Standby; ACPI tables lack
+_S3_. Earlier successful S3 entry/resume events exist, and the same OpenCore route
+worked with the previous monitor. OpenCore is not established as the cause.
+The app reports a human-readable unsupported-state error without substituting
+Hibernate. No firmware, EFI, power-plan or boot setting was changed. Comparative
+boots and actual Sleep/resume are deferred at the operator's request.
+
+Allods fullscreen cursor artifacts persisted with SwiftyToys closed and disappeared
+in the operator's physical-only display test. Windows now retains a physical-only
+idle topology while the virtual driver remains enabled. The operator confirms a
+successful Sunshine/Moonlight connect/disconnect; native readback then shows only
+the physical Thunderbolt output active, with the virtual driver still healthy.
+Sunshine's existing on-demand configuration and pairing were preserved.
+
+## Previous release evidence
+
 # Validation snapshot: 0.1.24 replacement-display recovery
 
 2026-10-25. All 67 portable tests and nine relevant native checks pass, including
@@ -23,8 +77,6 @@ geometry fail. Hardware changes are tested through the resident's CLI. The user
 confirms that the slider and F1/F2 work and the cursor dims with the screen.
 Reconnecting the old monitor and other Apple display models have not been physically checked.
 There is no new polling timer, display renderer, cursor manipulation or input change.
-
-## Previous release evidence
 
 # Validation snapshot: 0.1.23 Search UI isolation
 

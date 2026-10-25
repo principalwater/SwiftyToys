@@ -8,6 +8,42 @@ import WindowsDisplayABI
 
 func runCLI(_ args: [String]) throws -> Int32 {
     let command = args[0].lowercased()
+    if command == "--test-color-profiles" {
+        try WindowsColorProfiles.selfCheck()
+        try ColorProfileNotifications.selfCheck()
+        return 0
+    }
+    if command == "--install-color-profile" {
+        guard args.count == 2 || args.count == 3 else { throw WindowsError.unsupported("Choose one ICC profile to install.") }
+        _ = try WindowsColorProfiles.install(file: args[1], expectedName: args.count == 3 ? args[2] : nil)
+        return 0
+    }
+    if command == "--color-profile-info" {
+        Console.attach()
+        for output in try discoverDisplays().filter({ $0.isPhysical && !$0.isCloned && !$0.isHDR }) {
+            let snapshot = try WindowsColorProfiles.snapshot(output: output)
+            Console.writeLine("Display: " + output.name + "\nWindows profile: " + snapshot.effective)
+            Console.writeLine(snapshot.perUser ? "Scope: current user" : "Scope: system default")
+            for profile in snapshot.installed { Console.writeLine("Installed: " + profile.fileName) }
+        }
+        return 0
+    }
+    if command == "--apply-color-profile" {
+        guard args.count == 2 else { throw WindowsError.unsupported("Use --apply-color-profile <installed filename|system-default> with the resident closed.") }
+        let lock = try InstanceLock(timeout: 2000)
+        guard lock.acquired else { throw WindowsError.unsupported("Close SwiftyToys before using the standalone color-profile command. In the running app, use Brightness settings.") }
+        guard try recoverOutput() else { throw WindowsError.unsupported("Display recovery is pending. Restore brightness before changing its profile.") }
+        let settings = try Settings()
+        let outputs = try discoverDisplays().filter { $0.isPhysical && !$0.isHDR && !$0.isCloned }
+        let selected = try selectDisplay(from: outputs.map(\.candidate), savedID: settings.targetID)
+        guard let output = outputs.first(where: { $0.id == selected.id }) else {
+            throw WindowsError.unsupported("Select one connected physical SDR display.")
+        }
+        try WindowsColorProfiles.setDefault(fileName: args[1] == "system-default" ? nil : args[1], output: output)
+        Console.attach()
+        Console.writeLine("Windows color profile: " + (try WindowsColorProfiles.snapshot(output: output)).effective)
+        return 0
+    }
     if command == "--process-path-fixture" { return 0 }
     if command == "--library-worker" {
         guard args.count == 2 else { throw WindowsError.unsupported("Invalid library worker request.") }
@@ -239,6 +275,14 @@ func runCLI(_ args: [String]) throws -> Int32 {
         }
         _ = try sendResident(window, command: 6, value: index); Console.writeLine("Brightness mode: " + args[1]); return 0
     }
+    if command == "auto-brightness" {
+        guard args.count == 2, ["on", "off"].contains(args[1]),
+            let window = withWideString(controlWindowTitle, { FindWindowW(nil, $0) }) else {
+            throw WindowsError.unsupported("Use auto-brightness on|off with hardware brightness enabled and SwiftyToys running.")
+        }
+        _ = try sendResident(window, command: 7, value: args[1] == "on" ? 1 : 0)
+        Console.writeLine("Automatic brightness: " + args[1]); return 0
+    }
     if command == "--configure-mouse" || command == "--apply-native-mouse" {
         guard args.count == 3, ["0","1"].contains(args[1]), ["0","1"].contains(args[2]) else {
             throw WindowsError.unsupported("Use --configure-mouse / --apply-native-mouse <vertical 0|1> <horizontal 0|1>.")
@@ -415,6 +459,7 @@ func runCLI(_ args: [String]) throws -> Int32 {
         Console.writeLine("Step    : \(settings.step)%")
         Console.writeLine("OSD     : \(settings.indicator.rawValue)")
         Console.writeLine("DDC/CI  : \(settings.ddcEnabled ? "on" : "off (software dimming)")")
+        Console.writeLine("Automatic: " + (state.automaticBrightness.map { $0 ? "on" : "off" } ?? "unavailable"))
         if let id = settings.targetID {
             Console.writeLine("Hardware: \(try hardwareBrightnessInfo(displayID: id))")
         } else {

@@ -9,7 +9,10 @@ import WindowsDisplayABI
 
 private let trayMessage: UINT = 0x8004
 private let displayReplyMessage: UINT = 0x8035
-private final class SleepGate: Sendable { let busy = Mutex(false) }
+private final class SleepGate: Sendable {
+    let busy = Mutex(false)
+    let error = Mutex<WindowsError?>(nil)
+}
 private func windowProcedure(_ window: HWND?, _ message: UINT, _ value: WPARAM, _ data: LPARAM) -> LRESULT {
     guard let window else { return DefWindowProcW(window, message, value, data) }
     if message == UINT(WM_NCCREATE), let creation = UnsafePointer<CREATESTRUCTW>(bitPattern: Int(data)),
@@ -211,9 +214,8 @@ final class TrayApplication {
             }
             return 0
         case sleepResultMessage:
-            guard !exiting, value != 0 else { return 0 }
-            let error = WindowsError.api("Put computer to sleep", DWORD(truncatingIfNeeded: value))
-            Diagnostics.write("sleep: \(error)")
+            let error = sleepGate.error.withLock { error in defer { error = nil }; return error }
+            guard !exiting, let error else { return 0 }
             do { try showDashboard(); dashboard?.showActionError(error) }
             catch { Diagnostics.write("show power error: \(error)") }
             return 0
@@ -250,12 +252,11 @@ final class TrayApplication {
                     do {
                         _ = try NativeThread(name: "SwiftyToys sleep") {
                             defer { gate.busy.withLock { $0 = false } }
-                            do { try DesktopPower.sleep() }
+                            do throws(WindowsError) { try DesktopPower.sleep() }
                             catch {
                                 Diagnostics.write("sleep: \(error)")
-                                let code: DWORD
-                                if case WindowsError.api(_, let value) = error { code = value } else { code = DWORD(ERROR_GEN_FAILURE) }
-                                _ = destination.post(sleepResultMessage, value: Int(code == 0 ? DWORD(ERROR_GEN_FAILURE) : code))
+                                gate.error.withLock { $0 = error }
+                                _ = destination.post(sleepResultMessage)
                             }
                         }
                     } catch { gate.busy.withLock { $0 = false }; throw error }
@@ -276,19 +277,28 @@ final class TrayApplication {
                 lastApply = GetTickCount64()
                 updateTray()
                 dashboard?.update(brightness: displayQueue.hasBrightness ? displayQueue.level : state.level.percent)
+                dashboard?.updateAutomaticBrightness(state.automaticBrightness)
                 if request.command == 1 { dashboard?.displayCompleted("Brightness updated.") }
                 if request.show { showOSD() }
             } catch {
                 Diagnostics.write("display: \(error)")
-                if request.mode != nil { displayError = error }
+                if request.mode != nil || request.command == 7 || request.profile != nil { displayError = error }
             }
-            if request.mode != nil {
+            if request.mode != nil || request.command == 7 || request.profile != nil {
                 if let latest = try? Settings() { settings = latest }
                 dashboard?.refreshBrightnessControl()
                 dashboard?.brightnessControlBusy(false)
-                if case .success = reply { dashboard?.displayCompleted(settings.ddcEnabled ? "DDC/CI enabled. Brightness controls the monitor backlight, including the cursor." : "DDC/CI disabled. Brightness uses software dimming; the monitor backlight stays unchanged.") }
+                dashboard?.updateAutomaticBrightness(state.automaticBrightness)
+                if case .success = reply {
+                    dashboard?.displayCompleted(request.profile != nil ? "Windows color profile updated. Color-managed apps may need to reopen."
+                        : request.command == 7
+                        ? (state.automaticBrightness == true ? "Monitor ambient-light sensor enabled. Automatic adjustment depends on its firmware and driver." : "Automatic brightness disabled.")
+                        : settings.ddcEnabled ? "DDC/CI enabled. Brightness controls the monitor backlight, including the cursor." : "DDC/CI disabled. Brightness uses software dimming; the monitor backlight stays unchanged.")
+                }
             }
+            if request.profile != nil { dashboard?.refreshColorProfiles() }
             if let next = displayQueue.finish(level: state.level.percent) { requestDisplay(next) }
+            if displayError != nil, request.command == 7 { try? showDashboard() }
             if let displayError, let dashboard, let window = dashboard.window, IsWindowVisible(window) { dashboard.showActionError(displayError) }
             return 0
         case brightnessMessage:
@@ -304,6 +314,7 @@ final class TrayApplication {
                     guard !exiting else { return 0 }
                     settings = try Settings(); displayQueue.level = state.level.percent
                     dashboard?.refreshBrightnessControl(); dashboard?.update(brightness: state.level.percent); updateTray()
+                    dashboard?.updateAutomaticBrightness(state.automaticBrightness)
                     return LRESULT(state.level.percent + 1)
                 }
                 catch { Diagnostics.write("brightness mode: \(error)"); return 0 }
@@ -392,7 +403,7 @@ final class TrayApplication {
         case UINT(WM_DISPLAYCHANGE):
             cancelBrightnessRepeat()
             if !exiting {
-                requestDisplay(DisplayRequest(5))
+                requestDisplay(DisplayRequest(8))
             }
             return 0
         case UINT(WM_POWERBROADCAST):
@@ -455,6 +466,8 @@ final class TrayApplication {
             }
             updateTray()
             dashboard?.update(brightness: state.level.percent)
+            dashboard?.updateAutomaticBrightness(state.automaticBrightness)
+            if command == 7 { settings = try Settings(); dashboard?.refreshBrightnessControl() }
             if show { showOSD() }
             return true
         } catch {
@@ -467,12 +480,12 @@ final class TrayApplication {
     private func requestDisplay(_ request: DisplayRequest) {
         guard !exiting, let window else { return }
         let start = displayQueue.enqueue(request)
-        if request.mode != nil { dashboard?.brightnessControlBusy(true) }
+        if request.mode != nil || request.command == 7 || request.profile != nil { dashboard?.brightnessControlBusy(true) }
         guard start else { return }
         let mailbox = displayMailbox, controller = controller, destination = MessageDestination(window)
         Task {
             let reply: Result<DisplayState, WindowsError>
-            do { reply = .success(try await performDisplayCommand(controller, command: request.command, value: request.value, mode: request.mode)) }
+            do { reply = .success(try await performDisplayCommand(controller, command: request.command, value: request.value, mode: request.mode, profile: request.profile, profileDisplayID: request.profileDisplayID)) }
             catch { reply = .failure((error as? WindowsError) ?? .unsupported(String(describing: error))) }
             mailbox.result.withLock { $0 = reply }
             _ = destination.post(displayReplyMessage)
@@ -533,6 +546,7 @@ final class TrayApplication {
                     return try self.dashboardCommand(id, values)
                 })
         }
+        dashboard?.updateAutomaticBrightness(state.automaticBrightness)
         dashboard?.show()
     }
 
@@ -675,6 +689,18 @@ final class TrayApplication {
             guard values.count == 1, ["auto", "native", "amd", "hardware"].contains(values[0]) else { throw WindowsError.unsupported("Invalid brightness mode.") }
             requestDisplay(DisplayRequest(3, mode: values[0]))
             return "Applying brightness method…"
+        case 252:
+            guard values.count == 1, ["0", "1"].contains(values[0]) else {
+                throw WindowsError.unsupported("Invalid automatic brightness mode.")
+            }
+            requestDisplay(DisplayRequest(7, value: values[0] == "1" ? 1 : 0))
+            return "Applying automatic brightness…"
+        case 263:
+            guard values.count == 2, !values[0].isEmpty else {
+                throw WindowsError.unsupported("Select one connected physical SDR display.")
+            }
+            requestDisplay(DisplayRequest(9, profile: values[1], profileDisplayID: values[0]))
+            return "Applying Windows color profile…"
         case 313: try reloadRemapper()
         case 410:
             let minutes =
@@ -752,6 +778,12 @@ final class TrayApplication {
             }
         }
         CheckMenuRadioItem(menu, 2001, 2002, settings.indicator == .custom ? 2001 : 2002, UINT(MF_BYCOMMAND))
+        let automaticAvailable = settings.ddcEnabled && state.automaticBrightness != nil
+            && displayQueue.active == nil && !controller.commandAdmission.isBusy
+        _ = withWideString(localization.text("Ambient-light sensor (monitor setting)")) {
+            AppendMenuW(menu, UINT(MF_STRING | (state.automaticBrightness == true ? MF_CHECKED : 0)
+                | (automaticAvailable ? 0 : MF_DISABLED)), 2003, $0)
+        }
         _ = withWideString(localization.text("Quit")) { AppendMenuW(menu, UINT(MF_STRING), 4, $0) }
         var point = POINT()
         GetCursorPos(&point)
@@ -782,6 +814,8 @@ final class TrayApplication {
                 systemIndicator?.setCustom(settings.indicator == .custom)
                 if let osd { ShowWindow(osd, Int32(SW_HIDE)) }
             } catch { Diagnostics.write("indicator: \(error)") }
+        } else if selected == 2003 {
+            requestDisplay(DisplayRequest(7, value: state.automaticBrightness == true ? 0 : 1))
         } else if [10, 25, 50, 75, 100].contains(selected) {
             requestDisplay(DisplayRequest(1, value: Int(selected), show: true))
         }

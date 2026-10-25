@@ -14,6 +14,8 @@ struct Settings: Sendable {
     var interceptInjectedKeys = false
     var restoreOnResume = true
     var ddcEnabled = false
+    var automaticBrightness: Bool?
+    var automaticBrightnessDisplay: String?
     var softwareBackend = "auto"
     var hotkeys = ["Ctrl+Alt+Up", "Ctrl+Alt+Down", "Ctrl+Alt+PageUp", "Ctrl+Alt+PageDown"]
     var backend = "auto"
@@ -79,6 +81,10 @@ struct Settings: Sendable {
             case "ddcenabled":
                 if ["0", "1", "false", "true"].contains(value.lowercased()) { explicitDDC = value == "1" || value.lowercased() == "true" }
                 else { explicitDDC = false; Diagnostics.write("Invalid DDC preference; using software dimming.") }
+            case "automaticbrightness":
+                automaticBrightness = ["1", "true"].contains(value.lowercased()) ? true
+                    : ["0", "false"].contains(value.lowercased()) ? false : nil
+            case "automaticbrightnessdisplay": automaticBrightnessDisplay = value.isEmpty ? nil : value
             case "up": hotkeys[0] = value
             case "down": hotkeys[1] = value
             case "max": hotkeys[2] = value
@@ -99,6 +105,16 @@ struct Settings: Sendable {
 
     func saveBrightness(_ level: BrightnessLevel) throws {
         try NativeFiles.write(Array("\(level.percent)\r\n".utf8), to: NativeFiles.path("software.txt"))
+    }
+
+    func automaticBrightness(for displayID: String) -> Bool? {
+        automaticBrightnessDisplay == displayID ? automaticBrightness : nil
+    }
+
+    mutating func setAutomaticBrightness(_ enabled: Bool, displayID: String) throws {
+        try setValues(["automaticBrightness": enabled ? "1" : "0", "automaticBrightnessDisplay": displayID])
+        automaticBrightness = enabled
+        automaticBrightnessDisplay = displayID
     }
 
     mutating func select(_ id: String) throws {
@@ -142,6 +158,20 @@ struct Settings: Sendable {
     }
 
     static func selfCheck() throws {
+        guard try Settings(contents: "").automaticBrightness(for: "display") == nil else {
+            throw WindowsError.unsupported("A new preference changed the monitor's existing automatic mode.")
+        }
+        for (text, expected) in [("1", true), ("0", false)] {
+            let settings = try Settings(contents: "automaticBrightness=\(text)\nautomaticBrightnessDisplay=display")
+            guard settings.automaticBrightness(for: "display") == expected,
+                settings.automaticBrightness(for: "another") == nil else {
+                throw WindowsError.unsupported("Automatic brightness preference escaped its selected display.")
+            }
+        }
+        guard try Settings(contents: "automaticBrightness=invalid\nautomaticBrightnessDisplay=display")
+            .automaticBrightness(for: "display") == nil else {
+            throw WindowsError.unsupported("An invalid automatic brightness preference was accepted.")
+        }
         guard usesRetiredBackend(" BACKEND = Compositor \nddcEnabled=0"),
             !usesRetiredBackend("# backend=compositor\nbackend=auto") else {
             throw WindowsError.unsupported("Retired backend persistence check failed.")

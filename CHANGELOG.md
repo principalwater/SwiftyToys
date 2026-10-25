@@ -1,5 +1,28 @@
 # Changelog
 
+## SwiftyToys 0.1.26 — 2026-10-25
+
+- Add native Windows SDR color-profile selection, ICC import and return to system
+  defaults in Brightness. Validate ICC bytes, preserve installed profiles and release
+  the previous dimming lease before changing the current user's display association.
+  Imported unit-specific profiles remain local and are excluded from releases.
+- Preserve the hardware-brightness cache across resolution changes on the same
+  physical target, avoiding redundant DDC writes during fullscreen transitions.
+  Resume, explicit refresh, changed bindings and error recovery keep their checks.
+- Check native standby capabilities before requesting Sleep. Preserve actionable
+  errors across the worker/UI boundary, including when firmware exposes no sleep
+  state. Keep Hibernate distinct; never alter the power plan or firmware.
+- Admit language packs up to 64 KiB so growing translations remain available;
+  retain the separate 32 KiB settings/recovery limit and all string validation.
+- Add **Ambient-light sensor (monitor setting)** to Brightness settings and the tray for
+  Apple Thunderbolt Display in hardware mode. Use the monitor's native ambient-light
+  control through Windows VCP 0x66, using the existing native display mode.
+- Preserve the existing sensor mode until explicitly changed. Save the preference
+  for the selected display and include its original mode in watchdog recovery.
+- Report the sensor enable bit separately from actual ambient response, which is
+  not working on the tested Windows connection. No extra driver, guessed vendor
+  command, sensor-reading loop, screen renderer or cursor changes.
+
 ## SwiftyToys 0.1.24 — 2026-10-25
 
 - Allow a selected replacement monitor to bind while the disconnected monitor's

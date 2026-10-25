@@ -8,10 +8,12 @@ struct DisplayState: Sendable, Equatable {
     let device: String
     let backend: String
     let connected: Bool
+    var automaticBrightness: Bool? = nil
     func encoded() -> [UInt8] {
         StateJSON.encode([
             "level": .unsigned(UInt64(level.percent)), "device": .string(device),
             "backend": .string(backend), "connected": .bool(connected),
+            "automaticBrightness": automaticBrightness.map(StateField.bool) ?? .null,
         ])
     }
     static func decode(_ bytes: [UInt8]) throws -> Self {
@@ -19,7 +21,12 @@ struct DisplayState: Sendable, Equatable {
         guard let percentage = fields["level"]?.integer, let device = fields["device"]?.string,
             let backend = fields["backend"]?.string, let connected = fields["connected"]?.bool
         else { throw WindowsError.unsupported("Invalid display status.") }
-        return Self(level: try BrightnessLevel(percentage), device: device, backend: backend, connected: connected)
+        let automatic = fields["automaticBrightness"]
+        guard automatic == nil || automatic == .null || automatic?.bool != nil else {
+            throw WindowsError.unsupported("Invalid automatic brightness status.")
+        }
+        return Self(level: try BrightnessLevel(percentage), device: device, backend: backend,
+            connected: connected, automaticBrightness: automatic?.bool)
     }
 }
 private final class NativeBackend {
@@ -76,7 +83,8 @@ actor DisplayController {
             owner: GetCurrentProcessId(), started: try processStartTicks(GetCurrentProcess()), displayID: output.id,
             backend: hardware != nil ? "hardware" : native == nil ? "amd" : "native", amdID: amdOutput?.legacyID,
             brightness: hardware.map { Int($0.original) } ?? (native == nil ? baselineBrightness : nil),
-            contrast: hardware == nil && native == nil ? baselineContrast : nil, gamma: native?.session.original.array)
+            contrast: hardware == nil && native == nil ? baselineContrast : nil, gamma: native?.session.original.array,
+            automaticBrightness: hardware?.originalAutomaticBrightness)
     }
 
     /// Restore through the device that already owns the source before releasing
@@ -224,28 +232,26 @@ actor DisplayController {
         hardware != nil ? "native DDC/CI" : native == nil ? "AMD RGB gain" : "native WDDM gamma"
     }
 
+    private func checkpoint() throws {
+        let original = try lease()
+        if let saved = try ColorLease.read() {
+            guard saved == original else {
+                recoveryConflict = true
+                throw WindowsError.unsupported("Another output still has pending recovery; brightness remains unchanged.")
+            }
+        } else { try original.write() }
+        if !watchdog { try startWatchdog(); watchdog = true }
+    }
+
     private func apply(_ target: BrightnessLevel) throws {
         guard !exiting else { throw WindowsError.unsupported("SwiftyToys is shutting down.") }
         try bind()
         if output != nil {
             if !needsBrightnessApply(target, lastApplied: lastApplied) { level = target; return }
-            let original = try lease()
-            if let saved = try ColorLease.read() {
-                guard saved == original else {
-                    recoveryConflict = true
-                    throw WindowsError.unsupported(
-                        "Another output still has pending recovery; brightness remains unchanged.")
-                }
-            } else {
-                try original.write()
-            }  // Persist recovery before the first display write.
-            if !watchdog {
-                try startWatchdog()
-                watchdog = true
-            }
+            try checkpoint()  // Persist recovery before the first display write.
             do {
                 if let hardware {
-                    try hardware.apply(target)
+                    try hardware.apply(target, automatic: output.flatMap { settings.automaticBrightness(for: $0.id) })
                 } else if let native {
                     try native.session.apply(target)
                 } else if let amd, let amdOutput {
@@ -298,6 +304,28 @@ actor DisplayController {
                 try restoreAndRelease()
             } else { hardware?.invalidate() }
             try apply(level)
+        case 8:
+            // A resolution change does not reset a physical monitor's backlight.
+            // bind() still reopens changed targets and preserves their recovery state.
+            if hardware == nil { lastApplied = nil }
+            try apply(level)
+        case 7:
+            guard value == 0 || value == 1, settings.ddcEnabled else {
+                throw WindowsError.unsupported("Enable hardware brightness before changing automatic brightness.")
+            }
+            try bind()
+            guard let output, let hardware, let previous = hardware.automaticBrightness else {
+                throw WindowsError.unsupported("This display does not expose supported automatic brightness.")
+            }
+            try checkpoint()
+            do {
+                try hardware.setAutomaticBrightness(value == 1)
+                try settings.setAutomaticBrightness(value == 1, displayID: output.id)
+            } catch {
+                do { try hardware.setAutomaticBrightness(previous) }
+                catch { _ = try? restoreAndRelease() }
+                throw error
+            }
         case 1: try apply(BrightnessLevel(max(0, min(100, value))))
         case 2: try apply(level.adjusted(by: value))
         default: break
@@ -305,12 +333,41 @@ actor DisplayController {
         let state = DisplayState(
             level: level, device: output?.device ?? "",
             backend: output == nil ? "unavailable" : backendName,
-            connected: output != nil)
+            connected: output != nil, automaticBrightness: hardware?.automaticBrightness)
         if state != lastState {
             try NativeFiles.write(state.encoded(), to: NativeFiles.path("display-status.json"))
             lastState = state
         }
         return state
+    }
+
+    func setColorProfile(fileName: String?, displayID: String) throws -> DisplayState {
+        guard !exiting else { throw WindowsError.unsupported("SwiftyToys is shutting down.") }
+        try bind()
+        guard let selected = output, selected.id == displayID else {
+            throw WindowsError.unsupported("The selected display changed. Refresh color profiles before applying.")
+        }
+        // A profile must never become the baseline of an older dimming lease.
+        let releasedSoftware = hardware == nil
+        if releasedSoftware {
+            guard try restoreAndRelease() else {
+                throw WindowsError.unsupported("Restore display brightness before changing its color profile. Recovery state is preserved.")
+            }
+        }
+        do {
+            try WindowsColorProfiles.setDefault(fileName: fileName, output: selected)
+        } catch {
+            let profileError = String(describing: error)
+            do { if releasedSoftware { try apply(level) } }
+            catch {
+                throw WindowsError.unsupported(profileError + "\n\nBrightness recovery did not finish. Use Reconnect display; its recovery state is preserved.")
+            }
+            throw WindowsError.unsupported(profileError)
+        }
+        do { return try command(0) }
+        catch {
+            throw WindowsError.unsupported("Windows saved the color profile, but brightness could not be reapplied. Use Reconnect display.\n" + String(describing: error))
+        }
     }
 
     func shutdown() -> Bool {

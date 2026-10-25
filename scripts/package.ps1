@@ -1,4 +1,4 @@
-param([string]$Version = '0.1.24', [string]$SwiftVersion)
+param([string]$Version = '0.1.26', [string]$SwiftVersion)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 if ($Version -notmatch '^\d+\.\d+(?:\.\d+)?(?:-[a-z0-9.-]+)?$') { throw 'Invalid package version.' }
@@ -41,7 +41,7 @@ if ([Enum]::IsDefined([IO.Compression.CompressionLevel], 'SmallestSize')) {
 if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath }
 [IO.Compression.ZipFile]::CreateFromDirectory($packageDirectory, $archivePath, $compression, $false)
 $size = (Get-Item -LiteralPath $archivePath).Length
-if ($size -gt 3500000) { throw "Archive exceeds the 3.5 MB size budget: $size bytes." }
+if ($size -gt 3550000) { throw "Archive exceeds the 3.55 MB size budget: $size bytes." }
 $digest = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText("$archivePath.sha256", ($digest + '  ' + [IO.Path]::GetFileName($archivePath) + "`n"), [Text.Encoding]::ASCII)
 Write-Host "Packaged $archivePath ($size bytes)"

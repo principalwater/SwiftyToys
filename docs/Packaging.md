@@ -7,8 +7,9 @@ Windows system DLLs. No executable packer, experimental Swift mode, runtime prun
 or patched SDK is used. Both embed the Command Ember icon, Common Controls v6,
 per-monitor DPI and asInvoker manifest entries.
 
-Search library/media support raises the executable ceiling to 8.5 MB; ZIP retains
-3.5 MB and Setup 2.7 MB. The measured 0.1.19 setup is about 2.60 MB; these
+The executable ceiling is 8.60 MB: native ICC validation, WCS controls and display
+diagnostics add a bounded allowance over the 8.5 MB Search ceiling, retaining recovery
+and native checks. ZIP is capped at 3.55 MB; Setup retains 2.7 MB. The measured 0.1.19 setup is about 2.60 MB; these
 ceilings remain enforced by packaging checks.
 An intermediate optimized Search build measured 7,381,504 bytes versus the installed
 0.1.12 app's 6,885,888 bytes; final sizes are recorded in Validation. Model weights,
@@ -45,7 +46,7 @@ toolchain pinned in .swift-version. See [toolchain upgrades](Toolchain.md).
 Official dispatch.lib and BlocksRuntime.lib satisfy the static Swift concurrency
 archive. Native threads are CRT initialized; driver work runs on its serial Swift
 actor executor. The build rejects accidental dynamic Swift imports and enforces
-8.5 MB EXE / 3.5 MB ZIP regression budgets. These budgets can be revised when an explicit
+8.60 MB EXE / 3.55 MB ZIP regression budgets. These budgets can be revised when an explicit
 feature or a measured improvement justifies larger distribution; they are not a
 reason to remove requested functionality or correctness checks.
 

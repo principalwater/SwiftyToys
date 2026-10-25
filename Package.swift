@@ -32,6 +32,7 @@ var dependencies: [Package.Dependency] = []
                 .linkedLibrary("comctl32"), .linkedLibrary("uxtheme"), .linkedLibrary("advapi32"),
                 .linkedLibrary("wtsapi32"), .linkedLibrary("setupapi"), .linkedLibrary("cfgmgr32"),
                 .linkedLibrary("magnification"),
+                .linkedLibrary("mscms"), .linkedLibrary("comdlg32"),
                 .linkedLibrary("wevtapi"), .linkedLibrary("powrprof"),
                 .linkedLibrary("winhttp"),
                 .linkedLibrary("oleacc"), .linkedLibrary("shlwapi"),

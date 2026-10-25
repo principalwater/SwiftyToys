@@ -4,6 +4,13 @@ import BrightnessCore
 
 /// Pure mapping checks: never reads a local lease or calls a display API.
 func testRecoveryStateMapping() throws {
+    guard monitorAutomaticBrightness(1, maximum: 2) == false,
+        monitorAutomaticBrightness(2, maximum: 2) == true,
+        monitorAutomaticBrightness(0, maximum: 2) == nil,
+        monitorAutomaticBrightness(0x82, maximum: 0xff) == nil,
+        monitorAutomaticBrightness(2, maximum: 3) == nil else {
+        throw WindowsError.unsupported("Nonstandard sensor values must not become a monitor mode.")
+    }
     let applied = try BrightnessLevel(60)
     guard !needsBrightnessApply(applied, lastApplied: applied),
         needsBrightnessApply(try BrightnessLevel(65), lastApplied: applied),
@@ -76,6 +83,18 @@ func testRecoveryStateMapping() throws {
         throw WindowsError.unsupported("Global cursor recovery must finish before display replacement.")
     }
     guard try ColorLease.decode(hardware.encoded()) == hardware else { throw WindowsError.unsupported("Hardware brightness recovery mapping failed.") }
+    for enabled in [false, true] {
+        var automatic = hardware
+        automatic.automaticBrightness = enabled
+        guard try ColorLease.decode(automatic.encoded()) == automatic else {
+            throw WindowsError.unsupported("Original monitor sensor mode was lost from recovery.")
+        }
+    }
+    var invalidAutomatic = try StateJSON.decode(hardware.encoded())
+    invalidAutomatic["automaticBrightness"] = .signed(2)
+    var invalidAutomaticRejected = false
+    do { _ = try ColorLease.decode(StateJSON.encode(invalidAutomatic)) } catch { invalidAutomaticRejected = true }
+    guard invalidAutomaticRejected else { throw WindowsError.unsupported("Invalid sensor recovery value accepted.") }
     var invalidHardware = try StateJSON.decode(hardware.encoded())
     invalidHardware["brightness"] = .signed(-1)
     var hardwareRejected = false
@@ -111,6 +130,13 @@ func testRecoveryStateMapping() throws {
         level: try BrightnessLevel(75), device: "\\\\.\\DISPLAY1", backend: "native", connected: true)
     guard try DisplayState.decode(state.encoded()) == state else {
         throw WindowsError.unsupported("Display status mapping changed its schema.")
+    }
+    for enabled in [false, true] {
+        var automatic = state
+        automatic.automaticBrightness = enabled
+        guard try DisplayState.decode(automatic.encoded()) == automatic else {
+            throw WindowsError.unsupported("Automatic brightness status mapping failed.")
+        }
     }
 }
 

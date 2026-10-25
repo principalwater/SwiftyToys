@@ -82,6 +82,11 @@ final class SettingsWindow {
     private let wslBootDiagnostic = WSLBootDiagnostic()
     private let deviceReports = SettingsDeviceReports()
     private let displayReports = SettingsDisplayReports()
+    private let colorProfiles = SettingsColorProfiles()
+    private var colorProfileNames: [String] = []
+    private var colorProfilesRefreshPending = false
+    private var importedColorProfile: (displayID: String, name: String)?
+    private var colorNotifications: ColorProfileNotifications?
     private var displays: [DisplayOutput] = []
     private var languages: [UInt16] = []
     private let localization = Localization()
@@ -92,6 +97,7 @@ final class SettingsWindow {
     private var selectedRule: Int?
     private var draftRuleSelection: Int?
     private var brightnessConfiguration: Settings?
+    private var monitorAutomaticBrightness: Bool?
     private var modeBusy = false
     private var lastFocusedControl: Int?
     private let preview: Bool
@@ -240,11 +246,70 @@ final class SettingsWindow {
         updateBrightnessMode()
         if let tile = controls[121] { setText(tile, tileText(1)); InvalidateRect(tile, nil, false) }
     }
+    func updateAutomaticBrightness(_ enabled: Bool?) {
+        let mismatch = controls[252] != nil && checked(252) != (enabled == true)
+        guard monitorAutomaticBrightness != enabled || mismatch else { return }
+        monitorAutomaticBrightness = enabled
+        if let label = controls[209] { setText(label, localization.text("Display brightness")) }
+        if let control = controls[252] {
+            SendMessageW(control, UINT(BM_SETCHECK), enabled == true ? WPARAM(BST_CHECKED) : WPARAM(BST_UNCHECKED), 0)
+        }
+        brightnessControlBusy(modeBusy)
+    }
     func displayCompleted(_ message: String) { if page == 1 { status(message) } }
     func brightnessControlBusy(_ busy: Bool) {
         modeBusy = busy
         if let control = controls[244] { EnableWindow(control, !busy) }
+        if let control = controls[252] { EnableWindow(control, !busy && checked(244) && monitorAutomaticBrightness != nil) }
         for id in [245, 246] { if let control = controls[id] { EnableWindow(control, !busy && !checked(244)) } }
+        for id in [262, 263, 264, 265] {
+            if let control = controls[id] { EnableWindow(control, !busy && !colorProfiles.busy && colorOutput != nil) }
+        }
+    }
+    private var colorOutput: DisplayOutput? {
+        if let selected = brightnessConfiguration?.targetID { return displays.first { $0.id == selected } }
+        return displays.count == 1 ? displays.first : nil
+    }
+    func refreshColorProfiles() {
+        guard page == 1, !preview, let window, IsWindowVisible(window), let output = colorOutput else { return }
+        if colorNotifications == nil, IsWindowVisible(window) {
+            do { colorNotifications = try ColorProfileNotifications(destination: MessageDestination(window)) }
+            catch { Diagnostics.write("color notifications: \(error)") }
+        }
+        if colorProfiles.busy { colorProfilesRefreshPending = true; return }
+        colorProfilesRefreshPending = false
+        colorProfiles.load(output: output, destination: MessageDestination(window))
+        brightnessControlBusy(modeBusy)
+    }
+    private func updateColorProfiles() {
+        guard page == 1, let combo = controls[262] else { return }
+        guard let output = colorOutput else {
+            if let label = controls[261] { setText(label, localization.text("Select one connected physical SDR display.")) }
+            colorProfileNames = []
+            SendMessageW(combo, UINT(CB_RESETCONTENT), 0, 0)
+            brightnessControlBusy(modeBusy)
+            return
+        }
+        guard let report = colorProfiles.report, report.displayID == output.id else { refreshColorProfiles(); return }
+        colorProfileNames = []
+        SendMessageW(combo, UINT(CB_RESETCONTENT), 0, 0)
+        if let snapshot = report.snapshot {
+            if let name = report.imported { importedColorProfile = (output.id, name) }
+            if importedColorProfile?.displayID != output.id { importedColorProfile = nil }
+            colorProfileNames = [""] + snapshot.installed.map(\.fileName)
+            let choices = [localization.text("Use Windows system default")] + snapshot.installed.map(\.description)
+            for choice in choices { _ = withWideString(choice) { SendMessageW(combo, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0))) } }
+            let selected = importedColorProfile?.name ?? (snapshot.perUser ? snapshot.defaultProfile ?? snapshot.effective : "")
+            let index = colorProfileNames.firstIndex { equalWindowsNames($0, selected) } ?? 0
+            SendMessageW(combo, UINT(CB_SETCURSEL), WPARAM(index), 0)
+            if let label = controls[261] {
+                let description = snapshot.installed.first { equalWindowsNames($0.fileName, snapshot.effective) }?.description ?? snapshot.effective
+                setText(label, localization.text("Windows profile: {0}", [description]) + "\n" + localization.text(snapshot.perUser ? "Scope: current user" : "Scope: Windows system default"))
+            }
+            if report.imported != nil { status("ICC profile installed. Choose Apply to use it for this display.") }
+        } else if let label = controls[261] { setText(label, report.error ?? localization.text("Color profile information is unavailable.")) }
+        brightnessControlBusy(modeBusy)
+        if colorProfileNames.isEmpty, let apply = controls[263] { EnableWindow(apply, false) }
     }
     private func updateBrightnessMode() {
         let enabled = brightnessConfiguration?.ddcEnabled ?? false
@@ -301,6 +366,24 @@ final class SettingsWindow {
                 guard checked(id) != before else { throw WindowsError.unsupported("Checkbox \(id) did not toggle.") }
                 SendMessageW(handle, UINT(BM_CLICK), 0, 0)
                 guard checked(id) == before else { throw WindowsError.unsupported("Checkbox \(id) did not restore.") }
+            }
+            if page == 1, let automatic = controls[252], let hardware = controls[244] {
+                let previous = checked(244)
+                SendMessageW(hardware, UINT(BM_SETCHECK), WPARAM(BST_CHECKED), 0)
+                updateAutomaticBrightness(false)
+                guard IsWindowEnabled(automatic), !checked(252) else {
+                    throw WindowsError.unsupported("Supported automatic brightness control is unavailable.")
+                }
+                SendMessageW(automatic, UINT(BM_CLICK), 0, 0)
+                guard checked(252) else { throw WindowsError.unsupported("Automatic brightness checkbox did not toggle.") }
+                updateAutomaticBrightness(false)
+                guard !checked(252) else { throw WindowsError.unsupported("Automatic brightness checkbox did not roll back.") }
+                updateAutomaticBrightness(nil)
+                guard !IsWindowEnabled(automatic), !checked(252) else {
+                    throw WindowsError.unsupported("Unsupported automatic brightness was enabled.")
+                }
+                SendMessageW(hardware, UINT(BM_SETCHECK), previous ? WPARAM(BST_CHECKED) : WPARAM(BST_UNCHECKED), 0)
+                brightnessControlBusy(false)
             }
             if page == 7, let combo = controls[502], let install = controls[511] {
                 // Selection events must disable WSL 1 and enable WSL 2 without starting Linux.
@@ -564,6 +647,7 @@ final class SettingsWindow {
     private func renderPage() {
         guard let window else { return }
         rendering = true
+        if page != 1 { colorNotifications = nil }
         hovered = nil
         brightnessConfiguration = try? Settings()
         let visible = IsWindowVisible(window)
@@ -610,7 +694,8 @@ final class SettingsWindow {
                 SendMessageW(slider, UINT(TBM_SETPOS), 1, LPARAM(level))
             }
             check("Hardware brightness (DDC/CI)", 244, 300, 318, 650, on: settings?.ddcEnabled ?? false)
-            label("", 248, 300, 361, 650, 66)
+            check("Ambient-light sensor (monitor setting)", 252, 300, 356, 650, on: monitorAutomaticBrightness == true)
+            label("", 248, 300, 394, 650, 42)
             label("Software compatibility", 247, 300, 444, 650, 25)
             combo(["Automatic", "Windows color controls", "AMD display controls"], 246, 300, 479, 450)
             if let control = controls[246], let selected = Settings.softwareModes.firstIndex(of: settings?.softwareBackend ?? "auto") { SendMessageW(control, UINT(CB_SETCURSEL), WPARAM(selected), 0) }
@@ -636,6 +721,16 @@ final class SettingsWindow {
             }
             button("Save settings", 240, 300, 895, 242)
             button("Reconnect display", 241, 566, 895, 250)
+            label("Color profile", 260, 300, 977, 650, 30, large: true)
+            label(preview ? "Windows profile: sRGB Color Space Profile.icm" : "Reading Windows color settings…", 261, 300, 1022, 650, 56)
+            combo([], 262, 300, 1090, 450)
+            button("Apply profile", 263, 770, 1088, 180)
+            button("Import ICC…", 264, 300, 1150, 200)
+            button("Refresh profiles", 265, 516, 1150, 210)
+            button("Windows color settings", 266, 742, 1150, 208)
+            label("Uses native Windows color settings for this display and user. Color-managed apps use the selected profile; games may ignore it. Calibration stays under Windows control. Importing requires administrator approval.", 267, 300, 1210, 650, 96)
+            updateColorProfiles()
+            if !preview { refreshColorProfiles() }
         case 2:
             check("Enable remapping", 315, 300, 152, 350, on: keyboard.enabled)
             if let list = control(
@@ -925,6 +1020,15 @@ final class SettingsWindow {
             if let index = displays.firstIndex(where: { $0.id == selected }) {
                 SendMessageW(combo, UINT(CB_SETCURSEL), WPARAM(index), 0)
             }
+            updateColorProfiles()
+            return 0
+        case colorProfilesMessage:
+            updateColorProfiles()
+            if colorProfilesRefreshPending { refreshColorProfiles() }
+            return 0
+        case colorProfileChangedMessage:
+            if value == 1 { status("Live color updates are unavailable. Use Refresh profiles or reopen this page.") }
+            else { refreshColorProfiles() }
             return 0
         case UINT(WM_DISPLAYCHANGE), UINT(WM_DEVICECHANGE):
             if !preview { displayReports.load(destination: MessageDestination(window), refresh: true) }
@@ -950,6 +1054,7 @@ final class SettingsWindow {
             }
             return 0
         case UINT(WM_CLOSE):
+            colorNotifications = nil
             ShowWindow(window, Int32(SW_HIDE))
             if preview {
                 DestroyWindow(window)
@@ -963,6 +1068,7 @@ final class SettingsWindow {
         case UINT(WM_ACTIVATE):
             if value & 0xFFFF == WPARAM(WA_INACTIVE) { lastFocusedControl = GetFocus().map { Int(GetDlgCtrlID($0)) } }
             else if let id = lastFocusedControl, let control = controls[id], IsWindowVisible(control), IsWindowEnabled(control) { SetFocus(control) }
+            if value & 0xFFFF != WPARAM(WA_INACTIVE) { refreshColorProfiles() }
             return 0
         case UINT(WM_GETMINMAXINFO):
             if let info = UnsafeMutablePointer<MINMAXINFO>(bitPattern: Int(data)) {
@@ -1010,12 +1116,36 @@ final class SettingsWindow {
             if let focus, let control = controls[focus] { SetFocus(control) }
             return 0
         case UINT(WM_SETTINGCHANGE), UINT(WM_SYSCOLORCHANGE), UINT(WM_THEMECHANGED):
+            if message == UINT(WM_SETTINGCHANGE) { refreshColorProfiles() }
             makeTheme()
             RedrawWindow(window, nil, nil, UINT(RDW_INVALIDATE | RDW_ALLCHILDREN))
             return 0
         case UINT(WM_COMMAND):
             let id = Int(value & 0xFFFF)
             let notification = Int((value >> 16) & 0xFFFF)
+            if [263, 264, 265, 266].contains(id), notification == Int(BN_CLICKED) {
+                guard !preview else { return 0 }
+                do {
+                    if id == 266 { try shellOpen(try systemExecutable("colorcpl.exe"), owner: window) }
+                    else if id == 265 { refreshColorProfiles() }
+                    else if id == 264 {
+                        if let output = colorOutput, let file = try SettingsColorProfiles.chooseProfile(owner: window, title: localization.text("Import ICC profile")) {
+                            try colorProfiles.importProfile(file: file, output: output, destination: MessageDestination(window))
+                            status("Installing ICC profile. Approve the Windows administrator prompt.")
+                            brightnessControlBusy(modeBusy)
+                        }
+                    } else {
+                        let index = Int(controls[262].map { SendMessageW($0, UINT(CB_GETCURSEL), 0, 0) } ?? -1)
+                        guard let output = colorOutput, colorProfileNames.indices.contains(index) else {
+                            throw WindowsError.unsupported("Select a color profile before applying.")
+                        }
+                        importedColorProfile = nil
+                        colorProfiles.forgetImport()
+                        status(try command(263, [output.id, colorProfileNames[index]]))
+                    }
+                } catch { showActionError(error) }
+                return 0
+            }
             if [453, 705].contains(id), notification == Int(BN_CLICKED), !preview {
                 deviceReports.load(page, language: localization.pack, destination: MessageDestination(window), refresh: true)
                 status("Reading device information…")
@@ -1032,6 +1162,13 @@ final class SettingsWindow {
                 if !preview {
                     let choice = checked(244) ? "hardware" : Settings.softwareModes[max(0, min(Settings.softwareModes.count - 1, Int(controls[246].map { SendMessageW($0, UINT(CB_GETCURSEL), 0, 0) } ?? 0)))]
                     do { status(try command(245, [choice])) } catch { refreshBrightnessControl(); showActionError(error) }
+                }
+                return 0
+            }
+            if id == 252, notification == Int(BN_CLICKED) {
+                if !preview {
+                    do { status(try command(252, [checked(252) ? "1" : "0"])) }
+                    catch { updateAutomaticBrightness(monitorAutomaticBrightness); showActionError(error) }
                 }
                 return 0
             }

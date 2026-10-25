@@ -42,6 +42,28 @@ or Apple.
   brightness enabled: the native Windows monitor API controls its 16-bit backlight,
   with matching USB HID readback. The tested connection needs no additional Apple
   display driver. This does not establish support for other Apple display models.
+  **Ambient-light sensor (monitor setting)** in Brightness and the tray controls the
+  Thunderbolt Display's ambient-light enable setting while hardware brightness is on.
+  Windows VCP 0x66 verifies only the enabled/disabled state. Actual automatic
+  adjustment is not working on the tested Windows connection; this switch does not
+  establish a functioning sensor loop. SwiftyToys adds no guessed sensor commands or
+  polling loop. The current sensor mode is preserved until explicitly changed;
+  a saved choice applies only to that display. Quit/recovery restores its original
+  backlight and sensor mode. Unsupported outputs and software mode disable the switch.
+  **Color profile** reads the effective SDR profile directly from Windows. Import an
+  original ICC/ICM monitor RGB profile, select it and choose **Apply profile**. Import
+  requires administrator approval; the original bytes are validated and copied under
+  a content-addressed name without replacing another profile. The association applies
+  to this display and current user. It overrides system defaults until **Use Windows
+  system default** is applied. Windows initializes the user association list from the
+  system list when that override is first enabled. Refresh, returning to the window
+  and native registry notifications read Windows again; no second profile preference
+  is stored by SwiftyToys. The registry wait exists only while the Brightness page is
+  visible and has no polling timer. Profile changes release an old software
+  brightness/calibration lease before capturing a new baseline; hardware brightness
+  stays unchanged. No calibration LUT is loaded by this feature.
+  ICC profiles affect color-managed apps; they do not make every Windows game use
+  color management. Unit-specific profiles and diagnostics are never bundled.
   Ctrl+Alt+Shift+F10 requests 100% for emergency restoration. F1/F2 hold repetition
   follows Windows keyboard delay/speed; release, focus, device, session and power
   changes cancel repetition. No mouse-wheel interception is added.
@@ -52,6 +74,10 @@ or Apple.
   Command+Ctrl+Q locks the session; Command+Ctrl+S requests Sleep through Windows.
   Both actions are editable in the keyboard page. Sleep uses the account's existing
   shutdown permission, preserves wake events and does not change the power plan.
+  If Windows exposes neither S1/S2/S3 nor Modern Standby, Sleep shows recovery
+  instructions instead of requesting an unsupported transition. `powercfg /a`
+  explains system availability; firmware, drivers and boot configuration determine
+  the states Windows can use. Hibernate is not silently used as a substitute.
   Command+Option+Left/Right maps to Ctrl+PageUp/PageDown for browser tabs. A shared
   Ctrl menu-mask pulse keeps mapped Command chords from opening Start; bare Command
   retains the Windows Start action.

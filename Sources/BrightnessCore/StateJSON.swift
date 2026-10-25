@@ -35,8 +35,8 @@ public enum StateJSONError: Error, Sendable, Equatable, CustomStringConvertible 
 /// Bounded codec for the application's state schemas, not general-purpose JSON.
 /// Integers never pass through floating point; duplicate keys are rejected.
 public enum StateJSON {
-    public static func decode(_ bytes: [UInt8]) throws(StateJSONError) -> [String: StateField] {
-        guard bytes.count < 32768 else { throw .tooLarge }
+    public static func decode(_ bytes: [UInt8], maximumBytes: Int = 32767) throws(StateJSONError) -> [String: StateField] {
+        guard maximumBytes >= 0, bytes.count <= maximumBytes else { throw .tooLarge }
         var reader = Reader(bytes: bytes)
         let fields = try reader.object()
         reader.whitespace()

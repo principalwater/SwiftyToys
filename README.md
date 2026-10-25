@@ -24,7 +24,7 @@ Independent of Microsoft and Apple. Local settings; no telemetry or web renderer
 
 | | | |
 | --- | --- | --- |
-| **[Brightness](docs/Guide.md#features)** — software dimming or DDC/CI; keys, indicator, calibration and recovery | **[Keyboard](docs/Guide.md#features)** — editable Mac shortcuts, application rules and exclusions | **[Input languages](docs/Guide.md#features)** — Ctrl+Space, Caps Lock tap/hold and installed signed Apple RU/EN layouts |
+| **[Brightness](docs/Guide.md#features)** — software dimming or DDC/CI; ICC profiles, keys, calibration and recovery | **[Keyboard](docs/Guide.md#features)** — editable Mac shortcuts, application rules and exclusions | **[Input languages](docs/Guide.md#features)** — Ctrl+Space, Caps Lock tap/hold and installed signed Apple RU/EN layouts |
 | **[Desktop](docs/Guide.md#features)** — minimize, pin, lock, Sleep and temporary keep-awake | **[Mouse](docs/Guide.md#features)** — native vertical/horizontal wheel direction; no wheel interception | **[Magic Trackpad](docs/Trackpad.md)** — signed Precision drivers, USB/Bluetooth, gestures and recovery |
 | **[Homebrew](docs/Guide.md#homebrew)** — WSL 2/Ubuntu setup and the official interactive Linux installer | **[Boot Camp](docs/Guide.md#features)** — installed driver metadata and native Windows update entry points | **[Languages](docs/Localization.md)** — English default, Russian example and extensible UTF-8 packs |
 | **[Search](docs/Search.md)** — Cmd+Space, categories, file filters, Quick Keys, calculator, regional conversions, previews and optional local semantic matching | | |
@@ -64,6 +64,9 @@ Supports one independent **physical SDR output**. HDR, clones and virtual output
 are excluded; fullscreen/calibration software can compete for the output.
 Apple Thunderbolt Display hardware brightness is checked on a direct Thunderbolt
 connection using the native Windows API, without an extra display driver.
+With hardware mode enabled, **Adjust brightness automatically** in Brightness or
+the tray controls its native ambient-light mode without a SwiftyToys sensor loop.
+The slider is your preferred setting. Other display models are unqualified.
 [Supported hardware and remaining checks](docs/Requirements.md) · [Validation](docs/Validation.md).
 
 ## Mac shortcuts
@@ -127,13 +130,13 @@ Portable BrightnessCore/KeyboardCore/SearchCore tests use Swift Testing; native 
 ./scripts/build.ps1
 ./scripts/test.ps1
 ./scripts/package.ps1
-./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.24-win-x64
+./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.26-win-x64
 ```
 
 [Contributor guide](CONTRIBUTING.md) · [Packaging](docs/Packaging.md) ·
 [Windows interop](docs/WindowsInterop.md) · [Performance](docs/Performance.md) ·
 [Security](SECURITY.md). CI verifies Windows, Linux and macOS core checks. External changes
-use reviewed PRs; the maintainer controls merges. Size budgets are 8.5 MB EXE / 3.5 MB ZIP;
+use reviewed PRs; the maintainer controls merges. Size budgets are 8.52 MB EXE / 3.51 MB ZIP;
 performance advantages require reproducible measurements.
 
 The compiler/SDK pin is shared by local scripts and all CI platforms. Follow the

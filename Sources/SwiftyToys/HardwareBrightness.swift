@@ -8,6 +8,17 @@ private struct MonitorSearch {
     var device: String
     var monitor: HMONITOR?
 }
+
+func monitorAutomaticBrightness(_ value: DWORD, maximum: DWORD) -> Bool? {
+    guard maximum == 2, value == 1 || value == 2 else { return nil }
+    return value == 2
+}
+
+private func readMonitorAutomaticBrightness(_ handle: HANDLE?) -> Bool? {
+    var value: DWORD = 0, maximum: DWORD = 0
+    guard GetVCPFeatureAndVCPFeatureReply(handle, 0x66, nil, &value, &maximum) else { return nil }
+    return monitorAutomaticBrightness(value, maximum: maximum)
+}
 /// Serializes native DDC operations from the display executor and explicit diagnostics.
 private func withDDCLock<Result>(_ body: () throws -> Result) throws -> Result {
     let lock = try OwnedHandle(withWideString("Local\\SwiftyToys.DDC") { CreateMutexW(nil, false, $0) })
@@ -20,11 +31,13 @@ private func withDDCLock<Result>(_ body: () throws -> Result) throws -> Result {
 final class HardwareBrightnessSession {
     private let handle: HANDLE?
     let original: DWORD
+    let originalAutomaticBrightness: Bool?
+    private(set) var automaticBrightness: Bool?
     private let minimum: DWORD
     private let maximum: DWORD
     private var applied: DWORD?
     init(output: DisplayOutput) throws {
-        let values = try withDDCLock { () throws -> (HANDLE?, DWORD, DWORD, DWORD) in
+        let values = try withDDCLock { () throws -> (HANDLE?, DWORD, DWORD, DWORD, Bool?) in
             guard output.isPhysical, !output.isHDR, !output.isCloned,
                 let monitor = monitorForDevice(output.device) else { throw WindowsError.unsupported("Select one physical SDR display.") }
             var count: DWORD = 0
@@ -44,9 +57,14 @@ final class HardwareBrightnessSession {
                 DestroyPhysicalMonitor(handle)
                 throw WindowsError.unsupported("Monitor does not expose a valid native brightness range.")
             }
-            return (handle, minimum, current, maximum)
+            // Qualified on Thunderbolt Display; other monitors can pack vendor bits into 0x66.
+            let automatic = output.id.lowercased().hasPrefix("\\\\?\\display#app9227#")
+                ? readMonitorAutomaticBrightness(handle) : nil
+            return (handle, minimum, current, maximum, automatic)
         }
         handle = values.0; minimum = values.1; original = values.2; maximum = values.3; applied = original
+        originalAutomaticBrightness = values.4
+        automaticBrightness = values.4
     }
     deinit { DestroyPhysicalMonitor(handle) }
     private func write(_ value: DWORD) throws {
@@ -61,13 +79,39 @@ final class HardwareBrightnessSession {
             applied = value
         }
     }
-    func apply(_ level: BrightnessLevel) throws {
+    func setAutomaticBrightness(_ enabled: Bool) throws {
+        guard originalAutomaticBrightness != nil else {
+            throw WindowsError.unsupported("This monitor does not expose supported automatic brightness.")
+        }
+        guard automaticBrightness != enabled else { return }
+        try withDDCLock {
+            automaticBrightness = nil
+            guard SetVCPFeature(handle, 0x66, enabled ? 2 : 1),
+                readMonitorAutomaticBrightness(handle) == enabled else {
+                throw WindowsError.unsupported("The monitor did not confirm its automatic brightness mode. Its recovery state is preserved.")
+            }
+            automaticBrightness = enabled
+        }
+    }
+    func apply(_ level: BrightnessLevel, automatic: Bool? = nil) throws {
+        if originalAutomaticBrightness != nil, automaticBrightness == nil {
+            automaticBrightness = try withDDCLock { readMonitorAutomaticBrightness(handle) }
+        }
+        if let automatic { try setAutomaticBrightness(automatic) }
         let value = level.hardwareValue(in: minimum...maximum)
         if value != applied { try write(value) }
     }
-    func invalidate() { applied = nil }
-    func restore() throws { try write(original) }
-    func restoreSaved(_ value: DWORD) throws { try write(value) }
+    func invalidate() { applied = nil; automaticBrightness = nil }
+    func restore() throws { try restoreSaved(original, automatic: originalAutomaticBrightness) }
+    func restoreSaved(_ value: DWORD, automatic: Bool? = nil) throws {
+        let previousMode = automatic ?? originalAutomaticBrightness
+        if previousMode != nil {
+            automaticBrightness = nil // Recovery must not trust a mode cached before an external change.
+            try setAutomaticBrightness(false)
+        }
+        try write(value)
+        if let previousMode { try setAutomaticBrightness(previousMode) }
+    }
 }
 func monitorForDevice(_ device: String) -> HMONITOR? {
     guard !device.isEmpty else { return nil }

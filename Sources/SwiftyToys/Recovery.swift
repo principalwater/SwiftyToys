@@ -51,6 +51,7 @@ struct ColorLease: Sendable, Equatable {
     let brightness: Int?
     let contrast: Int?
     let gamma: [UInt16]?
+    var automaticBrightness: Bool? = nil
     var restoresCursorVisibility: Bool { backend == "compositor" }
     func checkpointAction(current: Self?) -> RecoveryCheckpointAction {
         guard let current else { return .persist }
@@ -77,16 +78,19 @@ struct ColorLease: Sendable, Equatable {
         let lease = ColorLease(
             owner: owner, started: started, displayID: id, backend: backend,
             amdID: try optional("amdID", { $0.string }), brightness: try optional("brightness", { $0.integer }),
-            contrast: try optional("contrast", { $0.integer }), gamma: try optional("gamma", { $0.words }))
+            contrast: try optional("contrast", { $0.integer }), gamma: try optional("gamma", { $0.words }),
+            automaticBrightness: try optional("automaticBrightness", { $0.bool }))
         guard lease.version == 1, lease.displayID.count < 4096, ["amd", "native", "hardware", "compositor", "composition"].contains(lease.backend),
-            lease.backend != "hardware" || lease.brightness.flatMap(DWORD.init(exactly:)) != nil else {
+            lease.backend != "hardware" || lease.brightness.flatMap(DWORD.init(exactly:)) != nil,
+            lease.automaticBrightness == nil || lease.backend == "hardware" else {
             throw WindowsError.unsupported("Unsupported output recovery state.")
         }
         return lease
     }
     func encoded() throws -> [UInt8] {
         guard version == 1, displayID.count < 4096, ["amd", "native", "hardware", "compositor", "composition"].contains(backend),
-            backend != "hardware" || brightness.flatMap(DWORD.init(exactly:)) != nil else {
+            backend != "hardware" || brightness.flatMap(DWORD.init(exactly:)) != nil,
+            automaticBrightness == nil || backend == "hardware" else {
             throw WindowsError.unsupported("Unsupported output recovery state.")
         }
         var fields: [String: StateField] = [
@@ -97,6 +101,7 @@ struct ColorLease: Sendable, Equatable {
         if let brightness { fields["brightness"] = .signed(Int64(brightness)) }
         if let contrast { fields["contrast"] = .signed(Int64(contrast)) }
         if let gamma { fields["gamma"] = .words(gamma) }
+        if let automaticBrightness { fields["automaticBrightness"] = .bool(automaticBrightness) }
         let bytes = StateJSON.encode(fields)
         guard bytes.count < 32768 else { throw WindowsError.unsupported("Invalid recovery-state size.") }
         return bytes
@@ -205,7 +210,7 @@ private func restoreLease(_ lease: ColorLease, outputs: [DisplayOutput]) throws 
             throw WindowsError.unsupported("Invalid hardware recovery state.")
         }
         let session = try HardwareBrightnessSession(output: output)
-        try session.restoreSaved(saved)
+        try session.restoreSaved(saved, automatic: lease.automaticBrightness)
     } else {
         guard let gamma = lease.gamma else { throw WindowsError.unsupported("Missing native recovery ramp.") }
         let ramp = try GammaRamp(samples: gamma)
