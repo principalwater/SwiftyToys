@@ -17,6 +17,21 @@ for the resident and watchdog separately. CPU percent is relative to one core,
 not divided by this machine's 24 logical processors. Keep identical settings,
 foreground workload, startup state and sampling duration for comparisons.
 
+## 0.1.27 selected monitor on another port
+
+A saved target's stored EDID is read only while its display path is missing. No timer
+or thread is added; with DDC off and the saved monitor gone, the existing three-second
+tick repeats these registry reads. The static app is 8,603,648 bytes, 4,096 bytes above
+0.1.26, which had 448 bytes left under its ceiling. The enforced ceilings are now
+8.61 MB EXE, 3.56 MB ZIP and 2.7 MB Setup. This is a correctness allowance, not a
+measured speedup.
+
+The ZIP size depends on the runtime that packages it. Windows PowerShell 5.1 compresses
+less than PowerShell 7 and exceeds the ceiling even for 0.1.26, so the budget applies to
+PowerShell 7, as in CI.
+
+## Previous release evidence
+
 ## 0.1.26 native color profiles and display diagnostics
 
 ICC reads, validation and import waits run on bounded background workers. Profile
@@ -36,8 +51,6 @@ The static app is 8,599,552 bytes, 109,056 bytes above 0.1.24. The enforced ceil
 are 8.60 MB EXE, 3.55 MB ZIP and 2.7 MB Setup. This is a feature/correctness allowance,
 not a measured speedup or proof of behavior on every weaker machine. No new GPU
 rendering or cursor ownership is introduced.
-
-## Previous release evidence
 
 ## 0.1.24 replacement-display recovery
 

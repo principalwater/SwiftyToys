@@ -1,3 +1,23 @@
+# Validation snapshot: 0.1.27 selected monitor on another port
+
+2026-10-31. After the Thunderbolt Display's cable moved to another port, Windows gave
+it a new display path and 0.1.26 reported the selected output as disconnected. The
+fixed build ran as the resident on a temporary copy of the settings that still named
+the old path. On the physical monitor it bound through DDC/CI, kept automatic mode
+and saved the current path for both the selection and the automatic preference. A
+lease left for the old path became that path's recovery record. Saved paths of a
+disconnected monitor of another model, and of a monitor with no stored EDID, stayed
+disconnected with settings unchanged. Native brightness-policy, storage, display-queue,
+ABI, color-profile, cursor-policy, error and worker-wait checks pass on the 0.1.27
+executable, as do all 74 portable tests; its code differs from the checked build only
+in the version string.
+
+The cable was not moved again during this check: settings supplied the old path, whose
+device node Windows already held. Two identical monitors were not available, so
+telling units apart rests on portable tests.
+
+## Previous release evidence
+
 # Validation snapshot: 0.1.26 native Windows color profiles
 
 2026-10-25. Fifteen relevant native checks pass: ICC bounds and descriptions,
@@ -55,8 +75,6 @@ idle topology while the virtual driver remains enabled. The operator confirms a
 successful Sunshine/Moonlight connect/disconnect; native readback then shows only
 the physical Thunderbolt output active, with the virtual driver still healthy.
 Sunshine's existing on-demand configuration and pairing were preserved.
-
-## Previous release evidence
 
 # Validation snapshot: 0.1.24 replacement-display recovery
 
