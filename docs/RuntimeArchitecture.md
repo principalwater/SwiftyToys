@@ -36,6 +36,15 @@ identities; a different saved calibration is never overwritten. Reconnection rec
 runs only when the eligible topology changes, with direct bounded file lookups.
 Connected targets and legacy global cursor recovery cannot be deferred.
 
+Windows renames a monitor's display path when its cable moves to another port. A
+saved target whose path is gone follows that move only when its stored EDID has a
+serial number and exactly one supported output has the same EDID. EDID data comes
+from the device node through the configuration manager, also for a disconnected
+path, and is read only while the saved path is missing. Selection and automatic mode
+move together; the old path keeps its recovery record until that path returns.
+Units that report one fake serial cannot be told apart. No model-only or name match
+is used, and a monitor that is merely cloned or HDR is not treated as moved.
+
 Native kernel scheduling, third-party hooks and driver stalls remain platform
 limits. A previously unknown application's first chord may reach Windows before
 background resolution; cached contexts retain application exclusions/overrides.

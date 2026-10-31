@@ -184,13 +184,17 @@ actor DisplayController {
             }
         }
         let id: String
-        do { id = try selectDisplay(from: eligible.map(\.candidate), savedID: saved).id } catch BrightnessError
-            .displayDisconnected
-        {
+        do {
+            id = try selectDisplay(from: outputs.map(\.candidate), savedID: saved, storedEDID: monitorEDID).id
+        } catch BrightnessError.displayDisconnected {
             _ = try restoreAndRelease()
             return
         }
         let selected = eligible.first { $0.id == id }!
+        if settings.targetID != nil, settings.targetID != id {
+            try settings.moveTarget(to: id)
+            Diagnostics.write("selected display moved to another port; selection followed it")
+        }
         if let output, sameDisplayBinding(output, selected) {
             if hardware != nil || native != nil {
                 self.output = selected

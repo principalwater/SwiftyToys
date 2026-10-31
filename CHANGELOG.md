@@ -1,5 +1,12 @@
 # Changelog
 
+## SwiftyToys 0.1.27 — 2026-10-31
+
+- Keep the selected monitor and its automatic-brightness preference when its cable
+  moves to another port. The saved target follows only the same physical unit,
+  proven by a stored EDID with a serial number; another monitor is never substituted.
+- Raise the size ceilings to 8.61 MB EXE and 3.56 MB ZIP for this fix.
+
 ## SwiftyToys 0.1.26 — 2026-10-25
 
 - Add native Windows SDR color-profile selection, ICC import and return to system

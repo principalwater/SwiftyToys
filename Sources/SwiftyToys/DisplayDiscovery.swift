@@ -50,6 +50,25 @@ private func isPhysicalAdapter(_ luid: LUID) -> Bool {
     }
     return result >= 0 && type.SoftwareDevice == 0 && type.IndirectDisplayDevice == 0
 }
+/// Reads the EDID Windows stored for a monitor's device node, which outlives its connection to a port.
+func monitorEDID(displayID: String) -> [UInt8]? {
+    guard let instance = monitorInstanceID(displayID: displayID) else { return nil }
+    var node: DEVINST = 0
+    let located = withWideString(instance) {
+        CM_Locate_DevNodeW(&node, UnsafeMutablePointer(mutating: $0), ULONG(CM_LOCATE_DEVNODE_PHANTOM))
+    }
+    var key: HKEY?
+    guard located == CR_SUCCESS,
+        CM_Open_DevNode_Key(
+            node, REGSAM(KEY_QUERY_VALUE), 0, REGDISPOSITION(RegDisposition_OpenExisting), &key,
+            ULONG(CM_REGISTRY_HARDWARE)) == CR_SUCCESS, let key
+    else { return nil }
+    defer { RegCloseKey(key) }
+    var edid = Array(repeating: UInt8(0), count: 4096)
+    var size = DWORD(edid.count)
+    let read = withWideString("EDID") { RegGetValueW(key, nil, $0, DWORD(RRF_RT_REG_BINARY), nil, &edid, &size) }
+    return read == ERROR_SUCCESS ? Array(edid.prefix(Int(size))) : nil
+}
 /// Enumerates active Windows display paths and excludes shared/virtual scanout.
 func discoverDisplays() throws(WindowsError) -> [DisplayOutput] {
     for _ in 0..<4 {

@@ -55,6 +55,86 @@ struct BrightnessTests {
         }
     }
 
+    /// An anonymized base EDID block that differs only in its unit-identifying bytes.
+    private func edid(serial: [UInt8] = [0, 0, 0, 0], textSerialDescriptor: Int? = nil) -> [UInt8] {
+        var block = Array(repeating: UInt8(0x20), count: 128)
+        block.replaceSubrange(12..<16, with: serial)
+        if let start = textSerialDescriptor { block.replaceSubrange(start..<start + 4, with: [0, 0, 0, 0xFF]) }
+        return block
+    }
+
+    @Test func followsTheSameMonitorToAnotherPort() throws {
+        let moved = DisplayCandidate(id: "new-port", isPhysical: true)
+        let other = DisplayCandidate(id: "other-monitor", isPhysical: true)
+        for unit in [edid(serial: [0, 0, 0, 7]), edid(textSerialDescriptor: 54), edid(textSerialDescriptor: 108)] {
+            let stored = ["saved": unit, "new-port": unit, "other-monitor": edid(serial: [0, 0, 0, 9])]
+            #expect(try selectDisplay(from: [other, moved], savedID: "saved", storedEDID: { stored[$0] }) == moved)
+        }
+    }
+
+    @Test func neverSubstitutesAnotherUnitOfTheSameModel() {
+        let twin = DisplayCandidate(id: "twin", isPhysical: true)
+        let stored = ["saved": edid(serial: [0, 0, 0, 7]), "twin": edid(serial: [0, 0, 0, 8])]
+        #expect(throws: BrightnessError.displayDisconnected("saved")) {
+            try selectDisplay(from: [twin], savedID: "saved", storedEDID: { stored[$0] })
+        }
+    }
+
+    @Test func staysDisconnectedWithoutProofOfTheSameUnit() {
+        let candidate = DisplayCandidate(id: "candidate", isPhysical: true)
+        let short = Array(edid(serial: [0, 0, 0, 7]).prefix(127))
+        let unproven: [[UInt8]?] = [nil, [], edid(), edid(serial: [1, 1, 1, 1]), short]
+        for unit in unproven {
+            #expect(throws: BrightnessError.displayDisconnected("saved")) {
+                try selectDisplay(from: [candidate], savedID: "saved", storedEDID: { _ in unit })
+            }
+        }
+        // No stored EDID for the candidate itself: the saved unit alone proves nothing.
+        let serial = edid(serial: [0, 0, 0, 7])
+        #expect(throws: BrightnessError.displayDisconnected("saved")) {
+            try selectDisplay(from: [candidate], savedID: "saved", storedEDID: { $0 == "saved" ? serial : nil })
+        }
+    }
+
+    @Test func staysDisconnectedWhenSeveralCandidatesMatch() {
+        let first = DisplayCandidate(id: "first", isPhysical: true)
+        let second = DisplayCandidate(id: "second", isPhysical: true)
+        let unit = edid(serial: [0, 0, 0, 7])
+        #expect(throws: BrightnessError.displayDisconnected("saved")) {
+            try selectDisplay(from: [first, second], savedID: "saved", storedEDID: { _ in unit })
+        }
+    }
+
+    @Test func keepsASavedMonitorThatBecameClonedOrHDR() {
+        let twin = DisplayCandidate(id: "twin", isPhysical: true)
+        let unit = edid(serial: [0, 0, 0, 7])
+        let cloned = DisplayCandidate(id: "saved", isPhysical: true, isCloned: true)
+        let hdr = DisplayCandidate(id: "saved", isPhysical: true, isHDR: true)
+        for saved in [cloned, hdr] {
+            #expect(throws: BrightnessError.displayDisconnected("saved")) {
+                try selectDisplay(from: [saved, twin], savedID: "saved", storedEDID: { _ in unit })
+            }
+        }
+    }
+
+    @Test func connectedTargetNeedsNoEDIDLookup() throws {
+        let saved = DisplayCandidate(id: "saved", isPhysical: true)
+        #expect(try selectDisplay(from: [saved], savedID: "saved", storedEDID: { _ in
+            Issue.record("A connected target must not read stored EDID data.")
+            return nil
+        }) == saved)
+    }
+
+    @Test func findsTheMonitorInstanceInADisplayID() {
+        let id = "\\\\?\\DISPLAY#AAA0000#1&2&0&UID3#{class}|4"
+        #expect(monitorInstanceID(displayID: id) == "DISPLAY\\AAA0000\\1&2&0&UID3")
+        let invalid = [
+            "", "saved", "\\\\?\\USB#AAA0000#1&2&0&UID3#{class}|4", "\\\\?\\DISPLAY#AAA0000#{class}|4",
+            "\\\\?\\DISPLAY##1&2#{class}|4",
+        ]
+        for id in invalid { #expect(monitorInstanceID(displayID: id) == nil) }
+    }
+
     @Test func skipsVirtualHDRAndClonedTargets() throws {
         let physical = DisplayCandidate(id: "physical", isPhysical: true)
         let virtual = DisplayCandidate(id: "virtual", isPhysical: false)
