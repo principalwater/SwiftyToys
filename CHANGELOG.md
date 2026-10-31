@@ -5,7 +5,11 @@
 - Keep the selected monitor and its automatic-brightness preference when its cable
   moves to another port. The saved target follows only the same physical unit,
   proven by a stored EDID with a serial number; another monitor is never substituted.
-- Raise the size ceilings to 8.61 MB EXE and 3.56 MB ZIP for this fix.
+- Keep hardware brightness available in automatic mode. The monitor's sensor starts
+  moving the backlight right after a write, which made the exact readback fail and
+  released the display. Automatic mode now confirms a write within 1%; manual mode
+  still requires the exact value.
+- Raise the size ceilings to 8.61 MB EXE and 3.56 MB ZIP for these fixes.
 
 ## SwiftyToys 0.1.26 — 2026-10-25
 

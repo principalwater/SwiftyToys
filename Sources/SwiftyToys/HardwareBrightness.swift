@@ -79,7 +79,10 @@ final class HardwareBrightnessSession {
             applied = nil // A failed readback must not suppress the following rollback write.
             guard SetMonitorBrightness(handle, value) else { throw WindowsError.api("Set physical brightness", GetLastError()) }
             var low: DWORD = 0; var current: DWORD = 0; var high: DWORD = 0
-            guard GetMonitorBrightness(handle, &low, &current, &high), current == value else {
+            guard GetMonitorBrightness(handle, &low, &current, &high),
+                brightnessWriteConfirmed(
+                    reading: current, written: value, in: minimum...maximum, sensorActive: automaticBrightness == true)
+            else {
                 throw WindowsError.unsupported("Physical brightness readback did not match the requested value.")
             }
             applied = value

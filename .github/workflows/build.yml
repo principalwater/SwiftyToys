@@ -159,6 +159,8 @@ jobs:
             artifacts/swift-version.txt
             artifacts/*-Setup.exe
             artifacts/*-Setup.exe.sha256
+            artifacts/*-win-x64.zip
+            artifacts/*-win-x64.zip.sha256
             artifacts/resources/
             artifacts/Languages/
             Licenses/
