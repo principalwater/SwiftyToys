@@ -38,6 +38,9 @@ or Apple.
   Selecting a replacement display preserves a disconnected monitor's calibration
   separately, so it cannot block the new output. Reconnecting the original monitor
   restores its own calibration; connected-display failures still retain recovery.
+  Moving the selected monitor to another port keeps its selection and automatic mode
+  when Windows stored the same EDID with a serial number for both paths. Another
+  monitor, even of the same model, stays unselected until you choose it.
   Apple Thunderbolt Display (A1407) over direct Thunderbolt was checked with hardware
   brightness enabled: the native Windows monitor API controls its 16-bit backlight,
   with matching USB HID readback. The tested connection needs no additional Apple

@@ -122,6 +122,19 @@ struct Settings: Sendable {
         targetID = id
     }
 
+    /// The values that keep a monitor's selection and automatic mode when Windows renames its path.
+    func valuesMovingTarget(to id: String) -> [String: String] {
+        automaticBrightnessDisplay == targetID
+            ? ["targetDisplay": id, "automaticBrightnessDisplay": id] : ["targetDisplay": id]
+    }
+
+    mutating func moveTarget(to id: String) throws {
+        let values = valuesMovingTarget(to: id)
+        try setValues(values)
+        targetID = id
+        automaticBrightnessDisplay = values["automaticBrightnessDisplay"] ?? automaticBrightnessDisplay
+    }
+
     /// Persists an indicator choice without changing the selected monitor or level.
     mutating func setIndicator(_ mode: IndicatorMode) throws {
         try setValue(mode.rawValue, forKey: "osd")
@@ -171,6 +184,12 @@ struct Settings: Sendable {
         guard try Settings(contents: "automaticBrightness=invalid\nautomaticBrightnessDisplay=display")
             .automaticBrightness(for: "display") == nil else {
             throw WindowsError.unsupported("An invalid automatic brightness preference was accepted.")
+        }
+        let followed = try Settings(contents: "targetDisplay=old\nautomaticBrightness=1\nautomaticBrightnessDisplay=old")
+        let other = try Settings(contents: "targetDisplay=old\nautomaticBrightness=1\nautomaticBrightnessDisplay=another")
+        guard followed.valuesMovingTarget(to: "new") == ["targetDisplay": "new", "automaticBrightnessDisplay": "new"],
+            other.valuesMovingTarget(to: "new") == ["targetDisplay": "new"] else {
+            throw WindowsError.unsupported("A moved monitor's automatic brightness preference was lost or misapplied.")
         }
         guard usesRetiredBackend(" BACKEND = Compositor \nddcEnabled=0"),
             !usesRetiredBackend("# backend=compositor\nbackend=auto") else {

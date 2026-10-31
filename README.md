@@ -130,13 +130,13 @@ Portable BrightnessCore/KeyboardCore/SearchCore tests use Swift Testing; native 
 ./scripts/build.ps1
 ./scripts/test.ps1
 ./scripts/package.ps1
-./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.26-win-x64
+./scripts/build-setup.ps1 -PackageDirectory ./artifacts/SwiftyToys-0.1.27-win-x64
 ```
 
 [Contributor guide](CONTRIBUTING.md) · [Packaging](docs/Packaging.md) ·
 [Windows interop](docs/WindowsInterop.md) · [Performance](docs/Performance.md) ·
 [Security](SECURITY.md). CI verifies Windows, Linux and macOS core checks. External changes
-use reviewed PRs; the maintainer controls merges. Size budgets are 8.52 MB EXE / 3.51 MB ZIP;
+use reviewed PRs; the maintainer controls merges. Size budgets are 8.61 MB EXE / 3.56 MB ZIP;
 performance advantages require reproducible measurements.
 
 The compiler/SDK pin is shared by local scripts and all CI platforms. Follow the

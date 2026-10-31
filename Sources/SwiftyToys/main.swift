@@ -34,8 +34,9 @@ func runCLI(_ args: [String]) throws -> Int32 {
         guard lock.acquired else { throw WindowsError.unsupported("Close SwiftyToys before using the standalone color-profile command. In the running app, use Brightness settings.") }
         guard try recoverOutput() else { throw WindowsError.unsupported("Display recovery is pending. Restore brightness before changing its profile.") }
         let settings = try Settings()
-        let outputs = try discoverDisplays().filter { $0.isPhysical && !$0.isHDR && !$0.isCloned }
-        let selected = try selectDisplay(from: outputs.map(\.candidate), savedID: settings.targetID)
+        let outputs = try discoverDisplays()
+        let selected = try selectDisplay(
+            from: outputs.map(\.candidate), savedID: settings.targetID, storedEDID: monitorEDID)
         guard let output = outputs.first(where: { $0.id == selected.id }) else {
             throw WindowsError.unsupported("Select one connected physical SDR display.")
         }
