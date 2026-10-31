@@ -41,6 +41,17 @@ public struct BrightnessLevel: Sendable, Equatable, Codable {
         try container.encode(percent)
     }
 }
+/// Whether a monitor's reading confirms a brightness write.
+///
+/// With its ambient sensor on, a monitor starts moving the backlight within milliseconds of a
+/// write, so the reading only has to stay within one percent of the written value.
+public func brightnessWriteConfirmed(
+    reading: UInt32, written: UInt32, in range: ClosedRange<UInt32>, sensorActive: Bool
+) -> Bool {
+    guard sensorActive else { return reading == written }
+    return range.contains(reading)
+        && max(reading, written) - min(reading, written) <= (range.upperBound - range.lowerBound) / 100
+}
 /// Validation and display-selection failures that do not depend on an OS API.
 public enum BrightnessError: Error, Sendable, Equatable {
     case invalidPercentage(Int)

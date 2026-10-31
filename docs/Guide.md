@@ -53,7 +53,9 @@ or Apple.
   replace its sensor algorithm. The percentage and slider show actual backlight
   readback, refreshed on the existing three-second tick while Overview, Brightness
   or the tray menu is visible, and after explicit commands. Closed windows add no
-  brightness readback polling. Sensor-driven values never replace the saved manual
+  brightness readback polling. The sensor starts moving the backlight right after a
+  write, so automatic mode confirms it within 1%; manual mode requires the exact
+  value. Sensor-driven values never replace the saved manual
   preference; `info` reports that preference separately. In automatic mode, relative
   keys start from a fresh hardware reading. The current sensor mode is preserved until explicitly changed;
   a saved choice applies only to that display. Quit/recovery restores its original

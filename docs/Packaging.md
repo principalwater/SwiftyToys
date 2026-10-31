@@ -7,9 +7,9 @@ Windows system DLLs. No executable packer, experimental Swift mode, runtime prun
 or patched SDK is used. Both embed the Command Ember icon, Common Controls v6,
 per-monitor DPI and asInvoker manifest entries.
 
-The executable ceiling is 8.60 MB: native ICC validation, WCS controls and display
+The executable ceiling is 8.61 MB: native ICC validation, WCS controls and display
 diagnostics add a bounded allowance over the 8.5 MB Search ceiling, retaining recovery
-and native checks. ZIP is capped at 3.55 MB; Setup retains 2.7 MB. The measured 0.1.19 setup is about 2.60 MB; these
+and native checks. ZIP is capped at 3.56 MB; Setup retains 2.7 MB. The measured 0.1.19 setup is about 2.60 MB; these
 ceilings remain enforced by packaging checks.
 An intermediate optimized Search build measured 7,381,504 bytes versus the installed
 0.1.12 app's 6,885,888 bytes; final sizes are recorded in Validation. Model weights,
@@ -46,7 +46,7 @@ toolchain pinned in .swift-version. See [toolchain upgrades](Toolchain.md).
 Official dispatch.lib and BlocksRuntime.lib satisfy the static Swift concurrency
 archive. Native threads are CRT initialized; driver work runs on its serial Swift
 actor executor. The build rejects accidental dynamic Swift imports and enforces
-8.60 MB EXE / 3.55 MB ZIP regression budgets. These budgets can be revised when an explicit
+8.61 MB EXE / 3.56 MB ZIP regression budgets. These budgets can be revised when an explicit
 feature or a measured improvement justifies larger distribution; they are not a
 reason to remove requested functionality or correctness checks.
 
@@ -63,8 +63,10 @@ replaces runtime PowerShell helpers. The integrated build measured
 
 Run scripts/test.ps1, then build.ps1 (sequentially: SwiftBuild shares its database).
 Developer PowerShell scripts only invoke build/test tools; none is shipped or run
-by the application or installer. Package with scripts/package.ps1, then run
-scripts/build-setup.ps1 -PackageDirectory artifacts/SwiftyToys-0.1.17-win-x64.
+by the application or installer. Package with scripts/package.ps1 under PowerShell 7,
+as CI does; Windows PowerShell 5.1 compresses less and exceeds the ZIP budget. Then run
+scripts/build-setup.ps1 -PackageDirectory artifacts/SwiftyToys-0.1.27-win-x64.
+CI keeps the Setup and ZIP from one package, with their SHA-256 files, as a run artifact.
 The setup build runs parser rejection checks and validates the actual resource,
 protected extraction, native stage-two controls and owned cleanup without installing.
 Native --test-installer, --test-shell-integration, --test-installer-ui and

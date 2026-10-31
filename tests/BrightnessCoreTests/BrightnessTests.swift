@@ -55,6 +55,28 @@ struct BrightnessTests {
         }
     }
 
+    @Test func manualModeConfirmsOnlyTheExactBrightness() {
+        let range: ClosedRange<UInt32> = 0...65535
+        #expect(brightnessWriteConfirmed(reading: 39321, written: 39321, in: range, sensorActive: false))
+        #expect(!brightnessWriteConfirmed(reading: 39320, written: 39321, in: range, sensorActive: false))
+    }
+
+    @Test func sensorDriftWithinOnePercentConfirmsTheWrite() {
+        let range: ClosedRange<UInt32> = 0...65535
+        for reading: UInt32 in [39321, 39320, 39311, 39321 - 655, 39321 + 655] {
+            #expect(brightnessWriteConfirmed(reading: reading, written: 39321, in: range, sensorActive: true))
+        }
+        // A monitor that kept its previous level did not take the write.
+        #expect(!brightnessWriteConfirmed(reading: 38235, written: 39321, in: range, sensorActive: true))
+        #expect(!brightnessWriteConfirmed(reading: 39321 + 656, written: 39321, in: range, sensorActive: true))
+    }
+
+    @Test func sensorReadingOutsideTheRangeIsRejectedWithoutOverflow() {
+        #expect(!brightnessWriteConfirmed(reading: 99, written: 100, in: 100...200, sensorActive: true))
+        #expect(brightnessWriteConfirmed(reading: 200, written: 199, in: 100...200, sensorActive: true))
+        #expect(brightnessWriteConfirmed(reading: .max, written: .max - 1, in: 0...UInt32.max, sensorActive: true))
+    }
+
     /// An anonymized base EDID block that differs only in its unit-identifying bytes.
     private func edid(serial: [UInt8] = [0, 0, 0, 0], textSerialDescriptor: Int? = nil) -> [UInt8] {
         var block = Array(repeating: UInt8(0x20), count: 128)

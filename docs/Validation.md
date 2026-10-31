@@ -9,8 +9,16 @@ lease left for the old path became that path's recovery record. Saved paths of a
 disconnected monitor of another model, and of a monitor with no stored EDID, stayed
 disconnected with settings unchanged. Native brightness-policy, storage, display-queue,
 ABI, color-profile, cursor-policy, error and worker-wait checks pass on the 0.1.27
-executable, as do all 74 portable tests; its code differs from the checked build only
-in the version string.
+executable, as do all 77 portable tests.
+
+With automatic mode on, the monitor moves its backlight right after a write. In 30
+writes, 8 immediate readings were one unit off in a range of 65,535, and the drift
+reached tens of units within three seconds. The exact check treated such a reading
+as a failed write and released the display until the next command; one boot failed
+this way on three writes in a row. Automatic mode now confirms a write within 1% of
+the range, while manual mode keeps the exact check. The physical checks above pass
+while the sensor drifts. The old check also passed most writes, so these passes alone
+do not prove the failure is gone; the measured difference is far inside the tolerance.
 
 The cable was not moved again during this check: settings supplied the old path, whose
 device node Windows already held. Two identical monitors were not available, so
